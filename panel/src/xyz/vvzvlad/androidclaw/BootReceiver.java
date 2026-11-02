@@ -1,4 +1,4 @@
-package xyz.vvzvlad.tvagentpanel;
+package xyz.vvzvlad.androidclaw;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;

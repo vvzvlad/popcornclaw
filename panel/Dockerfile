@@ -1,4 +1,4 @@
-# TV agent panel APK, built with the bare Android SDK tools (javac, d8, aapt2, zipalign, apksigner)
+# AndroidClaw panel APK, built with the bare Android SDK tools (javac, d8, aapt2, zipalign, apksigner)
 # instead of Gradle: there are no resources or libraries, only a manifest and a few classes.
 FROM eclipse-temurin:17.0.16_8-jdk-noble AS build
 RUN apt-get update && apt-get install -y --no-install-recommends unzip zip && rm -rf /var/lib/apt/lists/*
@@ -29,8 +29,8 @@ RUN mkdir classes dex \
  && (cd dex && zip -q ../unsigned.apk classes.dex) \
  && $BT/zipalign -p -f 4 unsigned.apk aligned.apk \
  && $BT/apksigner sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android \
-      --ks-key-alias androiddebugkey --out tvagent-panel.apk aligned.apk \
- && $BT/apksigner verify tvagent-panel.apk
+      --ks-key-alias androiddebugkey --out androidclaw-panel.apk aligned.apk \
+ && $BT/apksigner verify androidclaw-panel.apk
 
 FROM scratch
-COPY --from=build /app/tvagent-panel.apk /tvagent-panel.apk
+COPY --from=build /app/androidclaw-panel.apk /androidclaw-panel.apk

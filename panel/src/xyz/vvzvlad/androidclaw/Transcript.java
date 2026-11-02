@@ -1,4 +1,4 @@
-package xyz.vvzvlad.tvagentpanel;
+package xyz.vvzvlad.androidclaw;
 
 import android.graphics.Typeface;
 import android.text.SpannableStringBuilder;

@@ -7,7 +7,7 @@ WORKDIR /src
 COPY tool-status.patch asr-proxy.patch /tmp/
 RUN git apply /tmp/tool-status.patch /tmp/asr-proxy.patch
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -tags goolm,stdjson \
-    -ldflags "-s -w -X github.com/sipeed/picoclaw/pkg/config.Version=0.3.1-tvagent" \
+    -ldflags "-s -w -X github.com/sipeed/picoclaw/pkg/config.Version=0.3.1-androidclaw" \
     -o /picoclaw ./cmd/picoclaw
 
 FROM scratch

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Console panel over the home screen showing what the TV agent (PicoClaw) is doing. -->
+<!-- Console panel over the home screen showing what the AndroidClaw agent (PicoClaw) is doing. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="xyz.vvzvlad.tvagentpanel"
+    package="xyz.vvzvlad.androidclaw"
     android:versionCode="1"
     android:versionName="1.0">
 
@@ -12,7 +12,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" />
 
-    <application android:label="TV agent panel">
+    <application android:label="AndroidClaw panel">
         <service android:name=".PanelService" android:exported="false" />
         <receiver android:name=".BootReceiver" android:exported="true">
             <intent-filter>

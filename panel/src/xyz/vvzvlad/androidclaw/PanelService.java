@@ -1,4 +1,4 @@
-package xyz.vvzvlad.tvagentpanel;
+package xyz.vvzvlad.androidclaw;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -43,8 +43,8 @@ import java.util.Set;
  * transcript over the home screen while a turn runs and for a few minutes after it.
  */
 public final class PanelService extends Service {
-    private static final String TAG = "TvAgentPanel";
-    private static final File SESSIONS = new File("/data/local/tvagent/workspace/sessions");
+    private static final String TAG = "AndroidClawPanel";
+    private static final File SESSIONS = new File("/data/local/androidclaw/workspace/sessions");
     private static final long POLL_MS = 1000;
     private static final long LINGER_MS = 5 * 60 * 1000;
     // PicoClaw writes nothing when a turn dies (model error after retries, gateway killed), so a
@@ -316,16 +316,16 @@ public final class PanelService extends Service {
         lp.gravity = Gravity.TOP | Gravity.RIGHT;
         lp.x = margin;
         lp.y = top;
-        lp.setTitle("TvAgentPanel");
+        lp.setTitle("AndroidClawPanel");
         return lp;
     }
 
     private Notification notification() {
         NotificationManager nm = getSystemService(NotificationManager.class);
-        nm.createNotificationChannel(new NotificationChannel(CHANNEL, "Agent panel", NotificationManager.IMPORTANCE_MIN));
+        nm.createNotificationChannel(new NotificationChannel(CHANNEL, "AndroidClaw panel", NotificationManager.IMPORTANCE_MIN));
         return new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("TV agent panel")
+                .setContentTitle("AndroidClaw panel")
                 .build();
     }
 
