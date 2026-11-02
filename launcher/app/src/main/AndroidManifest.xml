@@ -79,6 +79,9 @@
     </queries>
 
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- PopcornClaw: AgentService pops up each command to the agent over every app; the app-op is granted by
+         `make app` (appops set xyz.vvzvlad.popcornclaw SYSTEM_ALERT_WINDOW allow). -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:name=".OmarchyApp"

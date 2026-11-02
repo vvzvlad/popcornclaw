@@ -18,7 +18,8 @@ import java.net.URL;
  * Keeps the PicoClaw gateway running. Every 10 s it asks the gateway's /health; after three failures in a
  * row, and not within a minute of its own last start, it (re)starts the gateway as root through su.
  * {@link #ACTION_RESTART} kills and starts it at once. The gateway is a separate root process that outlives
- * this app: its output goes to a file, never to a pipe back here.
+ * this app: its output goes to a file, never to a pipe back here. It also shows every new command to the agent
+ * in a popup over everything ({@link CommandPopup}).
  */
 public final class AgentService extends Service {
     public static final String ACTION_RESTART = "xyz.vvzvlad.popcornclaw.RESTART";
@@ -33,6 +34,7 @@ public final class AgentService extends Service {
 
     private HandlerThread thread;
     private Handler worker;
+    private CommandPopup popup;
     // Both touched on the worker thread only.
     private int failures;
     // Set so the very first start is never held back by the one-minute gap.
@@ -57,6 +59,9 @@ public final class AgentService extends Service {
         thread.start();
         worker = new Handler(thread.getLooper());
         worker.post(check);
+        // The service always runs, so it is the one that pops up each command the agent gets.
+        popup = new CommandPopup(this);
+        popup.start();
     }
 
     @Override
@@ -67,6 +72,7 @@ public final class AgentService extends Service {
 
     @Override
     public void onDestroy() {
+        popup.stop();
         thread.quit();
         super.onDestroy();
     }

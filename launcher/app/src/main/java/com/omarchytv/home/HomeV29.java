@@ -70,6 +70,9 @@ final class HomeV29 extends FrameLayout {
         void savePanelPos(String id, int cx, int cy);
         /** ▶ past the last top-bar icon: select (arm) the floating companion; false when it is not shown. */
         boolean selectCompanion();
+        /** PopcornClaw: the agent's console feed came on (or went off) the home screen. */
+        default void feedShown(boolean on) {
+        }
     }
 
     /** v2.10 workspace 2 tile: TV or an HDMI input (CEC name when known). */
@@ -143,6 +146,9 @@ final class HomeV29 extends FrameLayout {
     private ForegroundColorSpan cursorSpan;
     private String logoFinal = "";
     private final android.os.Handler anim = new android.os.Handler(android.os.Looper.getMainLooper());
+    // PopcornClaw: the agent's console feed, in the widgets' place while it shows (applyFeed).
+    private final BoxView feedBox;
+    private final xyz.vvzvlad.popcornclaw.HomeFeed feed;
 
     HomeV29(Activity a, Host host) {
         super(a);
@@ -397,6 +403,36 @@ final class HomeV29 extends FrameLayout {
         sysWin = window(act.getString(R.string.v29_system));
         sysBody = vbox();
         sysWin.addView(sysBody, new LinearLayout.LayoutParams(-1, -2));
+
+        // ---- PopcornClaw: the agent's console feed, widgets' column, from under the bar to above the app window ----
+        feedBox = new BoxView(a, s, tf);
+        feedBox.setLegend(null, px(18), px(22));
+        feed = new xyz.vvzvlad.popcornclaw.HomeFeed(a, this::applyFeed);
+        feedBox.addView(feed, new LinearLayout.LayoutParams(-1, -1));
+        LayoutParams fl = new LayoutParams(px(1120), -1, Gravity.END | Gravity.TOP);
+        fl.rightMargin = px(32);
+        fl.topMargin = px(76);
+        // Invisible, not gone: laid out, so the feed knows its width in columns before it first shows.
+        feedBox.setVisibility(INVISIBLE);
+        addView(feedBox, fl);
+        // The app window's height follows Layout → App size: keep the widgets' 16 px gap above it.
+        appWin.addOnLayoutChangeListener((v, l, top, r, b, ol, ot, or, ob) -> post(() -> {
+            LayoutParams p = (LayoutParams) feedBox.getLayoutParams();
+            if (p.bottomMargin != getHeight() - top + px(16)) {
+                p.bottomMargin = getHeight() - top + px(16);
+                feedBox.setLayoutParams(p);
+            }
+        }));
+    }
+
+    /** PopcornClaw: while the agent's feed shows, it takes the widgets' place (and the companion's) on the home. */
+    private void applyFeed() {
+        boolean home = activeWs == 1, on = home && feed.shown();
+        if (on && widgets.hasFocus()) focusApp(lastApp);
+        feedBox.setVisibility(on ? VISIBLE : INVISIBLE);
+        widgets.setVisibility(home && !on ? VISIBLE : GONE);
+        grokbotBox.setVisibility(home && !on && cfg != null && CompanionPlacement.homeTile(cfg.pluginGrokbot, cfg.companionOverlay) ? VISIBLE : GONE);
+        host.feedShown(on);
     }
 
     /** A full-width v2.9 window under the bar for workspaces 2-5 (hidden until its workspace is shown). */
@@ -585,6 +621,10 @@ final class HomeV29 extends FrameLayout {
                 : gbMsg != null ? " " + gbMsg : " companion · ask");
         // The floating face is the one companion: this "companion · ask" tile only stands in when it is off.
         grokbotBox.setVisibility(activeWs == 1 && CompanionPlacement.homeTile(c.pluginGrokbot, c.companionOverlay) ? VISIBLE : GONE);
+        // PopcornClaw: theme colours for the agent's feed and command popup; the feed may cover the widgets.
+        feedBox.setColors(winBg, t.muted, t.accent, t.cyan);
+        xyz.vvzvlad.popcornclaw.Palette.set(winBg, t.fgBright, t.fg, t.fgDim, t.accent);
+        applyFeed();
         for (BoxView b : remoteBox) b.setColors(winBg, t.muted, t.accent, t.cyan);
         // v2.10: every home widget can be switched off (Settings → Widgets); the clock lives only in the bar.
         wxBox.setVisibility(c.wWeather ? VISIBLE : GONE);
@@ -1523,6 +1563,7 @@ final class HomeV29 extends FrameLayout {
     }
 
     private boolean focusFirstVisible(ViewGroup g) {
+        if (g.getVisibility() != VISIBLE) return false;   // PopcornClaw: hidden under the agent's feed
         ViewGroup r1 = (ViewGroup) g.getChildAt(0);
         for (int i = 0; i < r1.getChildCount(); i++) {
             View v = r1.getChildAt(i);
