@@ -1,0 +1,699 @@
+diff --git a/pkg/agent/agent_test.go b/pkg/agent/agent_test.go
+index 4d6ba29..fe5869c 100644
+--- a/pkg/agent/agent_test.go
++++ b/pkg/agent/agent_test.go
+@@ -2763,7 +2763,7 @@ func TestToolFeedbackExplanationForToolCall_DoesNotReuseAnotherToolCallExplanati
+ 	}
+ 
+ 	got := toolFeedbackExplanationForToolCall(response, response.ToolCalls[0], messages)
+-	want := utils.ToolFeedbackContinuationHint + ": inspect the config and update the example"
++	want := ""
+ 	if got != want {
+ 		t.Fatalf("toolFeedbackExplanationForToolCall() = %q, want %q", got, want)
+ 	}
+@@ -5842,17 +5842,17 @@ func TestProcessMessage_PublishesToolFeedbackWhenEnabled(t *testing.T) {
+ 		if !strings.Contains(outbound.Content, "`read_file`") {
+ 			t.Fatalf("tool feedback content = %q, want read_file summary", outbound.Content)
+ 		}
+-		if !strings.Contains(outbound.Content, utils.ToolFeedbackContinuationHint) {
+-			t.Fatalf("tool feedback content = %q, want continuation hint fallback", outbound.Content)
++		if strings.Contains(outbound.Content, utils.ToolFeedbackContinuationHint) {
++			t.Fatalf("tool feedback content = %q, want no continuation hint fallback", outbound.Content)
+ 		}
+-		if !strings.Contains(outbound.Content, "check tool feedback") {
+-			t.Fatalf("tool feedback content = %q, want current user intent fallback", outbound.Content)
++		if strings.Contains(outbound.Content, "check tool feedback") {
++			t.Fatalf("tool feedback content = %q, want no user message echo", outbound.Content)
+ 		}
+-		if !strings.Contains(outbound.Content, "\"path\":") {
+-			t.Fatalf("tool feedback content = %q, want serialized tool arguments", outbound.Content)
++		if strings.Contains(outbound.Content, "\"path\":") {
++			t.Fatalf("tool feedback content = %q, want no serialized tool arguments", outbound.Content)
+ 		}
+-		if !strings.Contains(outbound.Content, escapedHeartbeatFile) {
+-			t.Fatalf("tool feedback content = %q, want tool argument value", outbound.Content)
++		if strings.Contains(outbound.Content, escapedHeartbeatFile) {
++			t.Fatalf("tool feedback content = %q, want no tool argument value", outbound.Content)
+ 		}
+ 		if strings.Contains(outbound.Content, "Previous turn explanation") {
+ 			t.Fatalf("tool feedback content = %q, want no previous assistant fallback", outbound.Content)
+@@ -6097,17 +6097,17 @@ func TestProcessMessage_DoesNotLeakReasoningContentInToolFeedback(t *testing.T)
+ 		if !strings.Contains(outbound.Content, "`read_file`") {
+ 			t.Fatalf("tool feedback content = %q, want read_file summary", outbound.Content)
+ 		}
+-		if !strings.Contains(outbound.Content, utils.ToolFeedbackContinuationHint) {
+-			t.Fatalf("tool feedback content = %q, want continuation hint fallback", outbound.Content)
++		if strings.Contains(outbound.Content, utils.ToolFeedbackContinuationHint) {
++			t.Fatalf("tool feedback content = %q, want no continuation hint fallback", outbound.Content)
+ 		}
+-		if !strings.Contains(outbound.Content, "check reasoning fallback") {
+-			t.Fatalf("tool feedback content = %q, want current user intent fallback", outbound.Content)
++		if strings.Contains(outbound.Content, "check reasoning fallback") {
++			t.Fatalf("tool feedback content = %q, want no user message echo", outbound.Content)
+ 		}
+-		if !strings.Contains(outbound.Content, "\"path\":") {
+-			t.Fatalf("tool feedback content = %q, want serialized tool arguments", outbound.Content)
++		if strings.Contains(outbound.Content, "\"path\":") {
++			t.Fatalf("tool feedback content = %q, want no serialized tool arguments", outbound.Content)
+ 		}
+-		if !strings.Contains(outbound.Content, escapedHeartbeatFile) {
+-			t.Fatalf("tool feedback content = %q, want tool argument value", outbound.Content)
++		if strings.Contains(outbound.Content, escapedHeartbeatFile) {
++			t.Fatalf("tool feedback content = %q, want no tool argument value", outbound.Content)
+ 		}
+ 		if strings.Contains(outbound.Content, "Read README.md first") {
+ 			t.Fatalf("tool feedback content = %q, should not leak hidden reasoning", outbound.Content)
+diff --git a/pkg/agent/agent_utils.go b/pkg/agent/agent_utils.go
+index 85228b5..867a2a8 100644
+--- a/pkg/agent/agent_utils.go
++++ b/pkg/agent/agent_utils.go
+@@ -16,6 +16,7 @@ import (
+ 	"github.com/sipeed/picoclaw/pkg/logger"
+ 	"github.com/sipeed/picoclaw/pkg/providers"
+ 	"github.com/sipeed/picoclaw/pkg/session"
++	"github.com/sipeed/picoclaw/pkg/tools"
+ 	"github.com/sipeed/picoclaw/pkg/utils"
+ )
+ 
+@@ -185,22 +186,22 @@ func toolFeedbackExplanationFromToolCalls(toolCalls []providers.ToolCall) string
+ func toolFeedbackExplanationForToolCall(
+ 	response *providers.LLMResponse,
+ 	toolCall providers.ToolCall,
+-	messages []providers.Message,
++	_ []providers.Message,
+ ) string {
++	if status, ok := toolCall.Arguments[tools.ToolStatusArg].(string); ok {
++		if explanation := strings.TrimSpace(status); explanation != "" {
++			return explanation
++		}
++	}
+ 	if toolCall.ExtraContent != nil {
+ 		if explanation := strings.TrimSpace(toolCall.ExtraContent.ToolFeedbackExplanation); explanation != "" {
+ 			return explanation
+ 		}
+ 	}
+ 	if response == nil {
+-		return toolFeedbackExplanationFromMessages(messages)
+-	}
+-
+-	explanation := strings.TrimSpace(response.Content)
+-	if explanation == "" {
+-		explanation = toolFeedbackExplanationFromMessages(messages)
++		return ""
+ 	}
+-	return explanation
++	return strings.TrimSpace(response.Content)
+ }
+ 
+ func toolFeedbackExplanationFromMessages(messages []providers.Message) string {
+diff --git a/pkg/agent/pipeline_execute.go b/pkg/agent/pipeline_execute.go
+index 59e3331..b393022 100644
+--- a/pkg/agent/pipeline_execute.go
++++ b/pkg/agent/pipeline_execute.go
+@@ -131,6 +131,7 @@ toolLoop:
+ 
+ 		toolName := tc.Name
+ 		toolArgs := cloneStringAnyMap(tc.Arguments)
++		tools.StripToolStatus(toolArgs)
+ 		denyByTurnProfile := func() bool {
+ 			if turnProfileToolAllowed(ts.profile, toolName) {
+ 				return false
+@@ -198,7 +199,6 @@ toolLoop:
+ 					)
+ 
+ 					if shouldPublishToolFeedback(al.cfg, ts) && ts.channel != "pico" {
+-						toolFeedbackMaxLen := al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength()
+ 						toolFeedbackExplanation := toolFeedbackExplanationForToolCall(
+ 							exec.response,
+ 							tc,
+@@ -207,7 +207,7 @@ toolLoop:
+ 						feedbackMsg := utils.FormatToolFeedbackMessage(
+ 							toolName,
+ 							toolFeedbackExplanation,
+-							toolFeedbackArgsPreview(toolArgs, toolFeedbackMaxLen),
++							"",
+ 						)
+ 						fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
+ 						_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurnWithOptions(
+@@ -490,7 +490,6 @@ toolLoop:
+ 		)
+ 
+ 		if shouldPublishToolFeedback(al.cfg, ts) && ts.channel != "pico" {
+-			toolFeedbackMaxLen := al.cfg.Agents.Defaults.GetToolFeedbackMaxArgsLength()
+ 			toolFeedbackExplanation := toolFeedbackExplanationForToolCall(
+ 				exec.response,
+ 				tc,
+@@ -499,7 +498,7 @@ toolLoop:
+ 			feedbackMsg := utils.FormatToolFeedbackMessage(
+ 				toolName,
+ 				toolFeedbackExplanation,
+-				toolFeedbackArgsPreview(toolArgs, toolFeedbackMaxLen),
++				"",
+ 			)
+ 			fbCtx, fbCancel := context.WithTimeout(turnCtx, 3*time.Second)
+ 			_ = al.bus.PublishOutbound(fbCtx, outboundMessageForTurnWithOptions(
+diff --git a/pkg/agent/tool_status_test.go b/pkg/agent/tool_status_test.go
+new file mode 100644
+index 0000000..a442380
+--- /dev/null
++++ b/pkg/agent/tool_status_test.go
+@@ -0,0 +1,154 @@
++package agent
++
++import (
++	"context"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/sipeed/picoclaw/pkg/bus"
++	"github.com/sipeed/picoclaw/pkg/config"
++	"github.com/sipeed/picoclaw/pkg/providers"
++	"github.com/sipeed/picoclaw/pkg/tools"
++)
++
++type toolStatusProvider struct {
++	calls int
++}
++
++func (m *toolStatusProvider) Chat(
++	ctx context.Context,
++	messages []providers.Message,
++	defs []providers.ToolDefinition,
++	model string,
++	opts map[string]any,
++) (*providers.LLMResponse, error) {
++	m.calls++
++	if m.calls == 1 {
++		return &providers.LLMResponse{
++			ToolCalls: []providers.ToolCall{{
++				ID:   "call_status_probe",
++				Type: "function",
++				Name: "status_probe",
++				Arguments: map[string]any{
++					"status": "Проверяю, что статус доходит до чата",
++					"value":  "x",
++				},
++			}},
++		}, nil
++	}
++	return &providers.LLMResponse{Content: "DONE"}, nil
++}
++
++func (m *toolStatusProvider) GetDefaultModel() string {
++	return "tool-status-model"
++}
++
++// statusProbeTool has a strict schema without "status" and records the args it gets.
++type statusProbeTool struct {
++	mu   sync.Mutex
++	args map[string]any
++}
++
++func (t *statusProbeTool) Name() string { return "status_probe" }
++
++func (t *statusProbeTool) Description() string { return "records its arguments" }
++
++func (t *statusProbeTool) Parameters() map[string]any {
++	return map[string]any{
++		"type": "object",
++		"properties": map[string]any{
++			"value": map[string]any{"type": "string"},
++		},
++		"required": []string{"value"},
++	}
++}
++
++func (t *statusProbeTool) Execute(_ context.Context, args map[string]any) *tools.ToolResult {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++	t.args = args
++	return tools.NewToolResult("ok")
++}
++
++func TestProcessMessage_ToolStatusArgBecomesFeedbackAndIsStripped(t *testing.T) {
++	cfg := &config.Config{
++		Agents: config.AgentsConfig{
++			Defaults: config.AgentDefaults{
++				Workspace:         t.TempDir(),
++				ModelName:         "test-model",
++				MaxTokens:         4096,
++				MaxToolIterations: 10,
++				ToolFeedback: config.ToolFeedbackConfig{
++					Enabled:       true,
++					MaxArgsLength: 300,
++				},
++			},
++		},
++	}
++
++	msgBus := bus.NewMessageBus()
++	al := NewAgentLoop(cfg, msgBus, &toolStatusProvider{})
++	probe := &statusProbeTool{}
++	al.RegisterTool(probe)
++
++	response, err := al.processMessage(context.Background(), testInboundMessage(bus.InboundMessage{
++		Channel:  "telegram",
++		SenderID: "user-1",
++		ChatID:   "chat-1",
++		Content:  "сделай что-нибудь",
++	}))
++	if err != nil {
++		t.Fatalf("processMessage() error = %v", err)
++	}
++	if response != "DONE" {
++		t.Fatalf("processMessage() response = %q, want %q", response, "DONE")
++	}
++
++	probe.mu.Lock()
++	gotArgs := probe.args
++	probe.mu.Unlock()
++	if gotArgs == nil {
++		t.Fatal("status_probe was not executed")
++	}
++	if _, ok := gotArgs["status"]; ok {
++		t.Fatalf("tool args = %v, want status stripped", gotArgs)
++	}
++	if gotArgs["value"] != "x" {
++		t.Fatalf("tool args = %v, want value=x", gotArgs)
++	}
++
++	select {
++	case outbound := <-msgBus.OutboundChan():
++		want := "\U0001f527 `status_probe`\nПроверяю, что статус доходит до чата"
++		if outbound.Content != want {
++			t.Fatalf("tool feedback content = %q, want %q", outbound.Content, want)
++		}
++	case <-time.After(2 * time.Second):
++		t.Fatal("expected outbound tool feedback")
++	}
++}
++
++func TestToolFeedbackExplanationForToolCall_StatusArgWins(t *testing.T) {
++	toolCall := providers.ToolCall{
++		ID:   "call_1",
++		Name: "read_file",
++		Arguments: map[string]any{
++			tools.ToolStatusArg: "  Читаю конфиг, чтобы найти порт  ",
++			"path":              "config.json",
++		},
++		ExtraContent: &providers.ExtraContent{
++			ToolFeedbackExplanation: "Explanation from extra content",
++		},
++	}
++	response := &providers.LLMResponse{
++		Content:   "Explanation from response content",
++		ToolCalls: []providers.ToolCall{toolCall},
++	}
++
++	got := toolFeedbackExplanationForToolCall(response, toolCall, nil)
++	want := "Читаю конфиг, чтобы найти порт"
++	if got != want {
++		t.Fatalf("toolFeedbackExplanationForToolCall() = %q, want %q", got, want)
++	}
++}
+diff --git a/pkg/tools/registry.go b/pkg/tools/registry.go
+index e90d683..ff0363c 100644
+--- a/pkg/tools/registry.go
++++ b/pkg/tools/registry.go
+@@ -425,7 +425,7 @@ func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
+ 			Function: providers.ToolFunctionDefinition{
+ 				Name:        name,
+ 				Description: desc,
+-				Parameters:  params,
++				Parameters:  withToolStatusParam(params),
+ 			},
+ 			PromptLayer:  metadata.Layer,
+ 			PromptSlot:   metadata.Slot,
+@@ -435,6 +435,47 @@ func (r *ToolRegistry) ToProviderDefs() []providers.ToolDefinition {
+ 	return definitions
+ }
+ 
++// ToolStatusArg is the required argument added to every tool schema sent to the
++// LLM. The model fills it with a short phrase shown in chat as the tool feedback
++// status; it is stripped from the arguments before the tool runs.
++const ToolStatusArg = "status"
++
++const toolStatusDescription = "Одна короткая фраза по-русски для пользователя: что ты сейчас делаешь и зачем, на каком ты этапе. Показывается в чате как статус. Не команда и не аргументы."
++
++// withToolStatusParam returns a copy of params with the required status argument
++// added, leaving the tool's own schema untouched.
++func withToolStatusParam(params map[string]any) map[string]any {
++	out := make(map[string]any, len(params)+2)
++	for k, v := range params {
++		out[k] = v
++	}
++	props := map[string]any{}
++	if existing, ok := params["properties"].(map[string]any); ok {
++		for k, v := range existing {
++			props[k] = v
++		}
++	}
++	props[ToolStatusArg] = map[string]any{
++		"type":        "string",
++		"description": toolStatusDescription,
++	}
++	out["properties"] = props
++	switch required := params["required"].(type) {
++	case []string:
++		out["required"] = append(append([]string{}, required...), ToolStatusArg)
++	case []any:
++		out["required"] = append(append([]any{}, required...), ToolStatusArg)
++	default:
++		out["required"] = []string{ToolStatusArg}
++	}
++	return out
++}
++
++// StripToolStatus removes the status argument from args so tools never receive it.
++func StripToolStatus(args map[string]any) {
++	delete(args, ToolStatusArg)
++}
++
+ func promptMetadataForTool(tool Tool) PromptMetadata {
+ 	metadata := PromptMetadata{
+ 		Layer:  ToolPromptLayerCapability,
+diff --git a/pkg/tools/registry_test.go b/pkg/tools/registry_test.go
+index ee63586..d02caad 100644
+--- a/pkg/tools/registry_test.go
++++ b/pkg/tools/registry_test.go
+@@ -5,6 +5,8 @@ import (
+ 	"errors"
+ 	"os"
+ 	"path/filepath"
++	"reflect"
++	"slices"
+ 	"strings"
+ 	"sync"
+ 	"testing"
+@@ -380,6 +382,155 @@ func TestToolRegistry_ToProviderDefs(t *testing.T) {
+ 	}
+ }
+ 
++// requiredNames flattens a schema "required" value ([]string or []any) to strings.
++func requiredNames(t *testing.T, v any) []string {
++	t.Helper()
++	switch req := v.(type) {
++	case nil:
++		return nil
++	case []string:
++		return req
++	case []any:
++		names := make([]string, 0, len(req))
++		for _, item := range req {
++			name, ok := item.(string)
++			if !ok {
++				t.Fatalf("required item %#v is not a string", item)
++			}
++			names = append(names, name)
++		}
++		return names
++	default:
++		t.Fatalf("required = %#v (%T), want []string or []any", v, v)
++		return nil
++	}
++}
++
++func TestToolRegistry_ToProviderDefsAddsRequiredStatusParam(t *testing.T) {
++	tests := []struct {
++		name string
++		// params builds a fresh schema on every call, so the registered copy can be
++		// compared against a pristine one after ToProviderDefs.
++		params func() map[string]any
++	}{
++		{
++			name: "required as []string",
++			params: func() map[string]any {
++				return map[string]any{
++					"type": "object",
++					"properties": map[string]any{
++						"path": map[string]any{"type": "string"},
++					},
++					// Spare capacity exposes an in-place append into the tool's slice.
++					"required": append(make([]string, 0, 4), "path"),
++				}
++			},
++		},
++		{
++			name: "required as []any",
++			params: func() map[string]any {
++				return map[string]any{
++					"type": "object",
++					"properties": map[string]any{
++						"query": map[string]any{"type": "string"},
++						"limit": map[string]any{"type": "integer"},
++					},
++					"required": append(make([]any, 0, 4), "query"),
++				}
++			},
++		},
++		{
++			name: "without properties and required",
++			params: func() map[string]any {
++				return map[string]any{"type": "object"}
++			},
++		},
++		{
++			name: "additionalProperties false",
++			params: func() map[string]any {
++				return map[string]any{
++					"type": "object",
++					"properties": map[string]any{
++						"value": map[string]any{"type": "string"},
++					},
++					"required":             []string{"value"},
++					"additionalProperties": false,
++				}
++			},
++		},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			params := tt.params()
++			r := NewToolRegistry()
++			r.Register(&mockRegistryTool{
++				name:   "probe",
++				desc:   "schema probe",
++				params: params,
++				result: SilentResult("ok"),
++			})
++
++			defs := r.ToProviderDefs()
++			if len(defs) != 1 {
++				t.Fatalf("expected 1 provider def, got %d", len(defs))
++			}
++			got := defs[0].Function.Parameters
++			want := tt.params()
++
++			props, ok := got["properties"].(map[string]any)
++			if !ok {
++				t.Fatalf("properties = %#v, want a map", got["properties"])
++			}
++			status, ok := props[ToolStatusArg].(map[string]any)
++			if !ok || status["type"] != "string" {
++				t.Fatalf("properties[%q] = %#v, want a string schema", ToolStatusArg, props[ToolStatusArg])
++			}
++
++			required := requiredNames(t, got["required"])
++			if !slices.Contains(required, ToolStatusArg) {
++				t.Fatalf("required = %v, want it to contain %q", required, ToolStatusArg)
++			}
++
++			// The tool's own fields survive: required names, properties, other keys.
++			for _, name := range requiredNames(t, want["required"]) {
++				if !slices.Contains(required, name) {
++					t.Errorf("required = %v, want it to keep %q", required, name)
++				}
++			}
++			wantProps, _ := want["properties"].(map[string]any)
++			for name, schema := range wantProps {
++				if !reflect.DeepEqual(props[name], schema) {
++					t.Errorf("properties[%q] = %#v, want %#v", name, props[name], schema)
++				}
++			}
++			for key, value := range want {
++				if key == "properties" || key == "required" {
++					continue
++				}
++				if !reflect.DeepEqual(got[key], value) {
++					t.Errorf("%s = %#v, want %#v", key, got[key], value)
++				}
++			}
++
++			// The tool's own schema is not mutated, including spare slice capacity.
++			if !reflect.DeepEqual(params, want) {
++				t.Errorf("Parameters() mutated to %#v, want %#v", params, want)
++			}
++			switch req := params["required"].(type) {
++			case []string:
++				if slices.Contains(req[:cap(req)], ToolStatusArg) {
++					t.Errorf("Parameters() required backing array got %q", ToolStatusArg)
++				}
++			case []any:
++				if slices.Contains(req[:cap(req)], any(ToolStatusArg)) {
++					t.Errorf("Parameters() required backing array got %q", ToolStatusArg)
++				}
++			}
++		})
++	}
++}
++
+ func TestToolRegistry_List(t *testing.T) {
+ 	r := NewToolRegistry()
+ 	r.Register(newMockTool("x", ""))
+diff --git a/pkg/tools/toolloop.go b/pkg/tools/toolloop.go
+index c925c77..89aff6a 100644
+--- a/pkg/tools/toolloop.go
++++ b/pkg/tools/toolloop.go
+@@ -10,6 +10,7 @@ import (
+ 	"context"
+ 	"encoding/json"
+ 	"fmt"
++	"maps"
+ 	"runtime/debug"
+ 	"sync"
+ 
+@@ -188,7 +189,10 @@ func RunToolLoop(
+ 
+ 				var toolResult *ToolResult
+ 				if config.Tools != nil {
+-					toolResult = config.Tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, channel, chatID, nil)
++					// Clone: tc.Arguments is shared with the assistant message in history.
++					toolArgs := maps.Clone(tc.Arguments)
++					StripToolStatus(toolArgs)
++					toolResult = config.Tools.ExecuteWithContext(ctx, tc.Name, toolArgs, channel, chatID, nil)
+ 				} else {
+ 					toolResult = ErrorResult("No tools available")
+ 				}
+diff --git a/pkg/tools/toolloop_test.go b/pkg/tools/toolloop_test.go
+new file mode 100644
+index 0000000..1ef5e77
+--- /dev/null
++++ b/pkg/tools/toolloop_test.go
+@@ -0,0 +1,125 @@
++package tools
++
++import (
++	"context"
++	"sync"
++	"testing"
++
++	"github.com/sipeed/picoclaw/pkg/providers"
++)
++
++const statusLoopStatus = "Проверяю, что статус не доходит до инструмента"
++
++// statusLoopProvider requests one tool call carrying the status argument, then
++// answers and records the history it was given on that last call.
++type statusLoopProvider struct {
++	calls   int
++	history []providers.Message
++}
++
++func (p *statusLoopProvider) Chat(
++	_ context.Context,
++	messages []providers.Message,
++	_ []providers.ToolDefinition,
++	_ string,
++	_ map[string]any,
++) (*providers.LLMResponse, error) {
++	p.calls++
++	if p.calls == 1 {
++		return &providers.LLMResponse{
++			ToolCalls: []providers.ToolCall{{
++				ID:   "call_status",
++				Type: "function",
++				Name: "status_recorder",
++				Arguments: map[string]any{
++					ToolStatusArg: statusLoopStatus,
++					"value":       "x",
++				},
++			}},
++		}, nil
++	}
++	p.history = messages
++	return &providers.LLMResponse{Content: "DONE"}, nil
++}
++
++func (p *statusLoopProvider) GetDefaultModel() string { return "status-loop-model" }
++
++// statusRecorderTool accepts extra arguments (additionalProperties: true; the
++// validator rejects unknown ones by default), so a leaked status reaches Execute
++// instead of failing validation.
++type statusRecorderTool struct {
++	mu   sync.Mutex
++	args map[string]any
++}
++
++func (t *statusRecorderTool) Name() string { return "status_recorder" }
++
++func (t *statusRecorderTool) Description() string { return "records its arguments" }
++
++func (t *statusRecorderTool) Parameters() map[string]any {
++	return map[string]any{
++		"type": "object",
++		"properties": map[string]any{
++			"value": map[string]any{"type": "string"},
++		},
++		"required":             []string{"value"},
++		"additionalProperties": true,
++	}
++}
++
++func (t *statusRecorderTool) Execute(_ context.Context, args map[string]any) *ToolResult {
++	t.mu.Lock()
++	defer t.mu.Unlock()
++	t.args = args
++	return NewToolResult("ok")
++}
++
++func TestRunToolLoop_StripsStatusBeforeToolExecution(t *testing.T) {
++	tool := &statusRecorderTool{}
++	registry := NewToolRegistry()
++	registry.Register(tool)
++	provider := &statusLoopProvider{}
++
++	result, err := RunToolLoop(
++		context.Background(),
++		ToolLoopConfig{
++			Provider:      provider,
++			Model:         "status-loop-model",
++			Tools:         registry,
++			MaxIterations: 3,
++		},
++		[]providers.Message{{Role: "user", Content: "do it"}},
++		"telegram",
++		"chat-1",
++	)
++	if err != nil {
++		t.Fatalf("RunToolLoop() error = %v", err)
++	}
++	if result.Content != "DONE" {
++		t.Fatalf("RunToolLoop() content = %q, want %q", result.Content, "DONE")
++	}
++
++	tool.mu.Lock()
++	args := tool.args
++	tool.mu.Unlock()
++	if args == nil {
++		t.Fatal("status_recorder was not executed")
++	}
++	if _, ok := args[ToolStatusArg]; ok {
++		t.Fatalf("tool args = %v, want %q stripped", args, ToolStatusArg)
++	}
++	if args["value"] != "x" {
++		t.Fatalf("tool args = %v, want value=x", args)
++	}
++
++	// Stripping works on a copy: the assistant message in history keeps the status.
++	var historyArgs map[string]any
++	for _, msg := range provider.history {
++		if msg.Role == "assistant" && len(msg.ToolCalls) == 1 {
++			historyArgs = msg.ToolCalls[0].Arguments
++		}
++	}
++	if historyArgs[ToolStatusArg] != statusLoopStatus {
++		t.Fatalf("assistant tool call args in history = %v, want %q kept", historyArgs, ToolStatusArg)
++	}
++}
