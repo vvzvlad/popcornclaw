@@ -71,14 +71,16 @@ public class ThemeTest {
     public void v213BetaDefaultsAndRandomRotationLocking() throws Exception {
         try {
             LauncherConfig defCfg = new LauncherConfig(null, null, 0L);
-            assertEquals("last-horizon", defCfg.theme.name);
+            // popcornclaw: the popcorn theme is the default and rotation is off unless switched on.
+            assertEquals("popcorn", defCfg.theme.name);
             assertEquals("aquarium", defCfg.screensaverArt);
             assertEquals("aquarium", defCfg.screensaverMode);
             assertTrue(defCfg.saverSound);
-            assertTrue(defCfg.randomTheme);
-            assertTrue(defCfg.randomWallpaper);
+            org.junit.Assert.assertFalse(defCfg.randomTheme);
+            org.junit.Assert.assertFalse(defCfg.randomWallpaper);
+            org.junit.Assert.assertFalse(LauncherConfig.applyRandomRotation(new JSONObject(), new java.util.Random(42L)));
 
-            JSONObject j = new JSONObject();
+            JSONObject j = new JSONObject().put("random_theme", true).put("random_wallpaper", true);
             assertTrue(LauncherConfig.applyRandomRotation(j, new java.util.Random(42L)));
             String rotTheme = j.getJSONObject("theme").getString("name");
             assertTrue("last-horizon".equals(rotTheme) || "cumulus".equals(rotTheme));

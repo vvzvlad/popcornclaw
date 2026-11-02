@@ -379,6 +379,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             }
 
             @Override
+            public void feedShown(boolean on) {   // PopcornClaw: the floating companion's corner is inside the agent's feed
+                if (companion == null || on == (companion.getVisibility() != View.VISIBLE)) return;
+                if (on) {
+                    companion.setVisibility(View.GONE);
+                    companion.stop();
+                } else companion.bind(LauncherConfig.get(MainActivity.this));
+            }
+
+            @Override
             public boolean pcPaired() {
                 return !OmarchyLink.pcs().isEmpty();
             }
