@@ -657,8 +657,9 @@ final class LauncherConfig {
         syncPcWallpaper = j != null && j.optBoolean("syncPcWallpaper", false);
         wallpaperIntro = j == null || j.optBoolean("wallpaper_intro", j.optBoolean("wallpaperIntro", true));
         wallpaperLoop = j != null && j.optBoolean("wallpaperLoop", false);
-        randomTheme = j == null || j.optBoolean("random_theme", j.optBoolean("randomTheme", true));
-        randomWallpaper = j == null || j.optBoolean("random_wallpaper", j.optBoolean("randomWallpaper", true));
+        // popcornclaw: the popcorn theme stays put unless rotation is switched on.
+        randomTheme = j != null && j.optBoolean("random_theme", j.optBoolean("randomTheme", false));
+        randomWallpaper = j != null && j.optBoolean("random_wallpaper", j.optBoolean("randomWallpaper", false));
         JSONObject plObj = j != null ? j.optJSONObject("plugins") : null;
         pluginSpacexTv = plObj == null || plObj.optBoolean("spacexTv", true);
         pluginGrokbot = plObj == null || plObj.optBoolean("grokbot", true);
@@ -699,9 +700,9 @@ final class LauncherConfig {
         wallpaperBg = j != null ? Math.max(0, j.optInt("wallpaper_bg", 0)) : 0;
         JSONObject theme = j != null ? j.optJSONObject("theme") : null;
         if (theme == null && j != null && j.opt("theme") instanceof String) {
-            try { theme = new JSONObject().put("name", j.optString("theme", "last-horizon")); } catch (Exception ignored) {}
+            try { theme = new JSONObject().put("name", j.optString("theme", "popcorn")); } catch (Exception ignored) {}
         }
-        // All colours come from the Omarchy theme (pushed colours > bundled stock palette > Last Horizon default).
+        // All colours come from the Omarchy theme (pushed colours > bundled stock palette > popcorn default).
         this.theme = Theme.resolve(c, theme);
         accent = this.theme.accent;
         accent2 = this.theme.accent2;
@@ -795,12 +796,12 @@ final class LauncherConfig {
      */
     static boolean applyRandomRotation(JSONObject j, java.util.Random rng) {
         if (j == null || rng == null) return false;
-        boolean rt = j.optBoolean("random_theme", j.optBoolean("randomTheme", true));
-        boolean rw = j.optBoolean("random_wallpaper", j.optBoolean("randomWallpaper", true));
+        boolean rt = j.optBoolean("random_theme", j.optBoolean("randomTheme", false));
+        boolean rw = j.optBoolean("random_wallpaper", j.optBoolean("randomWallpaper", false));
         if (!rt && !rw) return false;
         try {
             JSONObject curThemeObj = j.optJSONObject("theme");
-            String curTheme = curThemeObj != null ? curThemeObj.optString("name", "last-horizon") : j.optString("theme", "last-horizon");
+            String curTheme = curThemeObj != null ? curThemeObj.optString("name", "popcorn") : j.optString("theme", "popcorn");
             int curBg = j.optInt("wallpaper_bg", 0);
             String curWp = j.optString("wallpaper", "omarchy");
             if (rt && rw) {
