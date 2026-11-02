@@ -271,7 +271,7 @@
     <string name="home_check_restore">Make OmarchyTV the home screen</string>
     <string name="home_check_later">Not now</string>
     <string name="home_check_never">Don\'t ask again</string>
-    <string name="home_check_adb">Pick OmarchyTV and Always, or run: cmd package set-home-activity --user 0 com.omarchytv.home/.MainActivity</string>
+    <string name="home_check_adb">Pick OmarchyTV and Always, or run: cmd package set-home-activity --user 0 xyz.vvzvlad.popcornclaw/com.omarchytv.home.MainActivity</string>
     <string name="set_originale">Originale (Sony home)</string>
     <string name="originale_wait">Switching… accept \"Allow debugging?\" on the TV if asked</string>
     <string name="originale_on">Stock Sony home and screensaver are back. Press again to return to OmarchyTV</string>

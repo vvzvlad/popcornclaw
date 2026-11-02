@@ -294,6 +294,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         // Omarchy Link (TV side): LAN server + mDNS, lives with the launcher process.
         OmarchyLink.start(this);
         OmarchyLink.addListener(linkListener);
+        startService(new Intent(this, xyz.vvzvlad.popcornclaw.AgentService.class));   // PopcornClaw
         setupHomeV29();
     }
 

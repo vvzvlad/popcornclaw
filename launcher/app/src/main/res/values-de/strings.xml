@@ -258,7 +258,7 @@
     <string name="home_check_restore">OmarchyTV als Startbildschirm</string>
     <string name="home_check_later">Nicht jetzt</string>
     <string name="home_check_never">Nicht mehr fragen</string>
-    <string name="home_check_adb">OmarchyTV und Immer wählen, oder: cmd package set-home-activity --user 0 com.omarchytv.home/.MainActivity</string>
+    <string name="home_check_adb">OmarchyTV und Immer wählen, oder: cmd package set-home-activity --user 0 xyz.vvzvlad.popcornclaw/com.omarchytv.home.MainActivity</string>
     <string name="set_originale">Original (Sony-Startbildschirm)</string>
     <string name="originale_wait">Wird umgeschaltet… ggf. \"Debugging zulassen?\" auf dem TV bestätigen</string>
     <string name="originale_on">Sony-Startbildschirm und Bildschirmschoner sind zurück. Erneut drücken für OmarchyTV</string>

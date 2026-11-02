@@ -7,11 +7,30 @@ android {
     compileSdk 34
 
     defaultConfig {
-        applicationId 'com.omarchytv.home'
+        applicationId 'xyz.vvzvlad.popcornclaw'   // PopcornClaw
         minSdk 24
         targetSdk 34
         versionCode 25
         versionName '2.13.8'
+    }
+
+    // PopcornClaw: the project's debug key launcher/debug.keystore.
+    signingConfigs {
+        debug {
+            storeFile rootProject.file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
+    // PopcornClaw: the PicoClaw binary rides in jniLibs as libpicoclaw.so (copied there by the Makefile) so
+    // the installer extracts it as an executable file; it is a static Go binary, not a library: never strip it.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            keepDebugSymbols += '**/libpicoclaw.so'
+        }
     }
 
     buildTypes {

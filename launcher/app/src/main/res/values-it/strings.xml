@@ -258,7 +258,7 @@
     <string name="home_check_restore">Rendi OmarchyTV la schermata Home</string>
     <string name="home_check_later">Non ora</string>
     <string name="home_check_never">Non chiedere più</string>
-    <string name="home_check_adb">Scegli OmarchyTV e Sempre, oppure: cmd package set-home-activity --user 0 com.omarchytv.home/.MainActivity</string>
+    <string name="home_check_adb">Scegli OmarchyTV e Sempre, oppure: cmd package set-home-activity --user 0 xyz.vvzvlad.popcornclaw/com.omarchytv.home.MainActivity</string>
     <string name="set_originale">Originale (home Sony)</string>
     <string name="originale_wait">Cambio in corso… se richiesto accetta \"Consentire il debug?\" sulla TV</string>
     <string name="originale_on">Home e salvaschermo Sony ripristinati. Premi di nuovo per tornare a OmarchyTV</string>

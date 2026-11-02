@@ -17,7 +17,7 @@
     <!-- Lets "Uninstall" in the tile menu open the system uninstall dialog (the system always asks). -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <!-- Omarchy Link status: which app is in front. Granted by the user (Usage access) or over adb:
-         adb shell appops set com.omarchytv.home GET_USAGE_STATS allow   (nothing breaks without it) -->
+         adb shell appops set xyz.vvzvlad.popcornclaw GET_USAGE_STATS allow   (nothing breaks without it) -->
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
@@ -88,6 +88,18 @@
         android:theme="@style/Theme.TvHome"
         android:networkSecurityConfig="@xml/network_security_config"
         android:allowBackup="false">
+
+        <!-- PopcornClaw: keeps the PicoClaw gateway (lib/armeabi-v7a/libpicoclaw.so) running as root. -->
+        <service
+            android:name="xyz.vvzvlad.popcornclaw.AgentService"
+            android:exported="false" />
+        <receiver
+            android:name="xyz.vvzvlad.popcornclaw.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <activity
             android:name=".MainActivity"
@@ -240,7 +252,7 @@
              the home screen; Screensaver → "Also use as system screensaver" enables these components.
              Android runs them only after the idle timeout, never over playing video.
              Pick one in Settings, or over adb:
-             settings put secure screensaver_components com.omarchytv.home/.OmarchyDream
+             settings put secure screensaver_components xyz.vvzvlad.popcornclaw/com.omarchytv.home.OmarchyDream
              settings put secure screensaver_enabled 1 -->
         <!-- v2.10: enabled so DreamManager can find it (Android 9 reported "does not exist" while the component
              was disabled); it still runs only if picked as the TV's screensaver.
