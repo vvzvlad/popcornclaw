@@ -1,0 +1,24 @@
+OmarchyTV
+Copyright (c) 2026 Marco Porro (x.com/MarcoPorro · www.marcoporro.it, MIT)
+
+This product includes third-party software, fonts and artwork:
+- Omarchy logo, icon, theme palettes and wordmark backgrounds - (c) David Heinemeier Hansson, MIT
+- Jade Horse & Year of the Horse themes and original wallpapers - (c) 2026 David Heinemeier Hansson (dhh/omarchy-jade-horse-theme, dhh/omarchy-year-of-the-horse-theme), MIT
+- Hermarchy theme and original SVG wallpapers - (c) 2026 Archer Clawbot (archer-clawbot/omarchy-hermarchy-theme), MIT
+- Cumulus theme, wallpapers & animated intros - (c) 2026 Erik Johansson (erikrjohansson/omarchy-cumulus-theme), MIT
+- Tokyo Roadster theme and wallpapers - (c) 2026 Tom Ballard (tcballard/omarchy-theme-tokyo-roadster), MIT; the wallpapers are Tom Ballard's work from this MIT repo
+- Last Horizon '01-eyes-wide' still & intro - original artwork by Erik Johansson (@erikrjohansson), included with his explicit permission (X, Oct 26, 2026); animated loop from Omarchy's themes/last-horizon
+- Grok Bot Desktop Companion v0.1.0 (commit a2efb00) - (c) 2026 Tom Ballard (tcballard/omarchy-plugin-grokbot-desktop), MIT: plugin id/name, the Grok Bot ball mark (redrawn from assets/grokbot-desktop.svg), and his avatar shapes, palette and eye geometry (qml/shapes.js, palette.js, face.js, vendored with his licence in webos/app/vendor/grokbot/, generated into GrokbotAvatarData.java on Android, face.js ported in GrokbotAvatar.java); the TV overlay, chat and omarchy-link bridge are OmarchyTV's own code
+- SpaceX TV plugin id and feed URL - (c) 2026 sighmon (sighmon/omarchy-spacex-tv), MIT; nothing copied
+- Aquarium screensaver - my homage to Future Crew's Second Reality (1993), inspired by asciiquarium by Kirk Baucom (GPL); no code, art or music copied, all original (MIT)
+- "Liftoff Sunset" wallpaper - Tom Ballard (https://x.com/tcballard), https://github.com/tcballard/omarchy-theme-tokyo-liftoff;
+  original photograph SpaceX (public domain per author); included with the author's permission (X, Oct 22, 2026)
+- Sharp AQUOS Live TV integration & bug reports - Anderson Leite (@anderson-leite), MIT
+- Free My TV (LocalAdb port) - (c) 2026 Free My TV contributors, MIT
+- tte.js - Flavio Copes, MIT; TerminalTextEffects - ChrisBuilds, MIT; ttfx - 37signals/omacom, MIT
+- Cascadia Code / CaskaydiaMono - (c) Microsoft Corporation, SIL OFL 1.1 (RFN "Cascadia Code"); Nerd Fonts, MIT
+- AndroidX / Media3 ExoPlayer - The Android Open Source Project, Apache License 2.0
+- Inspired by tv-vibehack by Gathin (MIT)
+Full details and licence texts: THIRD-PARTY.md and launcher/app/src/main/assets/licenses/.
+"Omarchy" is the Omarchy project's branding; this is an unofficial fan project.
+All other trademarks (Netflix, Google, Sony, Sharp, X, ...) belong to their owners; no endorsement implied.

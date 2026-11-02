@@ -1,0 +1,322 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Needed on Android 10 to read the Wi-Fi network name; granted over adb at install time. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Only used by the optional weather pane (Open-Meteo), off by default. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- v2.13.8: Grok Bot diretto listens with the in-app SpeechRecognizer (the remote mic). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Lets "Uninstall" in the tile menu open the system uninstall dialog (the system always asks). -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- Omarchy Link status: which app is in front. Granted by the user (Usage access) or over adb:
+         adb shell appops set com.omarchytv.home GET_USAGE_STATS allow   (nothing breaks without it) -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
+        tools:ignore="ProtectedPermissions" />
+
+    <!-- WireGuard (official app, Apache-2.0): lets the TV menu send SET_TUNNEL_UP / SET_TUNNEL_DOWN when
+         "Allow remote control apps" is enabled in the WireGuard app. -->
+    <uses-permission android:name="com.wireguard.android.permission.CONTROL_TUNNELS" />
+
+    <!-- Android 11+ package visibility for the speech recognizer and TTS (no effect on Android 8/9). -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+        <!-- Send to TV: is there a browser / the YouTube app (castKinds). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+        <package android:name="com.google.android.youtube.tv" />
+        <package android:name="com.wireguard.android" />
+        <!-- App list (Android 11+): TV and phone launcher entries only; no QUERY_ALL_PACKAGES. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- Home button override (HomeOverride): which activities are the stock home screens. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="vnd.android.cursor.dir/channel" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="vnd.android.cursor.item/channel" />
+        </intent>
+        <package android:name="com.sony.dtv.tvx" />
+        <package android:name="jp.co.sharp.av.android.aquostvapp" />
+        <package android:name="com.google.android.tv" />
+        <package android:name="com.android.tv" />
+        <package android:name="org.dtvkit.inputsource" />
+        <package android:name="com.tcl.tv" />
+        <package android:name="com.hisense.tv.livetv" />
+        <package android:name="com.philips.tv.tvapp" />
+        <package android:name="org.droidtv.playtv" />
+        <package android:name="org.droidtv.tv" />
+        <package android:name="org.droidtv.channels" />
+        <package android:name="org.droidtv.zapster" />
+        <package android:name="org.droidtv.eum" />
+    </queries>
+
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <application
+        android:name=".OmarchyApp"
+        android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:banner="@drawable/banner"
+        android:theme="@style/Theme.TvHome"
+        android:networkSecurityConfig="@xml/network_security_config"
+        android:allowBackup="false">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:stateNotNeeded="true"
+            android:excludeFromRecents="true"
+            android:clearTaskOnLaunch="true"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|uiMode"
+            android:screenOrientation="landscape">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+            <intent-filter android:priority="10">
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <!-- Lets OmarchyTV hold the Assistant role, so remotes whose mic key sends KEYCODE_ASSIST (handled by the
+                 system before any app, e.g. the SHIELD remote) open Walker instead of Google Assistant. -->
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <!-- v2.14: remotes and keyboards that send a voice command or a long Search press open the Grok Bot
+                 companion (voiceKey "companion", the default; Walker or Google Assistant when chosen). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VOICE_COMMAND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEARCH_LONG_PRESS" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- Web apps: own process, so the launcher never holds a WebView; the process exits with the web app. -->
+        <activity
+            android:name=".WebAppActivity"
+            android:process=":web"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.TvHome" />
+
+        <!-- After a reboot: if the stock launcher took the home screen back, ask once (never changes it). -->
+        <receiver
+            android:name=".HomeCheck"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Crash watchdog: own process so it survives the launcher crashing (3 crashes in 5 min = stock home back). -->
+        <service
+            android:name=".Watchdog$RevertService"
+            android:process=":watchdog"
+            android:exported="false" />
+
+        <!-- Cinemarchy media, streaming, live TV & snippets hub (Omarchy half-block wordmark + 4 TUI tabs). -->
+        <activity
+            android:name=".CinemarchyActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.TvHome" />
+
+        <!-- "> ask" voice assistant pane (answers come from the paired Omarchy Linux PC). -->
+        <activity
+            android:name=".AskActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:screenOrientation="landscape"
+            android:windowSoftInputMode="adjustResize|stateHidden"
+            android:theme="@style/Theme.TvHome" />
+
+        <!-- "> agents" monitor (activity and answers come from the paired Omarchy Linux PC). -->
+        <activity
+            android:name=".AgentActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:screenOrientation="landscape"
+            android:windowSoftInputMode="adjustResize|stateHidden"
+            android:theme="@style/Theme.TvHome" />
+
+        <!-- Send to TV (Omarchy Link cast): the player (Media3 ExoPlayer) and the image / text viewer.
+             Not exported: only the launcher's own LinkServer opens them, for a paired PC. -->
+        <activity
+            android:name=".CastPlayerActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation|uiMode"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.TvHome" />
+        <activity
+            android:name=".CastViewActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation|uiMode"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.TvHome" />
+
+        <!-- v2.13: Grok Bot Companion (TV) chat, opened from the floating companion. Not exported. -->
+        <activity
+            android:name=".CompanionChatActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation|uiMode"
+            android:screenOrientation="landscape"
+            android:windowSoftInputMode="adjustResize|stateHidden"
+            android:theme="@style/Theme.TvHome" />
+
+        <!-- v2.13.8: "Grok Bot diretto (senza PC)" chat: the user's own webhook routine, replies via ntfy.sh. Not exported. -->
+        <activity
+            android:name=".GrokbotDirectActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation|uiMode"
+            android:screenOrientation="landscape"
+            android:windowSoftInputMode="adjustResize|stateHidden"
+            android:theme="@style/Theme.TvHome" />
+
+        <!-- v2.13: "Play inside Cinemarchy" (official YouTube IFrame embed, off by default). Not exported. -->
+        <activity
+            android:name=".YoutubeEmbedActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation|uiMode"
+            android:screenOrientation="landscape"
+            android:hardwareAccelerated="true"
+            android:theme="@style/Theme.TvHome" />
+
+        <!-- v2.10: the screensaver window (idle on home + preview) runs in its own process. -->
+        <activity
+            android:name=".ScreensaverPreviewActivity"
+            android:process=":saver"
+            android:launchMode="singleInstance"
+            android:noHistory="true"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.TvHome" />
+
+        <!-- System screensavers: disabled by default. The launcher shows its own screensaver only while idle on
+             the home screen; Screensaver → "Also use as system screensaver" enables these components.
+             Android runs them only after the idle timeout, never over playing video.
+             Pick one in Settings, or over adb:
+             settings put secure screensaver_components com.omarchytv.home/.OmarchyDream
+             settings put secure screensaver_enabled 1 -->
+        <!-- v2.10: enabled so DreamManager can find it (Android 9 reported "does not exist" while the component
+             was disabled); it still runs only if picked as the TV's screensaver.
+             #57: no android:process here. On Android 11+ the system's DreamActivity runs in the app's main process and
+             casts the service's callback Binder directly, so a dream in ":saver" crashed with a ClassCastException. -->
+        <service
+            android:name=".OmarchyDream"
+            android:label="@string/dream_omarchy"
+            android:exported="true"
+            android:permission="android.permission.BIND_DREAM_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+
+        <!-- Omarchy Link (TV side, TCP 47800 on the LAN only). Plain started service: no notification,
+             no wakelock; the server itself lives with the launcher process. -->
+        <service
+            android:name=".OmarchyLink$KeepAlive"
+            android:exported="false" />
+
+        <!-- Optional: lets a paired PC press Back. Off until the user enables it (Settings > Accessibility). -->
+        <service
+            android:name=".OmarchyRemote"
+            android:label="@string/remote_service"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/remote_accessibility" />
+        </service>
+
+        <!-- Optional: Home opens OmarchyTV where the TV won't let it be the default home (Google TV). Off until enabled. -->
+        <service
+            android:name=".HomeOverride"
+            android:label="@string/home_service"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/home_accessibility" />
+        </service>
+
+        <!-- Optional: remote key bindings (omarchytv.json "keys"). The accessibility key filter sees a key before the
+             system's own hooks (e.g. the SHIELD Netflix button), which is the only way to remap it from an app.
+             Off until the user enables it; keys without bindings are never consumed. -->
+        <service
+            android:name=".KeyMapService"
+            android:label="@string/keymap_service"
+            android:exported="true"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/keymap_accessibility" />
+        </service>
+
+        <service
+            android:name=".ClockDream"
+            android:enabled="false"
+            android:label="@string/dream_name"
+            android:exported="true"
+            android:permission="android.permission.BIND_DREAM_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

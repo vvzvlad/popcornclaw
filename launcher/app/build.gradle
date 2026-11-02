@@ -1,0 +1,60 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.omarchytv.home'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.omarchytv.home'
+        minSdk 24
+        targetSdk 34
+        versionCode 25
+        versionName '2.13.8'
+    }
+
+    buildTypes {
+        release {
+            // R8: the launcher plus only the Media3 parts it calls (exoplayer core; no ui, hls, dash).
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            // ./gradlew -PdevSuffix assembleDebug: installs next to a release build on an emulator.
+            if (project.hasProperty('devSuffix')) applicationIdSuffix '.dev'
+        }
+    }
+
+    lint {
+        // The launcher is sideloaded over ADB, never published to Google Play, so Play's minimum targetSdk
+        // does not apply; without this, lintVitalRelease fails assembleRelease.
+        disable 'ExpiredTargetSdkVersion'
+        // A HOME app is reached with the Home button, not from an app row.
+        disable 'MissingLeanbackLauncher'
+        // API > minSdk calls crash Fire OS 6 / Android 7 at runtime (#59): fail the build instead (fatal = lintVitalRelease also aborts assembleRelease).
+        fatal 'NewApi'
+        abortOnError true
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.recyclerview:recyclerview:1.3.2'
+    implementation 'androidx.dynamicanimation:dynamicanimation:1.0.0'
+    // Send to TV player (PROTOCOL.md Cast): progressive MP4/MKV/WebM/MPEG-TS over http(s) and local files.
+    implementation 'androidx.media3:media3-exoplayer:1.4.1'
+    implementation 'androidx.media3:media3-exoplayer-hls:1.4.1'   // v2.13: user IPTV playlists (HLS)
+    // JVM unit tests of the Omarchy Link core against omarchy-link/docs/vectors.json
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20231013'
+}

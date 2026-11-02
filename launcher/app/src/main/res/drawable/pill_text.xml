@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Omarchy shell [menu]/[controls]: text = foreground, selected/focused text = accent. Remapped by Theme.apply. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true" android:color="@color/tn_blue" />
+    <item android:color="@color/tn_fg_dim" />
+</selector>

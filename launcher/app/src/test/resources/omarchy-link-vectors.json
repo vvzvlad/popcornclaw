@@ -1,0 +1,39 @@
+{
+  "group": {
+    "p": "ffffffffffffffffc90fdaa22168c234c4c6628b80dc1cd129024e088a67cc74020bbea63b139b22514a08798e3404ddef9519b3cd3a431b302b0a6df25f14374fe1356d6d51c245e485b576625e7ec6f44c42e9a637ed6b0bff5cb6f406b7edee386bfb5a899fa5ae9f24117c4b1fe649286651ece45b3dc2007cb8a163bf0598da48361c55d39a69163fa8fd24cf5f83655d23dca3ad961c62f356208552bb9ed529077096966d670c354e4abc9804f1746c08ca18217c32905e462e36ce3be39e772c180e86039b2783a2ec07a28fb5c55df06f4c52c9de2bcbf6955817183995497cea956ae515d2261898fa051015728e5a8aacaa68ffffffffffffffff",
+    "g": 2,
+    "M": "d1cb9b384ffb87867c2585621f65d53dc54c5f563994007128d9b2c658ecc445ca6b752abbd2c7f98fff1295ab42d3258262b3b34e68f8ea8e9422fd6487ea90bd522b40304520e90b9f4ba21fd76948711918f2c83448dba7f9c18fe4d192510788c4e85d282c75682c4fdbb117023b0efa696c4349d268360aace4503fada748906fa7ad695f0d3b6d40fa49e39a391e1eefc912d3bf617773a5c56d1c01686c4810db133fe424891f146be267a3c0c3bba57122b4c2d5e6d285de9fa96b08d9838f9b6775866319794775cab5d9f64469961a4660de1d5b8342b0bbc9b01aa49fba4c79f43d0e04791a8450c430404a775ee84543de3b8c205d87d50417e0",
+    "N": "2c6180d007d4057ecd86af2a54caca8b2c41ed9642d68cd74691250f6af0e0d38398862b850d32fe217c6e69ab5a3a35bd8d4aeafbc8ab3e8e38f0f84cad1aae41d927fea91dc47771ebe9b846bc50f62c3a52ac36e88caa1af85bb0934775c226e5908b4723253694f5f3defea0a5e8e4e3e00f0f58c7f8f49d211a9ac764d4ba7484a7346f6514d6a3fea78cbf95c90b396d0729cd59da645bb7d1232671d6ce089ef6202641a06efef04d496bdccc8db1063d800ea728e78ac2e1a873b6d99c947d1fbb0db77c6d377988502a7cbc7dcdebcd50941b4a8e33e9cce685fb16550e1ffabe76e6278459df2dad09634489c0a502da344729ac2da453ca7a9e6c"
+  },
+  "pairing": {
+    "code": "123456",
+    "pcId": "0123456789abcdef0123456789abcdef",
+    "tvId": "fedcba9876543210fedcba9876543210",
+    "x": "588f835f5a7685809e6cc1b335a4c013a7416e7b36f245a509e299d2dabce893",
+    "y": "fd53b0d8601491d2eade09fdb33f0ed5fed481d65824fd6810cf9e6473a7a673",
+    "w": "dee239cb9b9e7c70acd50e78f0199aa64cc9f579370c0775cad4457915131503",
+    "T": "32gppjZ2meib0XVTQRzjDkCoOKC5slKu6gbvj1zj4YXihOFfJMISs3E-DXw_1MndXq7pDNBJGLuPRZ-a_XPlawsd5TkYjqanesvKZVLjKjrdCPVGj9xLwt5LObaA3AFJ2KCExEAK9hZT-uTzbo69vTxdDm8mdawYbGXT9RR7MYUjCZMUKBc3bEIZ3E_XmgKO1Jq5daKDMBVex3y0EmmQjqqiv9XiQNvADbkBUH-zC1nR-ZtV-EF0lFIADh7AUVxzYhurYLUeJOGyFtuCRdZv_NQytMK8Oc_YCvznTRC-PexCdmXz2HEyapvEMtZm9aEiNwTzMIAUtyc5wUW1ddAzhQ",
+    "S": "hT0tjbmdXf_7FIxt-Zx8ZcDlNjHjbPeb9Xeq5F-ielrPutv9wNwt6WTpBnCrosLrbHPtoltBcKKpKdKyA4kGS7GgE4jenmbffjEFebl-KSIy5k83thCAzqMSW3Vv6CBFwVDyryVwG-xzrT04DZcExKY1RkvhVY7gOVD7USjhDdnG3tki31Js1lBSnozLCOaUj--iDkyAg0rZ8iD0pfK9CpARq1oKTq3k_kvmWZtickH1DLoxyv_do1crYnUrlce4aD8JJHNs2GII4jLUdNZMx56N-XT8qHmIa2h59wMhb8LyRgLQNRX8Fd8Idl_hNj_YzrRBLrCYcDIWD4JtLpcuSA",
+    "ttHash": "793014904996c8dac2d4b2b6d92e052c748d41abec31da8b090b708c8b2b2118",
+    "confirmPc": "wa_O8Y5DS188qIh_I-v5IlJ2YRnYH1IQP1QWxwI6BDQ",
+    "confirmTv": "iBcmpAkfrrdE_pWASw_DwwmPK-CkmrgsBeSEl5KK7K4",
+    "token": "eoCOTRfNZhcGR-pOIrw6p6HDP9bvFAakEjTz0NZGm2g"
+  },
+  "request": {
+    "method": "POST",
+    "target": "/v1/remote/key",
+    "ts": 1790000000,
+    "nonce": "AAAAAAAAAAAAAAAAAAAAAA",
+    "body": "{\"key\":\"home\"}",
+    "authorization": "OTV1 pc=0123456789abcdef0123456789abcdef, ts=1790000000, nonce=AAAAAAAAAAAAAAAAAAAAAA, sig=8fZv9Edfdrkz6-xFpVo_9dR2-IhwKlD-dxsLq7Mudkk",
+    "responseStatus": 200,
+    "responseBody": "{\"ok\":true}",
+    "xOtvSig": "XzisGjg7YY6odprWtiFjP9oxALWW0HNgzo6AXjLKauU"
+  },
+  "websocket": {
+    "clientNonce": "AAAAAAAAAAAAAAAAAAAAAA",
+    "serverNonce": "BBBBBBBBBBBBBBBBBBBBBB",
+    "sessionKey": "f4aaa112eab8a43b351ac5d1c77dedc4415814811d76c96ec2ca2d1502cd6dfc",
+    "frame": "oxuOm26AMwexjGfTpnIeqA07Z_j66qqH56vZYnQaRrs {\"seq\":1,\"type\":\"hello\",\"data\":{}}"
+  }
+}

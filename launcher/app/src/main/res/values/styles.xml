@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Theme.TvHome" parent="android:Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">@color/tn_bg</item>
+        <item name="android:colorBackground">@color/tn_bg</item>
+        <item name="android:colorAccent">@color/tn_blue</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+
+    <!-- Waybar module: monospace label with icon, accent block when focused. -->
+    <style name="TopButton">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">30dp</item>
+        <item name="android:layout_marginStart">4dp</item>
+        <item name="android:layout_marginEnd">4dp</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">@drawable/pill_bg</item>
+        <item name="android:tag">control</item>
+        <item name="android:textColor">@drawable/pill_text</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:fontFamily">@font/caskaydia</item>
+        <item name="android:fontVariationSettings" tools:targetApi="28">\'wght\' 500</item>
+        <item name="android:drawablePadding">8dp</item>
+        <item name="android:drawableTint">@drawable/pill_text</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:clickable">true</item>
+    </style>
+
+    <style name="BarSeparator">
+        <item name="android:layout_width">2dp</item>
+        <item name="android:layout_height">14dp</item>
+        <item name="android:background">@color/tn_muted</item>
+    </style>
+</resources>

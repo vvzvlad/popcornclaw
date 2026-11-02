@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "> ask": one floating Hyprland window with a terminal transcript. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/tn_bg">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_margin="56dp"
+        android:orientation="vertical"
+        android:background="@drawable/glass_panel"
+        android:tag="popup"
+        android:padding="20dp">
+
+        <TextView
+            android:id="@+id/askHeader"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textSize="18sp"
+            android:fontFamily="@font/caskaydia" />
+
+        <ScrollView
+            android:id="@+id/askScroll"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:layout_marginTop="14dp"
+            android:focusable="false">
+
+            <TextView
+                android:id="@+id/askLog"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/tn_fg"
+                android:textSize="16sp"
+                android:lineSpacingMultiplier="1.2"
+                android:fontFamily="@font/caskaydia" />
+        </ScrollView>
+
+        <TextView
+            android:id="@+id/askHint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:textColor="@color/text_dim"
+            android:textSize="13sp"
+            android:fontFamily="@font/caskaydia" />
+    </LinearLayout>
+</FrameLayout>

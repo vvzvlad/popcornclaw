@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Launcher configuration. Edit this file, then run launcher/build-and-install.sh.
+  Package names: on the TV run `pm list packages` (tools/tv.py 'pm list packages').
+-->
+<resources>
+
+    <!-- Apps pinned to the dock row at the bottom, in this order. Missing apps are skipped. -->
+    <string-array name="dock_apps">
+        <item>com.netflix.ninja</item>
+        <item>com.amazon.amazonvideo.livingroom</item>
+        <item>com.google.android.youtube.tv</item>
+        <item>com.disney.disneyplus</item>
+    </string-array>
+
+    <!-- Apps never shown as tiles (e.g. the Live TV app, which the Inputs menu already covers). -->
+    <string-array name="hidden_apps">
+        <item>com.mediatek.wwtv.tvcenter</item>
+        <item>com.mitv.gallery</item>
+    </string-array>
+    <!-- Sony BRAVIA (e.g. KD-55XE9005): Live TV is com.sony.dtv.tvx. It stays visible as a tile too. -->
+
+    <!-- The TV's Live TV / tuner app, offered at the end of the Inputs menu. Leave empty to omit. -->
+    <string name="live_tv_package" translatable="false">com.sony.dtv.tvx</string>
+    <string-array name="live_tv_packages">
+        <item>com.sony.dtv.tvx</item>
+        <item>jp.co.sharp.av.android.aquostvapp</item>
+        <item>com.google.android.tv</item>
+        <item>com.android.tv</item>
+        <item>org.dtvkit.inputsource</item>
+        <item>com.tcl.tv</item>
+        <item>com.hisense.tv.livetv</item>
+        <item>com.philips.tv.tvapp</item>
+        <item>org.droidtv.playtv</item>
+        <item>org.droidtv.tv</item>
+        <item>org.droidtv.channels</item>
+        <item>org.droidtv.zapster</item>
+        <item>org.droidtv.eum</item>
+    </string-array>
+    <!-- Xiaomi / MediaTek sets: com.mediatek.wwtv.tvcenter -->
+
+    <!-- Tiles per row in the grid; the dock always has this many slots. -->
+    <integer name="columns">7</integer>
+
+    <!-- Logo on the home screen and in the screensaver:
+         "omarchy-tv" = Omarchy's pixel logo.txt plus a matching "TV" (default),
+         "omarchy"    = Omarchy's logo.txt unchanged,
+         "original"   = OmarchyTV's own block font, no Omarchy artwork (safest for public builds).
+         Omarchy's logo is MIT-licensed (assets/licenses); see NOTICE for the branding caveat. -->
+    <string name="logo" translatable="false">omarchy-tv</string>
+    <!-- Home wallpaper: "omarchy" = Omarchy's Tokyo Night "liftoff" background (bundled, see NOTICE),
+         "procedural" = original Tokyo Night gradient drawn in code (no image). -->
+    <string name="wallpaper" translatable="false">omarchy</string>
+    <!-- Bar menu icon: true = Omarchy's icon.png (MIT), false = the original "[otv]" text mark. -->
+    <bool name="omarchy_icon">true</bool>
+
+    <!-- Info panes shown top right by default (also available: sysinfo, weather; agents shows only once a PC sent agent activity) (weather needs lat/lon in omarchytv.json). -->
+    <string-array name="default_panes">
+        <item>clock</item>
+        <item>weather</item>
+        <item>ai</item>
+        <item>agents</item>
+    </string-array>
+
+    <!-- Show a small clock under the screensaver art. -->
+    <bool name="screensaver_clock">true</bool>
+</resources>

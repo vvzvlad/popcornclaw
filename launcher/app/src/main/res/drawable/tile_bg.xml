@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Inactive Hyprland window: surface fill, thin muted border, barely rounded. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/tn_surface" />
+    <stroke android:width="2dp" android:color="@color/tn_muted" />
+    <corners android:radius="0dp" />
+</shape>

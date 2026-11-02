@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One tiled pane: a Hyprland window with a terminal title line and a monospace body. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="10dp"
+    android:minWidth="150dp"
+    android:minHeight="96dp"
+    android:orientation="vertical"
+    android:background="@drawable/pane_bg"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp">
+
+    <TextView
+        android:id="@+id/paneTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="@color/text_dim"
+        android:textSize="11sp"
+        android:fontFamily="@font/caskaydia" />
+
+    <TextView
+        android:id="@+id/paneBody"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textColor="@color/tn_fg"
+        android:textSize="12sp"
+        android:fontFamily="@font/caskaydia"
+        android:lineSpacingMultiplier="1.1" />
+</LinearLayout>

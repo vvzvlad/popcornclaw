@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Tokyo Night palette (https://github.com/folke/tokyonight.nvim, Apache-2.0 colour values), as used by Omarchy's tokyo-night theme. -->
+<resources>
+    <color name="tn_bg">#FF1A1B26</color>
+    <color name="tn_bg_dark">#FF16161E</color>
+    <color name="tn_bg_darker">#FF0E0E14</color>
+    <color name="tn_surface">#FF24283B</color>
+    <color name="tn_selection">#FF292E42</color>
+    <color name="tn_muted">#FF414868</color>
+    <color name="tn_comment">#FF565F89</color>
+    <!-- Dimmed text: Tokyo Night comment lifted to >= 4.5:1 on bg-dark (Surfaces.TEXT_DIM). -->
+    <color name="text_dim">#FF7F88B3</color>
+    <color name="tn_fg">#FFC0CAF5</color>
+    <color name="tn_fg_dim">#FFA9B1D6</color>
+    <color name="tn_blue">#FF7AA2F7</color>
+    <color name="tn_purple">#FFBB9AF7</color>
+    <color name="tn_cyan">#FF7DCFFF</color>
+    <color name="tn_green">#FF9ECE6A</color>
+    <color name="tn_orange">#FFFF9E64</color>
+    <color name="tn_red">#FFF7768E</color>
+    <color name="tn_yellow">#FFE0AF68</color>
+</resources>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Inputs dropdown: a floating Hyprland window with the active (accent) border. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/tn_bg_dark" />
+    <stroke android:width="2dp" android:color="@color/tn_blue" />
+    <corners android:radius="0dp" />
+</shape>

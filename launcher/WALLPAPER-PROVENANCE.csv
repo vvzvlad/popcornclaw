@@ -1,0 +1,143 @@
+file,status,omarchy_committer,date,omarchy_commit_subject,provenance_note
+catppuccin-latte/01-color-fade.webp,excluded,Omarchybot,2026-08-18,Shrink theme backgrounds without touching resolution (#7266),artwork author/licence not documented in Omarchy
+catppuccin-latte/02-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+catppuccin/01-totoro.webp,excluded,Omarchybot,2026-08-18,Shrink theme backgrounds without touching resolution (#7266),artwork author/licence not documented in Omarchy
+catppuccin/02-waves.webp,excluded,,,,artwork author/licence not documented in Omarchy
+catppuccin/03-blue-eye.webp,excluded,,,,artwork author/licence not documented in Omarchy
+catppuccin/04-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+ethereal/01-cosmic.webp,excluded,,,,artwork author/licence not documented in Omarchy
+ethereal/02-meadow.webp,excluded,,,,artwork author/licence not documented in Omarchy
+ethereal/03-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+everforest/01-tree-tops.webp,excluded,,,,artwork author/licence not documented in Omarchy
+everforest/02-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+flexoki-light/01-orb.webp,excluded,David Heinemeier Hansson,2025-10-12,Add Flexoki Light as new default theme,artwork author/licence not documented in Omarchy
+flexoki-light/02-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+gruvbox/01-the-backwater.webp,excluded,,,,"paintings added ""by @OldJobobo""; likely old-master works, not identified"
+gruvbox/02-flower-basket.webp,excluded,David Heinemeier Hansson,2026-03-25,Additional Gruvbox backgrounds by @OldJobobo,"paintings added ""by @OldJobobo""; likely old-master works, not identified"
+gruvbox/03-village-square.webp,excluded,David Heinemeier Hansson,2026-03-25,Additional Gruvbox backgrounds by @OldJobobo,"paintings added ""by @OldJobobo""; likely old-master works, not identified"
+gruvbox/04-idyllic-procession.webp,excluded,David Heinemeier Hansson,2026-03-25,Additional Gruvbox backgrounds by @OldJobobo,"paintings added ""by @OldJobobo""; likely old-master works, not identified"
+gruvbox/05-leaves.webp,excluded,,,,"paintings added ""by @OldJobobo""; likely old-master works, not identified"
+gruvbox/06-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+hackerman/01-synth-scape.webp,excluded,,,,"XMP: stock-image description + Photoshop; likely stock art, licence unknown"
+hackerman/02-geometric.webp,excluded,,,,artwork author/licence not documented in Omarchy
+hackerman/03-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+kanagawa/01-kanagawa.webp,excluded,David Heinemeier Hansson,2025-07-17,Pull backgrounds into the repo to simplify setup and theme selection,"appears to be Hokusai, Great Wave (public domain artwork) but the specific reproduction/edit is unverified"
+kanagawa/02-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+last-horizon/01-eyes-wide.webp,excluded,David Heinemeier Hansson,2026-05-09,Add Last Horizon theme by HANCORE,theme by HANCORE; artwork licence not stated
+last-horizon/02-blink.webp,excluded,David Heinemeier Hansson,2026-05-09,Add Last Horizon theme by HANCORE,theme by HANCORE; artwork licence not stated
+last-horizon/03-bokeh.webp,excluded,David Heinemeier Hansson,2026-05-09,Add Last Horizon theme by HANCORE,theme by HANCORE; artwork licence not stated
+last-horizon/04-new-horizons.webp,excluded,David Heinemeier Hansson,2026-05-09,Add Last Horizon theme by HANCORE,theme by HANCORE; artwork licence not stated
+lumon/01-united-in-severance.webp,excluded,David Heinemeier Hansson,2026-03-18,Add paired-back Lumon Industries theme,Severance / Lumon Industries imagery (Apple TV+ property); not redistributable
+lumon/02-opinions-equally.webp,excluded,David Heinemeier Hansson,2026-03-26,Add another Lumon background,Severance / Lumon Industries imagery (Apple TV+ property); not redistributable
+lumon/03-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+lupine/01-cherry-blossom-bokeh.webp,excluded,Bjarne Øverli,2026-05-24,Add 10 more light wallpapers to Lupine theme,artwork author/licence not documented in Omarchy
+lupine/02-cherry-blossom-white.webp,excluded,Bjarne Øverli,2026-05-24,Add 10 more light wallpapers to Lupine theme,artwork author/licence not documented in Omarchy
+lupine/03-pastel-clouds.webp,excluded,Bjarne Øverli,2026-05-24,Add lavender and pastel sky wallpapers to Lupine theme,artwork author/licence not documented in Omarchy
+lupine/04-elegant-blue-wave.webp,excluded,Bjarne Øverli,2026-05-24,Add Lupine theme,artwork author/licence not documented in Omarchy
+lupine/05-abstract-wave.webp,excluded,Bjarne Øverli,2026-05-24,Add Lupine theme,artwork author/licence not documented in Omarchy
+lupine/06-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+matte-black/01-ship-at-sea.webp,excluded,David Heinemeier Hansson,2025-09-08,Add new default background for matte black,artwork author/licence not documented in Omarchy
+matte-black/02-dark-waters.webp,excluded,,,,artwork author/licence not documented in Omarchy
+matte-black/03-dot-hands.webp,excluded,,,,artwork author/licence not documented in Omarchy
+matte-black/04-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+miasma/01-nature-of-fear.webp,excluded,,,,artwork author/licence not documented in Omarchy
+miasma/02-crowned.webp,excluded,,,,artwork author/licence not documented in Omarchy
+miasma/03-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+nord/01-black-moon.webp,excluded,,,,artwork author/licence not documented in Omarchy
+nord/02-city-view.webp,excluded,,,,artwork author/licence not documented in Omarchy
+nord/03-night-hawks.webp,excluded,,,,"name suggests Edward Hopper ""Nighthawks"" (1942; Hopper d.1967: still in copyright in EU until 2037)"
+nord/04-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+osaka-jade/01-glowing-city.webp,excluded,,,,artwork author/licence not documented in Omarchy
+osaka-jade/02-shaded-entrance.webp,excluded,,,,artwork author/licence not documented in Omarchy
+osaka-jade/03-mountain-moon.webp,excluded,,,,artwork author/licence not documented in Omarchy
+osaka-jade/04-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+retro-82/01-in-the-groove.webp,excluded,David Heinemeier Hansson,2026-03-26,Add Retro 82 theme (#5110),artwork author/licence not documented in Omarchy
+retro-82/02-dusk-guardian.webp,excluded,David Heinemeier Hansson,2026-03-26,Add Retro 82 theme (#5110),artwork author/licence not documented in Omarchy
+retro-82/03-glassy-lines.webp,excluded,David Heinemeier Hansson,2026-03-26,Add Retro 82 theme (#5110),artwork author/licence not documented in Omarchy
+retro-82/04-gateway.webp,excluded,David Heinemeier Hansson,2026-03-26,Add Retro 82 theme (#5110),artwork author/licence not documented in Omarchy
+retro-82/05-zen-boat.webp,excluded,David Heinemeier Hansson,2026-03-26,Add Retro 82 theme (#5110),artwork author/licence not documented in Omarchy
+retro-82/06-abstract-pyramids.webp,excluded,David Heinemeier Hansson,2026-03-26,Add Retro 82 theme (#5110),artwork author/licence not documented in Omarchy
+retro-82/07-the-journey.webp,excluded,David Heinemeier Hansson,2026-03-26,Add Retro 82 theme (#5110),artwork author/licence not documented in Omarchy
+retro-82/08-glitter-glass.webp,excluded,David Heinemeier Hansson,2026-03-26,Add Retro 82 theme (#5110),artwork author/licence not documented in Omarchy
+retro-82/09-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+ristretto/01-launch.webp,excluded,David Heinemeier Hansson,2026-05-02,Add new Ristretto background as default,artwork author/licence not documented in Omarchy
+ristretto/02-color-curves.webp,excluded,,,,artwork author/licence not documented in Omarchy
+ristretto/03-coffee-beans.webp,excluded,,,,artwork author/licence not documented in Omarchy
+ristretto/04-industrial-moon.webp,excluded,,,,artwork author/licence not documented in Omarchy
+ristretto/05-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+rose-pine/01-funky-shapes.webp,excluded,,,,artwork author/licence not documented in Omarchy
+rose-pine/02-dot-map.webp,excluded,,,,artwork author/licence not documented in Omarchy
+rose-pine/03-omarchy-plants.webp,excluded,Omarchybot,2026-08-18,Shrink theme backgrounds without touching resolution (#7266),artwork author/licence not documented in Omarchy
+rose-pine/04-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+solitude/01-on-pole.webp,excluded,David Heinemeier Hansson,2026-05-09,Add Solitude theme by HANCORE,theme by HANCORE; artwork licence not stated
+solitude/02-wreakage.webp,excluded,David Heinemeier Hansson,2026-05-09,Add Solitude theme by HANCORE,theme by HANCORE; artwork licence not stated
+solitude/03-climb.webp,excluded,David Heinemeier Hansson,2026-05-09,Add Solitude theme by HANCORE,theme by HANCORE; artwork licence not stated
+solitude/04-ether.webp,excluded,David Heinemeier Hansson,2026-05-09,Add Solitude theme by HANCORE,theme by HANCORE; artwork licence not stated
+solitude/05-eyed.webp,excluded,David Heinemeier Hansson,2026-05-09,Add Solitude theme by HANCORE,theme by HANCORE; artwork licence not stated
+starship/01-starbase.webp,excluded,,,,"SpaceX photographs (via Erik Johansson, omarchy-starship-to-orbit-theme); ""SpaceX retains all rights"", explicitly NOT MIT"
+starship/02-flight14-dawn.webp,excluded,,,,"SpaceX photographs (via Erik Johansson, omarchy-starship-to-orbit-theme); ""SpaceX retains all rights"", explicitly NOT MIT"
+starship/03-engine-cluster.webp,excluded,,,,"SpaceX photographs (via Erik Johansson, omarchy-starship-to-orbit-theme); ""SpaceX retains all rights"", explicitly NOT MIT"
+starship/04-morning-pad.webp,excluded,,,,"SpaceX photographs (via Erik Johansson, omarchy-starship-to-orbit-theme); ""SpaceX retains all rights"", explicitly NOT MIT"
+tokyo-night/01-liftoff-sunset.webp,INCLUDED,Tom Ballard,2026-10-22,Liftoff Sunset (default Tokyo Night wallpaper),"'Liftoff Sunset' by Tom Ballard (https://x.com/tcballard), from https://github.com/tcballard/omarchy-theme-tokyo-liftoff; original photograph SpaceX (public domain per author); painterly restyle by Tom Ballard; included with the author's permission granted on X on Oct 22, 2026; PNG 8192x4608 -> WebP 3840x2160"
+tokyo-night/01-liftoff.webp,excluded,,,,added by Tom Ballard (#14755); artwork author/licence not stated
+tokyo-night/02-winding-road.webp,excluded,David Heinemeier Hansson,2026-08-13,New launch backgrounds for Omarchy,artwork author/licence not documented in Omarchy
+tokyo-night/03-quattro.webp,excluded,David Heinemeier Hansson,2026-08-12,Add quattro background by vulturetone,artwork author/licence not documented in Omarchy
+tokyo-night/04-swirl-buck.webp,excluded,David Heinemeier Hansson,2026-01-12,Add new default wallpaper for Tokyo Night,artwork author/licence not documented in Omarchy
+tokyo-night/05-sunset-lake.webp,excluded,Omarchybot,2026-08-18,Shrink theme backgrounds without touching resolution (#7266),artwork author/licence not documented in Omarchy
+tokyo-night/06-omakub.webp,excluded,David Heinemeier Hansson,2026-08-06,Nostalgia for early Linux adoption,artwork author/licence not documented in Omarchy
+tokyo-night/07-oma-cityscape.webp,excluded,David Heinemeier Hansson,2026-04-29,Add additional Tokyo Night backgrounds,artwork author/licence not documented in Omarchy
+tokyo-night/08-oma.webp,excluded,David Heinemeier Hansson,2026-04-29,Add additional Tokyo Night backgrounds,artwork author/licence not documented in Omarchy
+tokyo-night/09-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+vantablack/01-dot-hands.webp,excluded,David Heinemeier Hansson,2026-04-23,Make vantablack fully black for OLED glory,artwork author/licence not documented in Omarchy
+vantablack/02-twisted-stairs.webp,excluded,,,,artwork author/licence not documented in Omarchy
+vantablack/03-layers-deep.webp,excluded,,,,artwork author/licence not documented in Omarchy
+vantablack/04-layers-stacked.webp,excluded,,,,artwork author/licence not documented in Omarchy
+vantablack/05-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+white/01-white.webp,excluded,Bjarne Øverli,2026-02-21,Add theme white,artwork author/licence not documented in Omarchy
+white/02-white.webp,excluded,Bjarne Øverli,2026-02-21,Add theme white,artwork author/licence not documented in Omarchy
+white/03-white.webp,excluded,Bjarne Øverli,2026-02-21,Add theme white,artwork author/licence not documented in Omarchy
+white/04-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-04-28,Add omarchy bg option to all themes,Omarchy-original flat two-colour wordmark (theme bg + accent); Omarchy MIT
+last-horizon/01-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-10-25,Omarchy MIT wordmark background,Omarchy-original flat two-colour wordmark (theme bg #0c0b0c + accent #b59790); Omarchy MIT
+solitude/01-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-10-25,Omarchy MIT wordmark background,Omarchy-original flat two-colour wordmark (theme bg #101315 + accent #798186); Omarchy MIT
+starship/01-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-10-25,Omarchy MIT wordmark background,Omarchy-original flat two-colour wordmark (theme bg #1c1c1e + accent #ff9f0a); Omarchy MIT
+jade-horse/01-ink-horse.webp,INCLUDED,David Heinemeier Hansson,2026-10-25,dhh/omarchy-jade-horse-theme,Original wallpaper from https://github.com/dhh/omarchy-jade-horse-theme; Copyright (c) 2026 David Heinemeier Hansson (MIT)
+jade-horse/02-carved-jade-horse.webp,INCLUDED,David Heinemeier Hansson,2026-10-25,dhh/omarchy-jade-horse-theme,Original wallpaper from https://github.com/dhh/omarchy-jade-horse-theme; Copyright (c) 2026 David Heinemeier Hansson (MIT)
+jade-horse/03-mountain-horses.webp,INCLUDED,David Heinemeier Hansson,2026-10-25,dhh/omarchy-jade-horse-theme,Original wallpaper from https://github.com/dhh/omarchy-jade-horse-theme; Copyright (c) 2026 David Heinemeier Hansson (MIT)
+jade-horse/04-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-10-25,Omarchy MIT wordmark background,Omarchy-original flat two-colour wordmark (theme bg #142620 + accent #8bcbb1); Omarchy MIT
+year-of-the-horse/01-ink-horse.webp,INCLUDED,David Heinemeier Hansson,2026-10-25,dhh/omarchy-year-of-the-horse-theme,Original wallpaper from https://github.com/dhh/omarchy-year-of-the-horse-theme; Copyright (c) 2026 David Heinemeier Hansson (MIT)
+year-of-the-horse/02-paper-horse.webp,INCLUDED,David Heinemeier Hansson,2026-10-25,dhh/omarchy-year-of-the-horse-theme,Original wallpaper from https://github.com/dhh/omarchy-year-of-the-horse-theme; Copyright (c) 2026 David Heinemeier Hansson (MIT)
+year-of-the-horse/03-mountain-horses.webp,INCLUDED,David Heinemeier Hansson,2026-10-25,dhh/omarchy-year-of-the-horse-theme,Original wallpaper from https://github.com/dhh/omarchy-year-of-the-horse-theme; Copyright (c) 2026 David Heinemeier Hansson (MIT)
+year-of-the-horse/04-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-10-25,Omarchy MIT wordmark background,Omarchy-original flat two-colour wordmark (theme bg #26151f + accent #e5ce78); Omarchy MIT
+hermarchy/01-hermarchy-command.webp,INCLUDED,Archer Clawbot,2026-10-25,archer-clawbot/omarchy-hermarchy-theme,Original SVG geometric/typographic wallpaper from https://github.com/archer-clawbot/omarchy-hermarchy-theme; Copyright (c) 2026 Archer Clawbot (MIT)
+hermarchy/02-hermarchy.webp,INCLUDED,Archer Clawbot,2026-10-25,archer-clawbot/omarchy-hermarchy-theme,Original SVG geometric/typographic wallpaper from https://github.com/archer-clawbot/omarchy-hermarchy-theme; Copyright (c) 2026 Archer Clawbot (MIT)
+hermarchy/03-hermarchy.webp,INCLUDED,Archer Clawbot,2026-10-25,archer-clawbot/omarchy-hermarchy-theme,Original SVG geometric/typographic wallpaper from https://github.com/archer-clawbot/omarchy-hermarchy-theme; Copyright (c) 2026 Archer Clawbot (MIT)
+hermarchy/04-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-10-25,Omarchy MIT wordmark background,Omarchy-original flat two-colour wordmark (theme bg #08090a + accent #61d6ff); Omarchy MIT
+cumulus/01-cloud-town-path.webp,INCLUDED,Erik Johansson,2026-10-28,erikrjohansson/omarchy-cumulus-theme,"Wallpaper + intro 01-cloud-town-path.mp4 from https://github.com/erikrjohansson/omarchy-cumulus-theme; MIT (c) 2026 Erik Johansson; verified upstream 2026-10-28"
+cumulus/02-cottage.webp,INCLUDED,Erik Johansson,2026-10-28,erikrjohansson/omarchy-cumulus-theme,"Wallpaper + intro 02-cottage.mp4 from https://github.com/erikrjohansson/omarchy-cumulus-theme; MIT (c) 2026 Erik Johansson; verified upstream 2026-10-28"
+cumulus/03-airship.webp,INCLUDED,Erik Johansson,2026-10-28,erikrjohansson/omarchy-cumulus-theme,"Wallpaper + intro 03-airship.mp4 from https://github.com/erikrjohansson/omarchy-cumulus-theme; MIT (c) 2026 Erik Johansson; verified upstream 2026-10-28"
+cumulus/04-lighthouse.webp,INCLUDED,Erik Johansson,2026-10-28,erikrjohansson/omarchy-cumulus-theme,"Wallpaper + intro 04-lighthouse.mp4 from https://github.com/erikrjohansson/omarchy-cumulus-theme; MIT (c) 2026 Erik Johansson; verified upstream 2026-10-28"
+cumulus/05-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-10-28,Omarchy MIT wordmark background,Omarchy-original flat two-colour wordmark; Omarchy MIT
+tokyo-roadster/01-tokyo-wall-ride.webp,INCLUDED,Tom Ballard,2026-10-28,tcballard/omarchy-theme-tokyo-roadster,"From https://github.com/tcballard/omarchy-theme-tokyo-roadster (01-tokyo-wall-ride-8k.png); theme MIT (c) 2026 Tom Ballard; wallpapers are Tom Ballard's work from this MIT repo (confirmed by Marco Porro 2026-10-29)"
+tokyo-roadster/02-tokyo-lineup.webp,INCLUDED,Tom Ballard,2026-10-28,tcballard/omarchy-theme-tokyo-roadster,"From https://github.com/tcballard/omarchy-theme-tokyo-roadster (02-tokyo-lineup-8k.png); theme MIT (c) 2026 Tom Ballard; wallpapers are Tom Ballard's work from this MIT repo (confirmed by Marco Porro 2026-10-29)"
+tokyo-roadster/03-tokyo-hover.webp,INCLUDED,Tom Ballard,2026-10-28,tcballard/omarchy-theme-tokyo-roadster,"From https://github.com/tcballard/omarchy-theme-tokyo-roadster (03-tokyo-hover-8k.png); theme MIT (c) 2026 Tom Ballard; wallpapers are Tom Ballard's work from this MIT repo (confirmed by Marco Porro 2026-10-29)"
+tokyo-roadster/04-tokyo-ramp.webp,INCLUDED,Tom Ballard,2026-10-28,tcballard/omarchy-theme-tokyo-roadster,"From https://github.com/tcballard/omarchy-theme-tokyo-roadster (04-tokyo-ramp-8k.png); theme MIT (c) 2026 Tom Ballard; wallpapers are Tom Ballard's work from this MIT repo (confirmed by Marco Porro 2026-10-29)"
+tokyo-roadster/05-tokyo-inverted.webp,INCLUDED,Tom Ballard,2026-10-28,tcballard/omarchy-theme-tokyo-roadster,"From https://github.com/tcballard/omarchy-theme-tokyo-roadster (05-tokyo-inverted-8k.png); theme MIT (c) 2026 Tom Ballard; wallpapers are Tom Ballard's work from this MIT repo (confirmed by Marco Porro 2026-10-29)"
+tokyo-roadster/06-tokyo-rear.webp,INCLUDED,Tom Ballard,2026-10-28,tcballard/omarchy-theme-tokyo-roadster,"From https://github.com/tcballard/omarchy-theme-tokyo-roadster (06-tokyo-rear-8k.png); theme MIT (c) 2026 Tom Ballard; wallpapers are Tom Ballard's work from this MIT repo (confirmed by Marco Porro 2026-10-29)"
+tokyo-roadster/07-tokyo-diffuser.webp,INCLUDED,Tom Ballard,2026-10-28,tcballard/omarchy-theme-tokyo-roadster,"From https://github.com/tcballard/omarchy-theme-tokyo-roadster (07-tokyo-diffuser-8k.png); theme MIT (c) 2026 Tom Ballard; wallpapers are Tom Ballard's work from this MIT repo (confirmed by Marco Porro 2026-10-29)"
+tokyo-roadster/08-tokyo-studio.webp,INCLUDED,Tom Ballard,2026-10-28,tcballard/omarchy-theme-tokyo-roadster,"From https://github.com/tcballard/omarchy-theme-tokyo-roadster (08-tokyo-studio-8k.png); theme MIT (c) 2026 Tom Ballard; wallpapers are Tom Ballard's work from this MIT repo (confirmed by Marco Porro 2026-10-29)"
+tokyo-roadster/09-tokyo-poster.webp,INCLUDED,Tom Ballard,2026-10-28,tcballard/omarchy-theme-tokyo-roadster,"From https://github.com/tcballard/omarchy-theme-tokyo-roadster (09-tokyo-poster-8k.png); theme MIT (c) 2026 Tom Ballard; wallpapers are Tom Ballard's work from this MIT repo (confirmed by Marco Porro 2026-10-29)"
+tokyo-roadster/10-tokyo-starlight.webp,INCLUDED,Tom Ballard,2026-10-28,tcballard/omarchy-theme-tokyo-roadster,"From https://github.com/tcballard/omarchy-theme-tokyo-roadster (10-tokyo-starlight-8k.png); theme MIT (c) 2026 Tom Ballard; wallpapers are Tom Ballard's work from this MIT repo (confirmed by Marco Porro 2026-10-29)"
+tokyo-roadster/11-omarchy.webp,INCLUDED,David Heinemeier Hansson,2026-10-28,Omarchy MIT wordmark background,Omarchy-original flat two-colour wordmark; Omarchy MIT
+last-horizon/01-eyes-wide.webp,INCLUDED,Erik Johansson (@erikrjohansson),2026-10-28,basecamp/omarchy themes/last-horizon,"Still + intro 01-eyes-wide.mp4; included with explicit permission granted by Erik Johansson (@erikrjohansson) on X on 2026-10-26 ('I just added some life to an already beautiful wallpaper 😃 I don’t mind at all man')"
+neon-glow/01-cyberpunk-wordmark.webp,INCLUDED,Erik Johansson,2026-10-31,erikrjohansson/omarchy-neon-glow-theme,"From https://github.com/erikrjohansson/omarchy-neon-glow-theme; MIT (c) 2026 Erik Johansson; Omarchy wordmark/logo MIT (c) DHH; WebP 1920x1080; verified upstream 2026-10-31"
+neon-glow/02-emerald-wordmark.webp,INCLUDED,Erik Johansson,2026-10-31,erikrjohansson/omarchy-neon-glow-theme,"From https://github.com/erikrjohansson/omarchy-neon-glow-theme; MIT (c) 2026 Erik Johansson; Omarchy wordmark/logo MIT (c) DHH; WebP 1920x1080; verified upstream 2026-10-31"
+neon-glow/03-orchid-wordmark.webp,INCLUDED,Erik Johansson,2026-10-31,erikrjohansson/omarchy-neon-glow-theme,"From https://github.com/erikrjohansson/omarchy-neon-glow-theme; MIT (c) 2026 Erik Johansson; Omarchy wordmark/logo MIT (c) DHH; WebP 1920x1080; verified upstream 2026-10-31"
+neon-glow/04-gold-wordmark.webp,INCLUDED,Erik Johansson,2026-10-31,erikrjohansson/omarchy-neon-glow-theme,"From https://github.com/erikrjohansson/omarchy-neon-glow-theme; MIT (c) 2026 Erik Johansson; Omarchy wordmark/logo MIT (c) DHH; WebP 1920x1080; verified upstream 2026-10-31"
+neon-glow/05-ice-white-wordmark.webp,INCLUDED,Erik Johansson,2026-10-31,erikrjohansson/omarchy-neon-glow-theme,"From https://github.com/erikrjohansson/omarchy-neon-glow-theme; MIT (c) 2026 Erik Johansson; Omarchy wordmark/logo MIT (c) DHH; WebP 1920x1080; verified upstream 2026-10-31"
+neon-glow/06-hot-coral-wordmark.webp,INCLUDED,Erik Johansson,2026-10-31,erikrjohansson/omarchy-neon-glow-theme,"From https://github.com/erikrjohansson/omarchy-neon-glow-theme; MIT (c) 2026 Erik Johansson; Omarchy wordmark/logo MIT (c) DHH; WebP 1920x1080; verified upstream 2026-10-31"
+neon-glow/07-red-white-blue-wordmark.webp,INCLUDED,Erik Johansson,2026-10-31,erikrjohansson/omarchy-neon-glow-theme,"From https://github.com/erikrjohansson/omarchy-neon-glow-theme; MIT (c) 2026 Erik Johansson; Omarchy wordmark/logo MIT (c) DHH; WebP 1920x1080; verified upstream 2026-10-31"
+norrsken/01-horisont.webp,INCLUDED,Erik Johansson,2026-10-31,erikrjohansson/omarchy-norrsken-theme,"From https://github.com/erikrjohansson/omarchy-norrsken-theme; MIT (c) 2026 Erik Johansson; Omarchy wordmark/logo MIT (c) DHH; WebP 1920x1080; verified upstream 2026-10-31"
+green-mosaic/01-green-mosaic-wordmark.webp,INCLUDED,Erik Johansson,2026-10-31,erikrjohansson/omarchy-green-mosaic-theme,"From https://github.com/erikrjohansson/omarchy-green-mosaic-theme; MIT (c) 2026 Erik Johansson; Omarchy wordmark/logo MIT (c) DHH; WebP 1920x1080; verified upstream 2026-10-31"
+green-mosaic/02-green-mosaic-logo.webp,INCLUDED,Erik Johansson,2026-10-31,erikrjohansson/omarchy-green-mosaic-theme,"From https://github.com/erikrjohansson/omarchy-green-mosaic-theme; MIT (c) 2026 Erik Johansson; Omarchy wordmark/logo MIT (c) DHH; WebP 1920x1080; verified upstream 2026-10-31"
+blue-mosaic/01-blue-mosaic-wordmark.webp,INCLUDED,Erik Johansson,2026-10-31,erikrjohansson/omarchy-blue-mosaic-theme,"From https://github.com/erikrjohansson/omarchy-blue-mosaic-theme; MIT (c) 2026 Erik Johansson; Omarchy wordmark/logo MIT (c) DHH; WebP 1920x1080; verified upstream 2026-10-31"
+blue-mosaic/02-blue-mosaic-logo.webp,INCLUDED,Erik Johansson,2026-10-31,erikrjohansson/omarchy-blue-mosaic-theme,"From https://github.com/erikrjohansson/omarchy-blue-mosaic-theme; MIT (c) 2026 Erik Johansson; Omarchy wordmark/logo MIT (c) DHH; WebP 1920x1080; verified upstream 2026-10-31"

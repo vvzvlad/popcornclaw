@@ -1,0 +1,99 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+@font-face{font-family:mono;src:url("../fonts/CaskaydiaMonoNerdFontMono-Regular.ttf")}
+html,body{margin:0;height:100%;background:#000;overflow:hidden;cursor:none}
+body{display:flex;align-items:center;justify-content:center}
+/* v2.10: visible base colour (was #000 on #000: a failed effect left the screen black). */
+pre{margin:0;font-family:mono,monospace;line-height:1.15;color:#7aa2f7;white-space:pre}
+</style></head><body><pre id="art"></pre>
+<script>
+// omarchy-screensaver on the TV: loop `ttfx --random-effect` over screensaver.txt, black, centred, ~65% width.
+// v2.10 levels: official tte.js (ES modules, tte-js/src, 37 effects) -> bundled tte-bundle.js -> native logo (Android).
+var S=window.OmarchySaver||null;
+function log(m){try{S?S.log(String(m)):console.log(m)}catch(x){}}
+window.onerror=function(msg,src,line,col,err){log('errore JS: '+msg+' @'+src+':'+line+':'+col);return false};
+window.addEventListener('unhandledrejection',function(e){log('promise rifiutata: '+(e.reason&&e.reason.message||e.reason))});
+// Older WebViews (< Chrome 69, e.g. emulator WebView 66): flat/flatMap used by some effects.
+if(!Array.prototype.flat)Object.defineProperty(Array.prototype,'flat',{configurable:true,writable:true,value:function(d){d=d===undefined?1:d;return d<1?this.slice():this.reduce(function(a,v){return a.concat(Array.isArray(v)?v.flat(d-1):v)},[])}});
+if(!Array.prototype.flatMap)Object.defineProperty(Array.prototype,'flatMap',{configurable:true,writable:true,value:function(f,t){return this.map(f,t).flat(1)}});
+if(!Object.fromEntries)Object.fromEntries=function(it){var o={};Array.from(it).forEach(function(p){o[p[0]]=p[1]});return o};
+if(!window.queueMicrotask)window.queueMicrotask=function(f){Promise.resolve().then(f)};
+if(!window.ResizeObserver)window.ResizeObserver=function(){this.observe=function(){};this.disconnect=function(){}};
+(function(){
+  var text=(S&&S.text&&S.text())||"";
+  var pre=document.getElementById('art');
+  var base=(S&&S.color&&S.color())||'#7aa2f7';
+  pre.style.color=base;
+  var excl=((S&&S.exclude&&S.exclude())||'').split(',').map(function(s){return s.trim()}).filter(Boolean);
+  var frac=(S&&S.widthFraction&&S.widthFraction())||0.65;
+  function clean(){return text.replace(/\s+$/,'')}
+  function fit(){
+    var lines=clean().split('\n'),cols=1;
+    lines.forEach(function(l){cols=Math.max(cols,l.length)});
+    var w=innerWidth||document.documentElement.clientWidth;
+    if(!w)return false;   // WebView not measured yet: never set fontSize 0
+    pre.style.fontSize=(w*frac/cols/0.6)+'px';
+    return true;
+  }
+  addEventListener('resize',function(){fit()});
+  function whenSized(cb){ if(fit())cb(); else requestAnimationFrame(function(){whenSized(cb)}); }
+  function run(TTE,mode){
+    var names=TTE.effectNames().filter(function(n){return excl.indexOf(n)<0});
+    if(!names.length)names=TTE.effectNames();
+    log('effetti disponibili: '+TTE.effectNames().length+' (modalita '+mode+', in rotazione '+names.length+')');
+    var last=null,fx=null,first=true;
+    pre.textContent=clean();
+    whenSized(function(){
+      log('dimensioni al primo disegno: '+innerWidth+'x'+innerHeight+' css px, dpr '+(window.devicePixelRatio||1));
+      next();
+    });
+    function next(){
+      var e,fe=(S&&S.forceEffect&&S.forceEffect())||'';
+      if(fe&&TTE.effectNames().indexOf(fe)>=0)e=fe;
+      else{do{e=names[Math.floor(Math.random()*names.length)]}while(e===last&&names.length>1)}
+      last=e;
+      try{ if(fx)fx.destroy(); }catch(x){}
+      pre.textContent=clean();fit();
+      var frames=0,t0=0;
+      var spd=(S&&S.speed&&S.speed())||'normal';
+      var dur=spd==='slow'?4200:(spd==='fast'?1350:2400);
+      var holdMs=spd==='slow'?2200:(spd==='fast'?900:1500);
+      try{
+        fx=new TTE.TextEffect(pre,{effect:e,autoplay:false,background:'#000',duration:dur,fps:60,seed:Math.floor(Math.random()*1e9),respectReducedMotion:false,
+          onFinish:function(){}});
+      }catch(err){log('effetto '+e+' fallito: '+err.message);setTimeout(next,200);return}
+      function count(ts){ if(!t0)t0=ts; frames++; if(fx&&fx.running)requestAnimationFrame(count); }
+      requestAnimationFrame(count);
+      if(first){setTimeout(function(){try{var r=pre.getBoundingClientRect(),c=pre.querySelector('*');log('diag pre '+Math.round(r.width)+'x'+Math.round(r.height)+' font '+pre.style.fontSize+' figli '+pre.childNodes.length+' testo '+pre.textContent.length+' primo '+(c?c.tagName+' '+getComputedStyle(c).color+' op '+getComputedStyle(c).opacity:'-')+' colore '+getComputedStyle(pre).color);var cv=document.querySelector('canvas');if(cv){var cr=cv.getBoundingClientRect(),n=0;try{var d=cv.getContext('2d').getImageData(0,0,cv.width,cv.height).data;for(var i=0;i<d.length;i+=16)if(d[i]+d[i+1]+d[i+2]>60)n++}catch(x){n='err '+x}try{S&&S.canvasLit&&S.canvasLit(typeof n==='number'?n:0)}catch(x){}log('diag canvas '+cv.width+'x'+cv.height+' css '+Math.round(cr.width)+'x'+Math.round(cr.height)+' @'+Math.round(cr.left)+','+Math.round(cr.top)+' pixel accesi '+n+' display '+getComputedStyle(cv).display+' pos '+getComputedStyle(cv).position)}else log('diag nessun canvas')}catch(x){log('diag '+x)}},1200);first=false;try{S&&S.drawn(mode,TTE.effectNames().length,e)}catch(x){}}
+      else log('effetto: '+e);
+      fx.play().then(function(){
+        var dt=(performance.now()-t0)/1000; if(dt>0)log('effetto '+e+': '+Math.round(frames/dt)+' fps');
+        setTimeout(next,holdMs);   // hold the finished logo briefly, like ttfx between effects
+      },function(){setTimeout(next,0)});
+    }
+  }
+  function loadBundle(why){
+    log('tte.js ufficiale non disponibile ('+why+'): uso tte-bundle.js');
+    var sc=document.createElement('script');sc.src='tte-bundle.js';
+    sc.onload=function(){
+      if(window.TTE&&TTE.TextEffect){var T=window.TTE;run({TextEffect:T.TextEffect,effectNames:function(){var n=T.effectNames;n=(typeof n==='function')?n():n;return (n&&n.slice)?n.slice():(T.effects?Object.keys(T.effects):[])}},'bundle')}
+      else fail('tte-bundle.js senza TTE');
+    };
+    sc.onerror=function(){fail('tte-bundle.js non caricato')};
+    document.head.appendChild(sc);
+  }
+  function fail(why){log('nessun motore JS: '+why);try{S&&S.fail(why)}catch(x){}}
+  function boot(){
+    var imp,fm=(S&&S.forceMode&&S.forceMode())||'';
+    if(fm==='bundle'){loadBundle('forzato');return}
+    try{imp=new Function('u','return import(u)')}catch(x){imp=null}
+    if(!imp){loadBundle('import() non supportato');return}
+    imp('./tte-js/src/index.js').then(function(m){
+      run({TextEffect:m.TextEffect,effectNames:m.effectNames},'ufficiale');
+    },function(err){loadBundle(err&&err.message||err)});
+  }
+  if(!text){fetch('screensaver-tv.txt').then(function(r){return r.text()}).then(function(t){text=t;boot()}).catch(function(){text='OMARCHY TV';boot()})}
+  else boot();
+})();
+</script></body></html>

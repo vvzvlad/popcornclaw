@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Omarchy icon, vectorised from omarchy/icon.txt (MIT, Copyright (c) David Heinemeier Hansson). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="18dp" android:height="18dp"
+    android:viewportWidth="54" android:viewportHeight="52">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M0,0h54v2h-54zM0,2h54v2h-54zM0,4h4v2h-4zM25,4h4v2h-4zM50,4h4v2h-4zM0,6h4v2h-4zM25,6h4v2h-4zM50,6h4v2h-4zM0,8h4v2h-4zM8,8h21v2h-21zM38,8h8v2h-8zM50,8h4v2h-4zM0,10h4v2h-4zM8,10h21v2h-21zM38,10h8v2h-8zM50,10h4v2h-4zM0,12h4v2h-4zM8,12h4v2h-4zM42,12h4v2h-4zM50,12h4v2h-4zM0,14h4v2h-4zM8,14h4v2h-4zM42,14h4v2h-4zM50,14h4v2h-4zM0,16h4v2h-4zM8,16h4v2h-4zM42,16h4v2h-4zM50,16h4v2h-4zM0,18h4v2h-4zM8,18h4v2h-4zM42,18h4v2h-4zM50,18h4v2h-4zM0,20h4v2h-4zM8,20h4v2h-4zM42,20h4v2h-4zM50,20h4v2h-4zM0,22h4v2h-4zM8,22h4v2h-4zM42,22h4v2h-4zM50,22h4v2h-4zM0,24h12v2h-12zM42,24h4v2h-4zM50,24h4v2h-4zM0,26h12v2h-12zM42,26h4v2h-4zM50,26h4v2h-4zM0,28h4v2h-4zM8,28h4v2h-4zM42,28h4v2h-4zM50,28h4v2h-4zM0,30h4v2h-4zM8,30h4v2h-4zM42,30h4v2h-4zM50,30h4v2h-4zM0,32h4v2h-4zM8,32h4v2h-4zM42,32h4v2h-4zM50,32h4v2h-4zM0,34h4v2h-4zM8,34h4v2h-4zM42,34h4v2h-4zM50,34h4v2h-4zM0,36h4v2h-4zM8,36h4v2h-4zM42,36h4v2h-4zM50,36h4v2h-4zM0,38h4v2h-4zM8,38h4v2h-4zM42,38h4v2h-4zM50,38h4v2h-4zM0,40h4v2h-4zM8,40h38v2h-38zM50,40h4v2h-4zM0,42h4v2h-4zM8,42h38v2h-38zM50,42h4v2h-4zM0,44h4v2h-4zM25,44h4v2h-4zM50,44h4v2h-4zM0,46h4v2h-4zM25,46h4v2h-4zM50,46h4v2h-4zM0,48h29v2h-29zM34,48h20v2h-20zM0,50h29v2h-29zM34,50h20v2h-20z" />
+</vector>
