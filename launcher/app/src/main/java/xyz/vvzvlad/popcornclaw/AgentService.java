@@ -136,6 +136,9 @@ public final class AgentService extends Service {
                 + "export HOME=\"$D\" PICOCLAW_HOME=\"$D\" PICOCLAW_CONFIG=\"$D/config.json\"\n"
                 // A static Go binary does not know Android's CA store location.
                 + "export SSL_CERT_DIR=/system/etc/security/cacerts\n"
+                // Go's temp dir falls back to /tmp, which Android lacks: files from Telegram (documents, voice,
+                // photos) are downloaded there and dropped when that fails. The adb shell had this value.
+                + "export TMPDIR=/data/local/tmp\n"
                 // Programs the agent installs through Termux run from its root shell; system tools stay first.
                 // Root must not leave root-owned __pycache__ in Termux's prefix: apt runs as the Termux uid.
                 + "export PATH=\"$PATH:/data/data/com.termux/files/usr/bin\" PYTHONDONTWRITEBYTECODE=1\n"
