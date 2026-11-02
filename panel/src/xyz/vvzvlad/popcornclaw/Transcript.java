@@ -1,4 +1,4 @@
-package xyz.vvzvlad.androidclaw;
+package xyz.vvzvlad.popcornclaw;
 
 import android.graphics.Typeface;
 import android.text.SpannableStringBuilder;
