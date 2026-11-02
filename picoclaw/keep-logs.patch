@@ -1,0 +1,241 @@
+diff --git a/pkg/memory/jsonl.go b/pkg/memory/jsonl.go
+index 3b2f9ff..c37cffc 100644
+--- a/pkg/memory/jsonl.go
++++ b/pkg/memory/jsonl.go
+@@ -89,6 +89,40 @@ func (s *JSONLStore) jsonlPath(key string) string {
+ 	return filepath.Join(s.dir, sanitizeKey(key)+".jsonl")
+ }
+ 
++// archivePath is the session's append-only copy in the archive/ subdirectory.
++// Compact, SetHistory and alias promotion rewrite the live .jsonl and drop
++// old messages; nothing ever rewrites or truncates the archive, so the full
++// conversation stays on disk for later bug analysis.
++func (s *JSONLStore) archivePath(key string) string {
++	return filepath.Join(s.dir, "archive", sanitizeKey(key)+".jsonl")
++}
++
++// appendArchive appends one encoded message line to the session's archive.
++func (s *JSONLStore) appendArchive(key string, line []byte) error {
++	path := s.archivePath(key)
++	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
++		return fmt.Errorf("memory: create archive dir: %w", err)
++	}
++	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
++	if err != nil {
++		return fmt.Errorf("memory: open archive: %w", err)
++	}
++	if _, err := f.Write(line); err != nil {
++		f.Close()
++		return fmt.Errorf("memory: append archive: %w", err)
++	}
++	// Same durability as the live file: an unsynced line lost on power-off
++	// would leave a permanent gap once the live file is compacted.
++	if err := f.Sync(); err != nil {
++		f.Close()
++		return fmt.Errorf("memory: sync archive: %w", err)
++	}
++	if err := f.Close(); err != nil {
++		return fmt.Errorf("memory: close archive: %w", err)
++	}
++	return nil
++}
++
+ func (s *JSONLStore) metaPath(key string) string {
+ 	return filepath.Join(s.dir, sanitizeKey(key)+".meta.json")
+ }
+@@ -612,6 +646,10 @@ func (s *JSONLStore) addMsg(sessionKey string, msg providers.Message) error {
+ 	}
+ 	line = append(line, '\n')
+ 
++	if err := s.appendArchive(sessionKey, line); err != nil {
++		return err
++	}
++
+ 	f, err := os.OpenFile(
+ 		s.jsonlPath(sessionKey),
+ 		os.O_CREATE|os.O_WRONLY|os.O_APPEND,
+diff --git a/pkg/memory/jsonl_archive_test.go b/pkg/memory/jsonl_archive_test.go
+new file mode 100644
+index 0000000..a043714
+--- /dev/null
++++ b/pkg/memory/jsonl_archive_test.go
+@@ -0,0 +1,68 @@
++package memory
++
++import (
++	"context"
++	"encoding/json"
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	"github.com/sipeed/picoclaw/pkg/providers"
++)
++
++// readArchive decodes every line of <sessions>/archive/<key>.jsonl.
++func readArchive(t *testing.T, store *JSONLStore, key string) []providers.Message {
++	t.Helper()
++	data, err := os.ReadFile(filepath.Join(store.dir, "archive", sanitizeKey(key)+".jsonl"))
++	if err != nil {
++		t.Fatalf("read archive: %v", err)
++	}
++	var msgs []providers.Message
++	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
++		var m providers.Message
++		if err := json.Unmarshal([]byte(line), &m); err != nil {
++			t.Fatalf("decode archive line %q: %v", line, err)
++		}
++		msgs = append(msgs, m)
++	}
++	return msgs
++}
++
++func TestArchiveKeepsMessagesThatCompactAndSetHistoryDrop(t *testing.T) {
++	store := newTestStore(t)
++	ctx := context.Background()
++	key := "agent:main:telegram:direct:1"
++
++	for _, text := range []string{"one", "two", "three"} {
++		if err := store.AddMessage(ctx, key, "user", text); err != nil {
++			t.Fatalf("AddMessage: %v", err)
++		}
++	}
++	if err := store.TruncateHistory(ctx, key, 1); err != nil {
++		t.Fatalf("TruncateHistory: %v", err)
++	}
++	if err := store.Compact(ctx, key); err != nil {
++		t.Fatalf("Compact: %v", err)
++	}
++	if err := store.SetHistory(ctx, key, []providers.Message{{Role: "user", Content: "replaced"}}); err != nil {
++		t.Fatalf("SetHistory: %v", err)
++	}
++
++	history, err := store.GetHistory(ctx, key)
++	if err != nil {
++		t.Fatalf("GetHistory: %v", err)
++	}
++	if len(history) != 1 || history[0].Content != "replaced" {
++		t.Fatalf("live history = %+v, want only the replaced message", history)
++	}
++
++	archived := readArchive(t, store, key)
++	var got []string
++	for _, m := range archived {
++		got = append(got, m.Content)
++	}
++	if strings.Join(got, ",") != "one,two,three" {
++		t.Fatalf("archive = %v, want every appended message in order", got)
++	}
++}
+diff --git a/pkg/providers/common/common.go b/pkg/providers/common/common.go
+index 10bdddd..5b5837d 100644
+--- a/pkg/providers/common/common.go
++++ b/pkg/providers/common/common.go
+@@ -19,6 +19,7 @@ import (
+ 	"strings"
+ 	"time"
+ 
++	"github.com/sipeed/picoclaw/pkg/logger"
+ 	"github.com/sipeed/picoclaw/pkg/providers/protocoltypes"
+ )
+ 
+@@ -401,13 +402,24 @@ func (e *HTTPError) Error() string {
+ 	)
+ }
+ 
++// errorBodyLimit bounds how much of an error body is read and logged.
++const errorBodyLimit = 4096
++
+ // HandleErrorResponse reads a non-200 response body and returns an appropriate error.
+ func HandleErrorResponse(resp *http.Response, apiBase string) error {
+ 	contentType := resp.Header.Get("Content-Type")
+-	body, readErr := io.ReadAll(io.LimitReader(resp.Body, 256))
++	body, readErr := io.ReadAll(io.LimitReader(resp.Body, errorBodyLimit))
+ 	if readErr != nil {
+ 		return fmt.Errorf("failed to read response: %w", readErr)
+ 	}
++	// The error text keeps its 128-byte preview: retry and history-compaction
++	// decisions match substrings of it. The body, up to errorBodyLimit bytes,
++	// goes to the log only, so a provider error stays readable after the fact.
++	logger.WarnCF("provider", "Provider error response", map[string]any{
++		"status":   resp.StatusCode,
++		"api_base": apiBase,
++		"body":     string(body),
++	})
+ 	if LooksLikeHTML(body, contentType) {
+ 		return WrapHTMLResponseError(resp.StatusCode, body, contentType, apiBase)
+ 	}
+diff --git a/pkg/providers/common/error_body_test.go b/pkg/providers/common/error_body_test.go
+new file mode 100644
+index 0000000..5103bf7
+--- /dev/null
++++ b/pkg/providers/common/error_body_test.go
+@@ -0,0 +1,67 @@
++package common
++
++import (
++	"encoding/json"
++	"net/http"
++	"net/http/httptest"
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++
++	"github.com/sipeed/picoclaw/pkg/logger"
++)
++
++// A 400 from nano-gpt reached the log cut at 128 bytes, right before the value of its "code" field.
++// The body below is synthetic, shaped like that response and longer than the old
++// 256-byte read limit; the real code of that 400 is unknown.
++func TestHandleErrorResponse_LogsWholeBodyKeepsShortErrorText(t *testing.T) {
++	body := `{"error":{"message":"Invalid request parameters. Please check your input and try again. ` +
++		strings.Repeat("Details of the rejected field follow. ", 6) +
++		`","type":"invalid_request_error","code":"synthetic_code_at_the_end"}}`
++	if len(body) <= 256 {
++		t.Fatalf("test body must exceed the old 256-byte read limit, got %d bytes", len(body))
++	}
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		w.Header().Set("Content-Type", "application/json")
++		w.WriteHeader(http.StatusBadRequest)
++		_, _ = w.Write([]byte(body))
++	}))
++	defer server.Close()
++
++	logPath := filepath.Join(t.TempDir(), "gateway.log")
++	if err := logger.EnableFileLogging(logPath); err != nil {
++		t.Fatalf("EnableFileLogging: %v", err)
++	}
++	defer logger.DisableFileLogging()
++
++	resp, err := http.Get(server.URL)
++	if err != nil {
++		t.Fatalf("http.Get() error = %v", err)
++	}
++	defer resp.Body.Close()
++
++	err = HandleErrorResponse(resp, server.URL)
++	if err == nil {
++		t.Fatal("expected error")
++	}
++	// Retry and compaction decisions match substrings of this text: it must stay the 128-byte preview.
++	if want := "API request failed:\n  Status: 400\n  Body:   " + body[:128] + "..."; err.Error() != want {
++		t.Fatalf("error text = %q, want %q", err.Error(), want)
++	}
++
++	data, readErr := os.ReadFile(logPath)
++	if readErr != nil {
++		t.Fatalf("read log: %v", readErr)
++	}
++	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
++		var entry map[string]any
++		if json.Unmarshal([]byte(line), &entry) != nil {
++			continue
++		}
++		if entry["message"] == "Provider error response" && entry["body"] == body {
++			return
++		}
++	}
++	t.Fatalf("log has no entry with the whole error body; log:\n%s", data)
++}
