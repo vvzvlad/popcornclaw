@@ -759,7 +759,7 @@ final class LauncherConfig {
         castEnabled = cst != null && cst.optBoolean("enabled", false);
         JSONObject pr = j != null ? j.optJSONObject("prompt") : null;
         promptUser = promptPart(pr != null ? pr.optString("user", "") : "", "user");
-        promptHost = promptPart(pr != null ? pr.optString("host", "") : "", "omarchytv");
+        promptHost = promptPart(pr != null ? pr.optString("host", "") : "", "popcornclaw");
         List<String> w = new ArrayList<>();
         JSONArray wa = j != null ? j.optJSONArray("widgets") : null;
         if (wa != null) {

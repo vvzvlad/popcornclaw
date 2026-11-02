@@ -25,20 +25,17 @@ import java.util.Locale;
 /**
  * The agent's console feed for the launcher's home screen: follows the newest PicoClaw session and draws it
  * as a console transcript with a status line under it. It polls once a second while its window is on screen
- * and calls the given callback whenever {@link #shown()} changes: true while a turn runs and for a few
- * minutes after it. The home screen decides where it goes and what it hides meanwhile.
+ * and calls the given callback whenever {@link #shown()} changes: true whenever there is a conversation.
+ * The home screen decides where it goes and what it hides meanwhile.
  */
 public final class HomeFeed extends LinearLayout {
     private static final String TAG = "PopcornClawFeed";
     private static final File SESSIONS = new File("/data/local/popcornclaw/workspace/sessions");
     private static final long POLL_MS = 1000;
-    private static final long LINGER_MS = 5 * 60 * 1000;
     // PicoClaw writes nothing when a turn dies (model error after retries, gateway killed), so a
-    // turn with no new step for this long is treated as over; longer than any normal step.
-    // Must stay above LINGER_MS: a stale turn is then already hidden, so "ответ в" never shows
-    // for a turn without an answer.
+    // turn with no new step for this long is treated as broken; longer than any normal step.
     private static final long STALE_MS = 10 * 60 * 1000;
-    private static final int TEXT_SP = 14;
+    private static final int TEXT_SP = 9;
 
     private final Runnable onShownChanged;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -119,7 +116,7 @@ public final class HomeFeed extends LinearLayout {
                 ViewGroup.LayoutParams.WRAP_CONTENT));
     }
 
-    /** True while a turn runs (and is not stale) and for {@link #LINGER_MS} after its last entry. */
+    /** True whenever there is a conversation to show: the console stays on the home screen. */
     public boolean shown() {
         return shown;
     }
@@ -174,8 +171,7 @@ public final class HomeFeed extends LinearLayout {
         final CharSequence text = changed || p != rendered ? transcript.render(p) : null;
         rendered = p;
         final boolean working = transcript.inProgress() && now - transcript.lastEntryMs() < STALE_MS;
-        final boolean visible = !transcript.isEmpty()
-                && (working || now - transcript.lastEntryMs() < LINGER_MS);
+        final boolean visible = !transcript.isEmpty();
         final String line;
         final int color;
         if (transcript.isEmpty()) {
@@ -186,6 +182,9 @@ public final class HomeFeed extends LinearLayout {
             String running = transcript.lastUserMs() > 0 ? clock(now - transcript.lastUserMs()) + " · " : "";
             line = "✻ Работает… " + running + "последний шаг " + step + " с назад";
             color = p.accent;
+        } else if (transcript.inProgress()) {
+            line = "ход оборвался · последний шаг в " + hhmm.format(new Date(transcript.lastEntryMs()));
+            color = p.dim;
         } else {
             line = "ждёт сообщения · ответ в " + hhmm.format(new Date(transcript.lastEntryMs()));
             color = p.dim;

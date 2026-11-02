@@ -242,7 +242,7 @@ final class HomeV29 extends FrameLayout {
         tl.topMargin = px(76);
         addView(term, tl);
         termPrompt = text("", 20, false);
-        termLogo = text(logoText(), 8, false);
+        termLogo = text(logoText(), 7.5f, false);   // popcornclaw: our wordmark is 127 columns, Omarchy's 105
         termLogo.setLineSpacing(0, 1.15f);
         termLogo.setHorizontallyScrolling(true);
         termInfo = text("", 20, false);
@@ -563,7 +563,7 @@ final class HomeV29 extends FrameLayout {
     }
 
     private String logoText() {
-        try (InputStream in = act.getAssets().open("saver/screensaver-tv.txt")) {
+        try (InputStream in = act.getAssets().open("popcornclaw/wordmark.txt")) {   // popcornclaw: our wordmark
             byte[] b = new byte[in.available()];
             int n = in.read(b);
             String txt = new String(b, 0, Math.max(0, n), StandardCharsets.UTF_8);

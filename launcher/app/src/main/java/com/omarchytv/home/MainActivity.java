@@ -107,7 +107,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             }
             if (tv != null) tv.blink();
             if (sc != null) sc.blink();
-            if (home != null) home.blink(on);   // v2.10: the home prompt cursor blinks too
+            if (home != null) home.blink(true);   // popcornclaw: the home prompt cursor does not blink
             handler.postDelayed(this, BLINK_MS);
         }
     };
