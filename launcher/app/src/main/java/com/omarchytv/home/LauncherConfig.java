@@ -401,9 +401,9 @@ final class LauncherConfig {
     /** v2.14 "Always-animated wallpaper" (default false): loop the theme's animated wallpaper while Home is on screen
      *  instead of playing it once and settling on the still. Video, Cinemarchy and the screensaver pause it (onPause). */
     final boolean wallpaperLoop;
-    /** v2.13: rotate among animated themes on Home resume/boot (default true; locked false on manual pick). */
+    /** v2.13: rotate among animated themes on Home resume/boot (default false in popcornclaw; locked false on manual pick). */
     final boolean randomTheme;
-    /** v2.13: rotate among animated wallpapers/intros on Home resume/boot (default true; locked false on manual pick). */
+    /** v2.13: rotate among animated wallpapers/intros on Home resume/boot (default false in popcornclaw; locked false on manual pick). */
     final boolean randomWallpaper;
     /** v2.13 Plugins Engine: SpaceX TV (com.sighmon.spacex-tv) & Grok Bot Companion (io.github.tcballard.grokbot-desktop). */
     final boolean pluginSpacexTv;
