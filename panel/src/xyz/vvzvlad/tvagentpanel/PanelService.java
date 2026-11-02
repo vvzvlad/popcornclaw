@@ -58,6 +58,8 @@ public final class PanelService extends Service {
     // Usage events are recorded asynchronously; re-reading a few seconds back catches late ones.
     private static final long EVENT_OVERLAP_MS = 10_000;
     private static final String CHANNEL = "panel";
+    private static final float WIDTH_SHARE = 0.6f;
+    private static final int PAD_DP = 12;
     private static final DateTimeFormatter HH_MM = DateTimeFormatter.ofPattern("HH:mm");
 
     private final Transcript transcript = new Transcript();
@@ -99,6 +101,11 @@ public final class PanelService extends Service {
         main = new Handler(Looper.getMainLooper());
         wm = getSystemService(WindowManager.class);
         root = buildViews();
+        // Lines are cut to the panel's width in monospace columns, the way a console does.
+        DisplayMetrics dm = new DisplayMetrics();
+        wm.getDefaultDisplay().getRealMetrics(dm);
+        int textWidth = Math.round(dm.widthPixels * WIDTH_SHARE) - 2 * dp(PAD_DP);
+        transcript.setColumns((int) (textWidth / body.getPaint().measureText("0")));
         thread = new HandlerThread("panel-poll");
         thread.start();
         worker = new Handler(thread.getLooper());
@@ -253,7 +260,7 @@ public final class PanelService extends Service {
         bg.setColor(0xE6000000);
         bg.setCornerRadius(dp(6));
         panel.setBackground(bg);
-        int pad = dp(12);
+        int pad = dp(PAD_DP);
         panel.setPadding(pad, pad, pad, pad);
 
         body = console();
@@ -298,7 +305,7 @@ public final class PanelService extends Service {
         int top = Math.round(dm.heightPixels * 0.065f);
         int bottom = Math.round(dm.heightPixels * 0.25f);
         WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                Math.round(dm.widthPixels * 0.6f),
+                Math.round(dm.widthPixels * WIDTH_SHARE),
                 dm.heightPixels - top - bottom,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE

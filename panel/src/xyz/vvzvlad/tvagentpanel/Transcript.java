@@ -31,10 +31,9 @@ final class Transcript {
 
     // Enough lines to hold a whole turn; the screen shows only what fits at the bottom.
     private static final int MAX_LINES = 400;
-    // A tool call and its output each take about one panel line: the call is cut to that width,
+    // A tool call and its output each take one panel line: the call is cut to the panel's width,
     // the output is shown as its first line only, cut the same way.
     private static final int RESULT_LINES = 1;
-    private static final int LINE_CHARS = 100;
     private static final int FIRST_CHUNK = 256 * 1024;
     private static final int MAX_CHUNK = 8 * 1024 * 1024;
 
@@ -56,6 +55,8 @@ final class Transcript {
     }
 
     private final ArrayDeque<Line> lines = new ArrayDeque<>();
+    // Panel width in monospace columns; set by the service before the first poll.
+    private int columns = 80;
     private File file;
     private long size = -1;
     private long mtime = -1;
@@ -112,6 +113,10 @@ final class Transcript {
             file = null;
         }
         return true;
+    }
+
+    void setColumns(int columns) {
+        this.columns = columns;
     }
 
     CharSequence render() {
@@ -306,7 +311,7 @@ final class Transcript {
             }
         }
         String oneLine = detail.replace('\n', ' ');
-        add(CALL_MARK + name + "(" + cut(oneLine, Math.max(10, LINE_CHARS - name.length() - 2)) + ")", ACCENT, false);
+        add(CALL_MARK + name + "(" + cut(oneLine, Math.max(10, columns - CALL_MARK.length() - name.length() - 2)) + ")", ACCENT, false);
         if (!status.isEmpty()) {
             addText("  # ", "    ", status, DIM, false);
         }
@@ -320,7 +325,8 @@ final class Transcript {
             int nl = s.indexOf('\n', pos);
             int end = nl < 0 ? s.length() : nl;
             if (count < RESULT_LINES) {
-                add((count == 0 ? RESULT_MARK : "    ") + cut(s.substring(pos, end), LINE_CHARS), OUTPUT, false);
+                // └ is not in DroidSansMono; the fallback (NotoSansSymbols) draws it 1.18 columns wide.
+                add((count == 0 ? RESULT_MARK : "    ") + cut(s.substring(pos, end), columns - RESULT_MARK.length() - 1), OUTPUT, false);
             }
             count++;
             if (nl < 0) {
@@ -398,11 +404,12 @@ final class Transcript {
         return s.substring(b, e);
     }
 
+    /** At most n chars, the last one "…" when something was cut. */
     private static String cut(String s, int n) {
         if (s.length() <= n) {
             return s;
         }
-        int k = Character.isHighSurrogate(s.charAt(n - 1)) ? n - 1 : n;
+        int k = Character.isHighSurrogate(s.charAt(n - 2)) ? n - 2 : n - 1;
         return s.substring(0, k) + "…";
     }
 
