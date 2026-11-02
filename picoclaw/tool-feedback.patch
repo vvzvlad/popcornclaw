@@ -1,0 +1,240 @@
+diff --git a/pkg/agent/tool_status_test.go b/pkg/agent/tool_status_test.go
+index a442380..96bc249 100644
+--- a/pkg/agent/tool_status_test.go
++++ b/pkg/agent/tool_status_test.go
+@@ -120,7 +120,7 @@ func TestProcessMessage_ToolStatusArgBecomesFeedbackAndIsStripped(t *testing.T)
+ 
+ 	select {
+ 	case outbound := <-msgBus.OutboundChan():
+-		want := "\U0001f527 `status_probe`\nПроверяю, что статус доходит до чата"
++		want := "Проверяю, что статус доходит до чата (`status_probe`)"
+ 		if outbound.Content != want {
+ 			t.Fatalf("tool feedback content = %q, want %q", outbound.Content, want)
+ 		}
+diff --git a/pkg/channels/telegram/telegram.go b/pkg/channels/telegram/telegram.go
+index d7265fb..30ef005 100644
+--- a/pkg/channels/telegram/telegram.go
++++ b/pkg/channels/telegram/telegram.go
+@@ -292,6 +292,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
+ 					replyToID:     replyToID,
+ 					mdFallback:    chunk,
+ 					useMarkdownV2: useMarkdownV2,
++					silent:        isToolFeedback,
+ 				})
+ 				if err != nil {
+ 					return nil, err
+@@ -332,6 +333,7 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
+ 			replyToID:     replyToID,
+ 			mdFallback:    chunk,
+ 			useMarkdownV2: useMarkdownV2,
++			silent:        isToolFeedback,
+ 		})
+ 		if err != nil {
+ 			return nil, err
+@@ -357,6 +359,8 @@ type sendChunkParams struct {
+ 	replyToID     string
+ 	mdFallback    string
+ 	useMarkdownV2 bool
++	// silent sends without a notification sound: used for tool feedback steps.
++	silent bool
+ }
+ 
+ // sendChunk sends a single HTML/MarkdownV2 message, falling back to the original
+@@ -367,6 +371,7 @@ func (c *TelegramChannel) sendChunk(
+ ) (string, error) {
+ 	tgMsg := tu.Message(tu.ID(params.chatID), params.content)
+ 	tgMsg.MessageThreadID = params.threadID
++	tgMsg.DisableNotification = params.silent
+ 	if params.useMarkdownV2 {
+ 		tgMsg.WithParseMode(telego.ModeMarkdownV2)
+ 	} else {
+diff --git a/pkg/channels/telegram/telegram_silent_test.go b/pkg/channels/telegram/telegram_silent_test.go
+new file mode 100644
+index 0000000..e215627
+--- /dev/null
++++ b/pkg/channels/telegram/telegram_silent_test.go
+@@ -0,0 +1,43 @@
++package telegram
++
++import (
++	"context"
++	"testing"
++
++	ta "github.com/mymmrac/telego/telegoapi"
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/sipeed/picoclaw/pkg/bus"
++)
++
++// Tool feedback steps arrive without a notification sound; the final reply still rings.
++func TestSend_ToolFeedbackIsSilentFinalReplyIsNot(t *testing.T) {
++	caller := &stubCaller{
++		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
++			return successResponse(t), nil
++		},
++	}
++	ch := newTestChannel(t, caller)
++
++	_, err := ch.Send(context.Background(), bus.OutboundMessage{
++		ChatID:  "12345",
++		Content: "Смотрю файлы раздачи второго сезона (`mcp_tv_files`)",
++		Context: bus.InboundContext{
++			Channel: "telegram",
++			ChatID:  "12345",
++			Raw:     map[string]string{"message_kind": "tool_feedback"},
++		},
++	})
++	require.NoError(t, err)
++	// With separate tool feedback messages the manager drops the tracked step before the reply.
++	ch.ClearToolFeedbackMessage("12345")
++	_, err = ch.Send(context.Background(), bus.OutboundMessage{ChatID: "12345", Content: "final reply"})
++	require.NoError(t, err)
++
++	require.Len(t, caller.calls, 2)
++	assert.Contains(t, caller.calls[0].URL, "sendMessage")
++	assert.Contains(t, string(caller.calls[0].Data.BodyRaw), `"disable_notification":true`)
++	assert.Contains(t, caller.calls[1].URL, "sendMessage")
++	assert.NotContains(t, string(caller.calls[1].Data.BodyRaw), `"disable_notification"`)
++}
+diff --git a/pkg/channels/tool_feedback_animator.go b/pkg/channels/tool_feedback_animator.go
+index b424612..5b57f1f 100644
+--- a/pkg/channels/tool_feedback_animator.go
++++ b/pkg/channels/tool_feedback_animator.go
+@@ -87,7 +87,9 @@ func (a *ToolFeedbackAnimator) Record(chatID, messageID, content string) {
+ 	a.mu.Unlock()
+ 
+ 	stopToolFeedbackAnimation(previous)
+-	go a.run(chatID, entry)
++	// No animation: each step is its own message, and the last frame ("." or "..") would stay
++	// glued to the step text once the next step arrives. done is closed so stop() never blocks.
++	close(entry.done)
+ }
+ 
+ func (a *ToolFeedbackAnimator) Clear(chatID string) {
+diff --git a/pkg/channels/tool_feedback_noanim_test.go b/pkg/channels/tool_feedback_noanim_test.go
+new file mode 100644
+index 0000000..5b3c953
+--- /dev/null
++++ b/pkg/channels/tool_feedback_noanim_test.go
+@@ -0,0 +1,28 @@
++package channels
++
++import (
++	"context"
++	"testing"
++)
++
++// A recorded step is not animated: an animation frame ("." or "..") would stay glued to the
++// step text once the next step arrives.
++func TestToolFeedbackAnimator_RecordDoesNotAnimate(t *testing.T) {
++	a := NewToolFeedbackAnimator(func(context.Context, string, string, string) error {
++		t.Error("animation edited the step")
++		return nil
++	})
++	a.Record("chat-1", "msg-1", "Смотрю файлы (`mcp_tv_files`)")
++
++	a.mu.Lock()
++	entry := a.entries["chat-1"]
++	a.mu.Unlock()
++	if entry == nil {
++		t.Fatal("step was not recorded")
++	}
++	select {
++	case <-entry.done:
++	default:
++		t.Fatal("animation goroutine is running")
++	}
++}
+diff --git a/pkg/utils/tool_feedback.go b/pkg/utils/tool_feedback.go
+index 1834d7f..d59913f 100644
+--- a/pkg/utils/tool_feedback.go
++++ b/pkg/utils/tool_feedback.go
+@@ -30,31 +30,32 @@ func FormatArgsJSON(args map[string]any, prettyPrint, disableEscapeHTML bool) st
+ 	return strings.TrimSpace(buf.String())
+ }
+ 
+-// FormatToolFeedbackMessage renders a tool feedback message for chat channels.
+-// It keeps the tool name on the first line for animation and can include both
+-// a human explanation and the serialized tool arguments in the body.
++// FormatToolFeedbackMessage renders a tool feedback message for chat channels:
++// "<explanation> (`<tool>`)" on one line, optionally followed by a fenced JSON
++// block with the tool arguments.
+ func FormatToolFeedbackMessage(toolName, explanation, argsPreview string) string {
+ 	toolName = strings.TrimSpace(toolName)
+ 	explanation = strings.TrimSpace(explanation)
+ 	argsPreview = strings.TrimSpace(argsPreview)
+ 
+-	bodyLines := make([]string, 0, 2)
+-	if explanation != "" {
+-		bodyLines = append(bodyLines, explanation)
++	// The step reads as "<explanation> (`<tool>`)" on one line, without the wrench prefix.
++	head := explanation
++	if toolName != "" {
++		if head == "" {
++			head = fmt.Sprintf("`%s`", toolName)
++		} else {
++			head = fmt.Sprintf("%s (`%s`)", head, toolName)
++		}
+ 	}
+-	if argsPreview != "" {
+-		bodyLines = append(bodyLines, "```json\n"+argsPreview+"\n```")
+-	}
+-	body := strings.Join(bodyLines, "\n")
+ 
+-	if toolName == "" {
+-		return body
++	lines := make([]string, 0, 2)
++	if head != "" {
++		lines = append(lines, head)
+ 	}
+-	if body == "" {
+-		return fmt.Sprintf("\U0001f527 `%s`", toolName)
++	if argsPreview != "" {
++		lines = append(lines, "```json\n"+argsPreview+"\n```")
+ 	}
+-
+-	return fmt.Sprintf("\U0001f527 `%s`\n%s", toolName, body)
++	return strings.Join(lines, "\n")
+ }
+ 
+ // FitToolFeedbackMessage keeps tool feedback within a single outbound message.
+diff --git a/pkg/utils/tool_feedback_test.go b/pkg/utils/tool_feedback_test.go
+index da4accc..880e00e 100644
+--- a/pkg/utils/tool_feedback_test.go
++++ b/pkg/utils/tool_feedback_test.go
+@@ -11,7 +11,15 @@ func TestFormatToolFeedbackMessage(t *testing.T) {
+ 		"I will read README.md first to confirm the current project structure.",
+ 		"{\n  \"path\": \"README.md\"\n}",
+ 	)
+-	want := "\U0001f527 `read_file`\nI will read README.md first to confirm the current project structure.\n```json\n{\n  \"path\": \"README.md\"\n}\n```"
++	want := "I will read README.md first to confirm the current project structure. (`read_file`)\n```json\n{\n  \"path\": \"README.md\"\n}\n```"
++	if got != want {
++		t.Fatalf("FormatToolFeedbackMessage() = %q, want %q", got, want)
++	}
++}
++
++func TestFormatToolFeedbackMessage_StatusThenTool(t *testing.T) {
++	got := FormatToolFeedbackMessage("mcp_tv_files", "Смотрю файлы раздачи второго сезона", "")
++	want := "Смотрю файлы раздачи второго сезона (`mcp_tv_files`)"
+ 	if got != want {
+ 		t.Fatalf("FormatToolFeedbackMessage() = %q, want %q", got, want)
+ 	}
+@@ -19,7 +27,7 @@ func TestFormatToolFeedbackMessage(t *testing.T) {
+ 
+ func TestFormatToolFeedbackMessage_EmptyExplanationShowsArgs(t *testing.T) {
+ 	got := FormatToolFeedbackMessage("read_file", "", "{\n  \"path\": \"README.md\"\n}")
+-	want := "\U0001f527 `read_file`\n```json\n{\n  \"path\": \"README.md\"\n}\n```"
++	want := "`read_file`\n```json\n{\n  \"path\": \"README.md\"\n}\n```"
+ 	if got != want {
+ 		t.Fatalf("FormatToolFeedbackMessage() = %q, want %q", got, want)
+ 	}
+@@ -35,7 +43,7 @@ func TestFormatToolFeedbackMessage_EmptyToolNameOmitsToolLine(t *testing.T) {
+ 
+ func TestFormatToolFeedbackMessage_EmptyExplanationAndArgsKeepsOnlyToolLine(t *testing.T) {
+ 	got := FormatToolFeedbackMessage("read_file", "", "")
+-	want := "\U0001f527 `read_file`"
++	want := "`read_file`"
+ 	if got != want {
+ 		t.Fatalf("FormatToolFeedbackMessage() = %q, want %q", got, want)
+ 	}
