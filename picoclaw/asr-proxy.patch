@@ -1,0 +1,54 @@
+diff --git a/pkg/audio/asr/whisper_transcriber.go b/pkg/audio/asr/whisper_transcriber.go
+index fc1101e..6203cff 100644
+--- a/pkg/audio/asr/whisper_transcriber.go
++++ b/pkg/audio/asr/whisper_transcriber.go
+@@ -16,6 +16,7 @@ import (
+ 	"github.com/sipeed/picoclaw/pkg/config"
+ 	"github.com/sipeed/picoclaw/pkg/logger"
+ 	"github.com/sipeed/picoclaw/pkg/providers"
++	"github.com/sipeed/picoclaw/pkg/providers/common"
+ 	"github.com/sipeed/picoclaw/pkg/utils"
+ )
+ 
+@@ -46,6 +47,12 @@ func NewWhisperTranscriber(modelCfg *config.ModelConfig) *WhisperTranscriber {
+ 	if tr == nil {
+ 		return nil
+ 	}
++	// Use the model's proxy like the LLM providers do; keep the transcriber's 60 s timeout
++	// instead of NewHTTPClient's 120 s default.
++	if modelCfg.Proxy != "" {
++		tr.httpClient = common.NewHTTPClient(modelCfg.Proxy)
++		tr.httpClient.Timeout = 60 * time.Second
++	}
+ 
+ 	logger.DebugCF("voice", "Creating whisper transcriber", map[string]any{
+ 		"api_base": tr.apiBase,
+diff --git a/pkg/audio/asr/whisper_transcriber_test.go b/pkg/audio/asr/whisper_transcriber_test.go
+index a2a5178..2118ec5 100644
+--- a/pkg/audio/asr/whisper_transcriber_test.go
++++ b/pkg/audio/asr/whisper_transcriber_test.go
+@@ -100,3 +100,24 @@ func TestWhisperTranscriberUsesEndpointAPIBaseWithoutDoubleAppend(t *testing.T)
+ 		t.Errorf("path = %q, want %q", gotPath, "/audio/transcriptions")
+ 	}
+ }
++
++// The ASR model's proxy must be used like the LLM providers use theirs: Groq refuses requests
++// from some regions, and the transcriber used to go direct regardless of model_list proxy.
++func TestNewWhisperTranscriberUsesModelProxy(t *testing.T) {
++	tr := NewWhisperTranscriber(&config.ModelConfig{
++		Model: "groq/whisper-large-v3-turbo",
++		Proxy: "socks5://10.0.0.1:1080",
++	})
++	if tr == nil {
++		t.Fatal("NewWhisperTranscriber returned nil")
++	}
++	transport, ok := tr.httpClient.Transport.(*http.Transport)
++	if !ok || transport.Proxy == nil {
++		t.Fatalf("transcriber transport has no proxy: %#v", tr.httpClient.Transport)
++	}
++	req := httptest.NewRequest(http.MethodPost, "https://api.groq.com/openai/v1/audio/transcriptions", nil)
++	got, err := transport.Proxy(req)
++	if err != nil || got == nil || got.String() != "socks5://10.0.0.1:1080" {
++		t.Fatalf("proxy for transcription request = %v, %v; want socks5://10.0.0.1:1080", got, err)
++	}
++}
