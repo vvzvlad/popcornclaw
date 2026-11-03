@@ -1,0 +1,702 @@
+diff --git a/pkg/agent/agent.go b/pkg/agent/agent.go
+index 26abe90..7ac00ec 100644
+--- a/pkg/agent/agent.go
++++ b/pkg/agent/agent.go
+@@ -167,6 +167,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
+ 			if !ok {
+ 				return nil
+ 			}
++			msg = al.joinLinkedDM(msg)
+ 
+ 			// Resolve the session key for this message
+ 			sessionKey, agentID, ok := al.resolveSteeringTarget(msg)
+@@ -194,6 +195,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
+ 				}
+ 
+ 				msg = al.prepareInboundMessageForAgent(ctx, msg)
++				al.echoToLinkedChats(ctx, msg)
+ 
+ 				// Another turn is already active (or reserved) for this session — enqueue
+ 				if err := al.enqueueSteeringMessage(sessionKey, agentID, providers.Message{
+@@ -270,6 +272,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
+ 				if al.channelManager != nil {
+ 					defer al.channelManager.InvokeTypingStop(m.Channel, m.ChatID)
+ 				}
++				defer al.endLinkedTurn(ctx, m)
+ 
+ 				if al.takePendingStop(sessionKey) {
+ 					al.releaseSessionTurnState(sessionKey, nil)
+diff --git a/pkg/agent/agent_message.go b/pkg/agent/agent_message.go
+index 419664e..58d090b 100644
+--- a/pkg/agent/agent_message.go
++++ b/pkg/agent/agent_message.go
+@@ -122,6 +122,7 @@ func (al *AgentLoop) prepareInboundMessageForAgent(
+ 
+ func (al *AgentLoop) processMessage(ctx context.Context, msg bus.InboundMessage) (string, error) {
+ 	msg = al.prepareInboundMessageForAgent(ctx, msg)
++	al.echoToLinkedChats(ctx, msg)
+ 
+ 	// Add message preview to log (show full content for error messages)
+ 	var logContent string
+diff --git a/pkg/agent/shared_dialog.go b/pkg/agent/shared_dialog.go
+new file mode 100644
+index 0000000..184731e
+--- /dev/null
++++ b/pkg/agent/shared_dialog.go
+@@ -0,0 +1,85 @@
++package agent
++
++import (
++	"context"
++	"time"
++
++	"github.com/sipeed/picoclaw/pkg/bus"
++	"github.com/sipeed/picoclaw/pkg/config"
++	"github.com/sipeed/picoclaw/pkg/logger"
++)
++
++// The TV (a pico client) and the owner's Telegram DM are one dialog when session.identity_links joins
++// them. A TV message becomes a message of that DM: it shares the DM's session and its turns, a message
++// in the middle of a turn is steered into it as in Telegram, and the turn answers in the DM as usual
++// while the channel manager mirrors the DM's text (not its files) to the TV. Each side also sees the owner's
++// messages typed on the other one, and the TV is told when a turn is over.
++
++const (
++	messageKindUser    = "user"     // the owner's message, shown in the other chats of the dialog
++	messageKindTurnEnd = "turn_end" // the dialog's turn is over
++)
++
++// joinLinkedDM turns a pico message from a chat linked to a Telegram DM into a message of that DM.
++// Its sender stays the pico one, which tells where the message was typed.
++func (al *AgentLoop) joinLinkedDM(msg bus.InboundMessage) bus.InboundMessage {
++	if msg.Channel != "pico" {
++		return msg
++	}
++	for _, c := range al.GetConfig().Session.LinkedChats(msg.Channel, msg.ChatID) {
++		if c.Channel == "telegram" {
++			return bus.NormalizeInboundMessage(bus.InboundMessage{
++				Context:    bus.InboundContext{Channel: c.Channel, ChatID: c.ChatID, ChatType: "direct", SenderID: c.ChatID},
++				Sender:     msg.Sender,
++				Content:    msg.Content,
++				Media:      msg.Media,
++				MediaScope: msg.MediaScope,
++			})
++		}
++	}
++	return msg
++}
++
++// echoToLinkedChats shows the owner's message in the other chats of its dialog: a TV message in the
++// Telegram DM as "📺 <text>", a DM message on the TV.
++func (al *AgentLoop) echoToLinkedChats(ctx context.Context, msg bus.InboundMessage) {
++	fromTV := msg.Sender.Platform == "pico" && msg.Channel != "pico"
++	for _, c := range al.GetConfig().Session.LinkedChats(msg.Channel, msg.ChatID) {
++		ownChat := c.Channel == msg.Channel && c.ChatID == msg.ChatID
++		if ownChat != fromTV {
++			continue // the chat the message was typed in
++		}
++		content := msg.Content
++		if fromTV {
++			content = "📺 " + content
++		}
++		al.publishToLinkedChat(ctx, c, messageKindUser, content)
++	}
++}
++
++// endLinkedTurn tells the TV that msg's turn is over, whatever ended it: an answer, an error, /stop or
++// an answer sent with the message tool.
++func (al *AgentLoop) endLinkedTurn(ctx context.Context, msg bus.InboundMessage) {
++	for _, c := range al.GetConfig().Session.LinkedChats(msg.Channel, msg.ChatID) {
++		if c.Channel == "pico" {
++			al.publishToLinkedChat(ctx, c, messageKindTurnEnd, "")
++		}
++	}
++}
++
++func (al *AgentLoop) publishToLinkedChat(ctx context.Context, c config.LinkedChat, kind, content string) {
++	pubCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
++	defer cancel()
++	err := al.bus.PublishOutbound(pubCtx, bus.OutboundMessage{
++		Context: bus.InboundContext{
++			Channel: c.Channel,
++			ChatID:  c.ChatID,
++			Raw:     map[string]string{metadataKeyMessageKind: kind},
++		},
++		Content: content,
++	})
++	if err != nil {
++		logger.WarnCF("agent", "Failed to publish to a linked chat",
++			map[string]any{"channel": c.Channel, "chat_id": c.ChatID, "kind": kind, "error": err.Error()})
++	}
++}
+diff --git a/pkg/agent/shared_dialog_test.go b/pkg/agent/shared_dialog_test.go
+new file mode 100644
+index 0000000..cd7466c
+--- /dev/null
++++ b/pkg/agent/shared_dialog_test.go
+@@ -0,0 +1,201 @@
++package agent
++
++import (
++	"context"
++	"reflect"
++	"sync"
++	"testing"
++	"time"
++
++	"github.com/sipeed/picoclaw/pkg/bus"
++	"github.com/sipeed/picoclaw/pkg/config"
++	"github.com/sipeed/picoclaw/pkg/providers"
++)
++
++// The owner's Telegram DM session on the box: v=1|agent=main|channel=telegram|account=default|chat=direct:11111111.
++const ownerDMKey = "sk_v1_bd60789427ad9577ade505cafb5f771d7d4107adb48458ad1d326f5ce7e89556"
++
++// dialogProvider answers in order; with hold set, its first call waits until hold is closed.
++type dialogProvider struct {
++	mu           sync.Mutex
++	answers      []string
++	calls        [][]providers.Message
++	firstStarted chan struct{}
++	hold         chan struct{}
++}
++
++func (p *dialogProvider) Chat(
++	ctx context.Context,
++	messages []providers.Message,
++	tools []providers.ToolDefinition,
++	model string,
++	opts map[string]any,
++) (*providers.LLMResponse, error) {
++	p.mu.Lock()
++	p.calls = append(p.calls, append([]providers.Message(nil), messages...))
++	call := len(p.calls)
++	p.mu.Unlock()
++	if call == 1 && p.hold != nil {
++		close(p.firstStarted)
++		<-p.hold
++	}
++	return &providers.LLMResponse{Content: p.answers[call-1]}, nil
++}
++
++func (p *dialogProvider) GetDefaultModel() string { return "dialog-mock" }
++
++func startDialogLoop(t *testing.T, provider *dialogProvider) (*AgentLoop, *bus.MessageBus) {
++	t.Helper()
++	cfg := &config.Config{
++		Agents: config.AgentsConfig{
++			Defaults: config.AgentDefaults{
++				Workspace:         t.TempDir(),
++				ModelName:         "test-model",
++				MaxTokens:         4096,
++				MaxToolIterations: 10,
++			},
++		},
++		// As config.json on the box loads (the chat dimension is LoadConfig's default).
++		Session: config.SessionConfig{
++			Dimensions:    []string{"chat"},
++			IdentityLinks: map[string][]string{"owner": {"telegram:11111111", "pico:tv"}},
++		},
++	}
++	msgBus := bus.NewMessageBus()
++	al := NewAgentLoop(cfg, msgBus, provider)
++	ctx, cancel := context.WithCancel(context.Background())
++	t.Cleanup(cancel)
++	go al.Run(ctx)
++	return al, msgBus
++}
++
++func publishInbound(t *testing.T, msgBus *bus.MessageBus, msg bus.InboundMessage) {
++	t.Helper()
++	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
++	defer cancel()
++	if err := msgBus.PublishInbound(ctx, msg); err != nil {
++		t.Fatalf("publish %q: %v", msg.Content, err)
++	}
++}
++
++// As the pico and Telegram channels deliver them.
++func tvMessage(text string) bus.InboundMessage {
++	return bus.InboundMessage{
++		Context: bus.InboundContext{Channel: "pico", ChatID: "pico:tv", ChatType: "direct", SenderID: "pico-user"},
++		Sender:  bus.SenderInfo{Platform: "pico", PlatformID: "pico-user", CanonicalID: "pico:pico-user"},
++		Content: text,
++	}
++}
++
++func dmMessage(text string) bus.InboundMessage {
++	return bus.InboundMessage{
++		Context: bus.InboundContext{Channel: "telegram", ChatID: "11111111", ChatType: "direct", SenderID: "11111111"},
++		Sender:  bus.SenderInfo{Platform: "telegram", PlatformID: "11111111", CanonicalID: "telegram:11111111"},
++		Content: text,
++	}
++}
++
++type sent struct{ channel, chatID, kind, content string }
++
++// sentUntilTurnEnd collects outbound messages up to the turn end sent to the TV.
++func sentUntilTurnEnd(t *testing.T, msgBus *bus.MessageBus) []sent {
++	t.Helper()
++	var got []sent
++	deadline := time.After(5 * time.Second)
++	for {
++		select {
++		case out := <-msgBus.OutboundChan():
++			kind := out.Context.Raw[metadataKeyMessageKind]
++			if kind == "" && out.Context.Raw[metadataKeyOutboundKind] == outboundKindFinal {
++				kind = "final"
++			}
++			got = append(got, sent{out.Channel, out.ChatID, kind, out.Content})
++			if kind == "turn_end" {
++				return got
++			}
++		case <-deadline:
++			t.Fatalf("no turn end for the TV; sent: %v", got)
++		}
++	}
++}
++
++// A TV question is a message of the owner's Telegram DM: it lands in the DM's session, the DM sees it
++// as "📺 …" and gets the answer, and the TV learns the turn is over.
++func TestSharedDialog_TVMessageJoinsTheTelegramDM(t *testing.T) {
++	al, msgBus := startDialogLoop(t, &dialogProvider{answers: []string{"answer"}})
++	publishInbound(t, msgBus, tvMessage("tv question"))
++
++	want := []sent{
++		{"telegram", "11111111", "user", "📺 tv question"},
++		{"telegram", "11111111", "final", "answer"},
++		{"pico", "pico:tv", "turn_end", ""},
++	}
++	if got := sentUntilTurnEnd(t, msgBus); !reflect.DeepEqual(got, want) {
++		t.Fatalf("sent = %v, want %v", got, want)
++	}
++	history := al.GetRegistry().GetDefaultAgent().Sessions.GetHistory(ownerDMKey)
++	if len(history) == 0 || history[0].Role != "user" || history[0].Content != "tv question" {
++		t.Fatalf("Telegram DM session history = %#v, want the TV question first", history)
++	}
++}
++
++// A Telegram message shows on the TV as the owner's line, and the TV learns when its turn is over.
++func TestSharedDialog_TelegramMessageShowsOnTheTV(t *testing.T) {
++	_, msgBus := startDialogLoop(t, &dialogProvider{answers: []string{"answer"}})
++	publishInbound(t, msgBus, dmMessage("telegram question"))
++
++	want := []sent{
++		{"pico", "pico:tv", "user", "telegram question"},
++		{"telegram", "11111111", "final", "answer"},
++		{"pico", "pico:tv", "turn_end", ""},
++	}
++	if got := sentUntilTurnEnd(t, msgBus); !reflect.DeepEqual(got, want) {
++		t.Fatalf("sent = %v, want %v", got, want)
++	}
++}
++
++// A TV question in the middle of a Telegram turn is picked up by that turn, as a second Telegram
++// message would be: it is steered in, and the turn's one answer covers it.
++func TestSharedDialog_TVMessageDuringTelegramTurnIsPickedUp(t *testing.T) {
++	provider := &dialogProvider{
++		answers:      []string{"first answer", "answer with the tv question"},
++		firstStarted: make(chan struct{}),
++		hold:         make(chan struct{}),
++	}
++	al, msgBus := startDialogLoop(t, provider)
++	publishInbound(t, msgBus, dmMessage("telegram question"))
++	select {
++	case <-provider.firstStarted:
++	case <-time.After(2 * time.Second):
++		t.Fatal("the Telegram turn did not reach the provider")
++	}
++
++	publishInbound(t, msgBus, tvMessage("tv question"))
++	for deadline := time.Now().Add(2 * time.Second); al.pendingSteeringCountForScope(ownerDMKey) != 1; {
++		if time.Now().After(deadline) {
++			t.Fatalf("the TV question is not queued into the running turn (%d queued)",
++				al.pendingSteeringCountForScope(ownerDMKey))
++		}
++		time.Sleep(10 * time.Millisecond)
++	}
++	close(provider.hold)
++
++	want := []sent{
++		{"pico", "pico:tv", "user", "telegram question"},
++		{"telegram", "11111111", "user", "📺 tv question"},
++		{"telegram", "11111111", "final", "answer with the tv question"},
++		{"pico", "pico:tv", "turn_end", ""},
++	}
++	if got := sentUntilTurnEnd(t, msgBus); !reflect.DeepEqual(got, want) {
++		t.Fatalf("sent = %v, want %v", got, want)
++	}
++	provider.mu.Lock()
++	defer provider.mu.Unlock()
++	if len(provider.calls) != 2 {
++		t.Fatalf("provider calls = %d, want 2", len(provider.calls))
++	}
++	last := provider.calls[1][len(provider.calls[1])-1]
++	if last.Role != "user" || last.Content != "tv question" {
++		t.Fatalf("second call ends with %#v, want the TV question", last)
++	}
++}
+diff --git a/pkg/channels/linked_mirror.go b/pkg/channels/linked_mirror.go
+new file mode 100644
+index 0000000..7ed6697
+--- /dev/null
++++ b/pkg/channels/linked_mirror.go
+@@ -0,0 +1,57 @@
++package channels
++
++import (
++	"context"
++	"maps"
++
++	"github.com/sipeed/picoclaw/pkg/bus"
++	"github.com/sipeed/picoclaw/pkg/config"
++)
++
++// mirrorToLinkedChats copies a message for a chat that session.identity_links joins with others into
++// one dialog to those other chats, so a turn shows in all of them: the TV gets every text the owner's
++// Telegram DM gets, from the outbound queue and from SendMessage (the message tool), but no files
++// (SendMedia). The owner's echoes ("user") and the turn end ("turn_end") are addressed by the agent to
++// the chats that need them and are not copied. Returns false when ctx is done.
++func (m *Manager) mirrorToLinkedChats(ctx context.Context, msg bus.OutboundMessage) bool {
++	kind := msg.Context.Raw["message_kind"]
++	if m.config == nil || kind == "user" || kind == "turn_end" {
++		return true
++	}
++	for _, c := range m.config.Session.LinkedChats(msg.Context.Channel, msg.ChatID) {
++		if c.Channel == msg.Context.Channel && c.ChatID == msg.ChatID {
++			continue
++		}
++		m.mu.RLock()
++		w := m.workers[c.Channel]
++		m.mu.RUnlock()
++		if w == nil {
++			continue
++		}
++		select {
++		case w.queue <- linkedCopy(msg, c):
++		case <-ctx.Done():
++			return false
++		}
++	}
++	return true
++}
++
++// linkedCopy readdresses msg to chat c. A pico client gets a Telegram step as kind "step" and the turn's
++// answer (or error) as kind "final", so it can tell them from interim text.
++func linkedCopy(msg bus.OutboundMessage, c config.LinkedChat) bus.OutboundMessage {
++	msg.Channel, msg.ChatID, msg.ReplyToMessageID = c.Channel, c.ChatID, ""
++	msg.Context = bus.InboundContext{Channel: c.Channel, ChatID: c.ChatID, Raw: maps.Clone(msg.Context.Raw)}
++	if c.Channel == "pico" {
++		if msg.Context.Raw == nil {
++			msg.Context.Raw = map[string]string{}
++		}
++		switch {
++		case outboundMessageIsToolFeedback(msg):
++			msg.Context.Raw["message_kind"] = "step"
++		case outboundMessageIsFinal(msg):
++			msg.Context.Raw["message_kind"] = "final"
++		}
++	}
++	return msg
++}
+diff --git a/pkg/channels/linked_mirror_test.go b/pkg/channels/linked_mirror_test.go
+new file mode 100644
+index 0000000..b39f8b3
+--- /dev/null
++++ b/pkg/channels/linked_mirror_test.go
+@@ -0,0 +1,123 @@
++package channels
++
++import (
++	"context"
++	"testing"
++	"time"
++
++	"github.com/sipeed/picoclaw/pkg/bus"
++	"github.com/sipeed/picoclaw/pkg/config"
++)
++
++// The text a turn sends to the owner's Telegram DM (not its files) also goes to the TV, the step and the
++// answer marked for it; the agent's own "user" echo to the DM is not copied back.
++func TestLinkedMirror_TelegramDMMessagesReachTheTV(t *testing.T) {
++	mb := bus.NewMessageBus()
++	defer mb.Close()
++	m := &Manager{
++		channels: map[string]Channel{"telegram": &mockChannel{}, "pico": &mockChannel{}},
++		workers:  map[string]*channelWorker{},
++		bus:      mb,
++		config: &config.Config{Session: config.SessionConfig{
++			IdentityLinks: map[string][]string{"owner": {"telegram:11111111", "pico:tv"}},
++		}},
++	}
++	m.workers["telegram"] = newChannelWorker("telegram", m.channels["telegram"], "telegram")
++	m.workers["pico"] = newChannelWorker("pico", m.channels["pico"], "pico")
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	go m.dispatchOutbound(ctx)
++
++	dm := func(content string, raw map[string]string) bus.OutboundMessage {
++		return bus.OutboundMessage{
++			Context: bus.InboundContext{Channel: "telegram", ChatID: "11111111", Raw: raw},
++			Content: content,
++		}
++	}
++	for _, msg := range []bus.OutboundMessage{
++		dm("📺 tv question", map[string]string{"message_kind": "user"}),
++		dm("Смотрю версию ядра (`exec`)", map[string]string{"message_kind": "tool_feedback"}),
++		dm("Context window exceeded. Compressing history and retrying...", nil),
++		dm("4.9.113", map[string]string{"outbound_kind": "final"}),
++	} {
++		if err := mb.PublishOutbound(ctx, msg); err != nil {
++			t.Fatalf("publish: %v", err)
++		}
++	}
++
++	next := func(w *channelWorker) bus.OutboundMessage {
++		select {
++		case msg := <-w.queue:
++			return msg
++		case <-time.After(2 * time.Second):
++			t.Fatal("no message in the worker queue")
++			return bus.OutboundMessage{}
++		}
++	}
++	for i := 0; i < 4; i++ {
++		if got := next(m.workers["telegram"]); got.Context.Channel != "telegram" || got.ChatID != "11111111" {
++			t.Fatalf("Telegram message %d went to %s/%s", i, got.Context.Channel, got.ChatID)
++		}
++	}
++	for _, want := range []struct{ kind, content string }{
++		{"step", "Смотрю версию ядра (`exec`)"},
++		{"", "Context window exceeded. Compressing history and retrying..."},
++		{"final", "4.9.113"},
++	} {
++		got := next(m.workers["pico"])
++		if got.Context.Channel != "pico" || got.ChatID != "pico:tv" || got.Context.ChatID != "pico:tv" {
++			t.Fatalf("TV copy of %q went to %s/%s", want.content, got.Context.Channel, got.ChatID)
++		}
++		if got.Context.Raw["message_kind"] != want.kind || got.Content != want.content {
++			t.Fatalf("TV copy = %q kind %q, want %q kind %q",
++				got.Content, got.Context.Raw["message_kind"], want.content, want.kind)
++		}
++	}
++	select {
++	case extra := <-m.workers["pico"].queue:
++		t.Fatalf("unexpected TV copy %q", extra.Content)
++	case <-time.After(100 * time.Millisecond):
++	}
++}
++
++// The message tool sends to the DM through Manager.SendMessage, past the outbound queue; the TV gets
++// that text too, once and whole.
++func TestLinkedMirror_MessageToolTextReachesTheTV(t *testing.T) {
++	// Telegram splits at 10 characters, so the TV copy proves it is sent once and whole.
++	telegram := &mockChannel{BaseChannel: BaseChannel{maxMessageLength: 10}}
++	m := &Manager{
++		channels: map[string]Channel{"telegram": telegram, "pico": &mockChannel{}},
++		workers:  map[string]*channelWorker{},
++		bus:      bus.NewMessageBus(),
++		config: &config.Config{Session: config.SessionConfig{
++			IdentityLinks: map[string][]string{"owner": {"telegram:11111111", "pico:tv"}},
++		}},
++	}
++	defer m.bus.Close()
++	m.workers["telegram"] = newChannelWorker("telegram", telegram, "telegram")
++	m.workers["pico"] = newChannelWorker("pico", m.channels["pico"], "pico")
++
++	if err := m.SendMessage(context.Background(), bus.OutboundMessage{
++		Context: bus.NewOutboundContext("telegram", "11111111", ""),
++		Content: "answer sent with the message tool",
++	}); err != nil {
++		t.Fatalf("SendMessage: %v", err)
++	}
++	if len(telegram.sentMessages) < 2 {
++		t.Fatalf("Telegram got %d messages, want the text split into parts", len(telegram.sentMessages))
++	}
++	select {
++	case got := <-m.workers["pico"].queue:
++		if got.ChatID != "pico:tv" || got.Content != "answer sent with the message tool" ||
++			got.Context.Raw["message_kind"] != "" {
++			t.Fatalf("TV copy = %s %q kind %q", got.ChatID, got.Content, got.Context.Raw["message_kind"])
++		}
++	case <-time.After(time.Second):
++		t.Fatal("the TV got nothing")
++	}
++	select {
++	case extra := <-m.workers["pico"].queue:
++		t.Fatalf("unexpected second TV copy %q", extra.Content)
++	case <-time.After(100 * time.Millisecond):
++	}
++}
+diff --git a/pkg/channels/manager.go b/pkg/channels/manager.go
+index d7c6553..71a97e9 100644
+--- a/pkg/channels/manager.go
++++ b/pkg/channels/manager.go
+@@ -1654,7 +1654,7 @@ func (m *Manager) dispatchOutbound(ctx context.Context) {
+ 			select {
+ 			case w.queue <- msg:
+ 				m.publishOutboundQueued(outboundMessageChannel(msg), msg)
+-				return true
++				return m.mirrorToLinkedChats(ctx, msg)
+ 			case <-ctx.Done():
+ 				return false
+ 			}
+@@ -2029,6 +2029,7 @@ func (m *Manager) SendMessage(ctx context.Context, msg bus.OutboundMessage) erro
+ 	if mlp, ok := w.ch.(MessageLengthProvider); ok {
+ 		maxLen = mlp.MaxMessageLength()
+ 	}
++	whole := msg
+ 	if chunks := splitOutboundMessageContent(msg, maxLen); len(chunks) > 1 {
+ 		for _, chunk := range chunks {
+ 			chunkMsg := msg
+@@ -2041,6 +2042,7 @@ func (m *Manager) SendMessage(ctx context.Context, msg bus.OutboundMessage) erro
+ 		}
+ 		m.sendWithRetry(ctx, channelName, w, msg)
+ 	}
++	m.mirrorToLinkedChats(ctx, whole)
+ 	return nil
+ }
+ 
+diff --git a/pkg/channels/pico/pico.go b/pkg/channels/pico/pico.go
+index 587f889..c06848c 100644
+--- a/pkg/channels/pico/pico.go
++++ b/pkg/channels/pico/pico.go
+@@ -342,6 +342,12 @@ func (c *PicoChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]stri
+ 		if toolCalls, ok := picoToolCallsPayload(msg); ok {
+ 			payload[PayloadKeyToolCalls] = toolCalls
+ 		}
++
++	case !isToolFeedback:
++		// The kinds of a dialog shared with Telegram (step, final, user, turn_end) reach the client as is.
++		if kind := strings.TrimSpace(msg.Context.Raw["message_kind"]); kind != "" {
++			payload[PayloadKeyKind] = kind
++		}
+ 	}
+ 	setContextUsagePayload(payload, msg.ContextUsage)
+ 	outMsg := newMessage(TypeMessageCreate, payload)
+diff --git a/pkg/channels/pico/shared_dialog_test.go b/pkg/channels/pico/shared_dialog_test.go
+new file mode 100644
+index 0000000..1af7159
+--- /dev/null
++++ b/pkg/channels/pico/shared_dialog_test.go
+@@ -0,0 +1,40 @@
++package pico
++
++import (
++	"context"
++	"testing"
++	"time"
++
++	"github.com/sipeed/picoclaw/pkg/bus"
++)
++
++// The kinds of a dialog shared with Telegram reach the TV in the frame, so it can tell a step, the
++// answer, the owner's line and the turn end from interim text.
++func TestSend_SharedDialogKindsReachTheClient(t *testing.T) {
++	ch := newTestPicoChannel(t)
++	if err := ch.Start(context.Background()); err != nil {
++		t.Fatalf("Start() error = %v", err)
++	}
++	defer ch.Stop(context.Background())
++	clientConn, received, cleanup := newTestPicoWebSocket(t)
++	defer cleanup()
++	ch.addConnForTest(&picoConn{id: "conn-1", conn: clientConn, sessionID: "tv"})
++
++	for _, kind := range []string{"user", "step", "final", "turn_end"} {
++		if _, err := ch.Send(context.Background(), bus.OutboundMessage{
++			ChatID:  "pico:tv",
++			Content: "text",
++			Context: bus.InboundContext{Channel: "pico", ChatID: "pico:tv", Raw: map[string]string{"message_kind": kind}},
++		}); err != nil {
++			t.Fatalf("Send(%s) error = %v", kind, err)
++		}
++		select {
++		case msg := <-received:
++			if msg.Type != TypeMessageCreate || msg.Payload[PayloadKeyKind] != kind {
++				t.Fatalf("frame for %s = %s %#v, want message.create with kind %q", kind, msg.Type, msg.Payload, kind)
++			}
++		case <-time.After(time.Second):
++			t.Fatalf("no frame for %s", kind)
++		}
++	}
++}
+diff --git a/pkg/config/linked_chats.go b/pkg/config/linked_chats.go
+new file mode 100644
+index 0000000..f25b343
+--- /dev/null
++++ b/pkg/config/linked_chats.go
+@@ -0,0 +1,36 @@
++package config
++
++import "strings"
++
++// LinkedChat is one chat of a dialog that several channels share.
++type LinkedChat struct {
++	Channel string
++	ChatID  string
++}
++
++// LinkedChats returns the chats that session.identity_links joins into one dialog with channel/chatID,
++// that chat included, or nil when it is not linked. An entry "<channel>:<id>" names the chat <id>; a pico
++// entry names the client's WebSocket session ("pico:tv" is the chat "pico:tv"), since every pico client
++// has the same sender.
++func (s SessionConfig) LinkedChats(channel, chatID string) []LinkedChat {
++	for _, ids := range s.IdentityLinks {
++		chats := make([]LinkedChat, 0, len(ids))
++		linked := false
++		for _, id := range ids {
++			ch, chat, ok := strings.Cut(strings.TrimSpace(id), ":")
++			if !ok {
++				continue
++			}
++			ch = strings.ToLower(ch)
++			if ch == "pico" {
++				chat = "pico:" + chat
++			}
++			chats = append(chats, LinkedChat{Channel: ch, ChatID: chat})
++			linked = linked || (ch == channel && chat == chatID)
++		}
++		if linked {
++			return chats
++		}
++	}
++	return nil
++}
+diff --git a/pkg/session/shared_session_test.go b/pkg/session/shared_session_test.go
+new file mode 100644
+index 0000000..1c78f2c
+--- /dev/null
++++ b/pkg/session/shared_session_test.go
+@@ -0,0 +1,32 @@
++package session
++
++import (
++	"os"
++	"path/filepath"
++	"testing"
++
++	"github.com/sipeed/picoclaw/pkg/bus"
++	"github.com/sipeed/picoclaw/pkg/config"
++	"github.com/sipeed/picoclaw/pkg/routing"
++)
++
++// The session section in config.json must not move the owner's Telegram DM to a new key: its history
++// lives under v=1|agent=main|channel=telegram|account=default|chat=direct:11111111.
++func TestSharedSession_ConfigSessionSectionKeepsTelegramKey(t *testing.T) {
++	path := filepath.Join(t.TempDir(), "config.json")
++	data := `{"version": 3, "session": {"identity_links": {"owner": ["telegram:11111111", "pico:tv"]}}}`
++	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	cfg, err := config.LoadConfig(path)
++	if err != nil {
++		t.Fatalf("LoadConfig: %v", err)
++	}
++	dm := bus.InboundContext{Channel: "telegram", ChatID: "11111111", ChatType: "direct", SenderID: "11111111"}
++	route := routing.NewRouteResolver(cfg).ResolveRoute(dm)
++	got := AllocateRouteSession(AllocationInput{AgentID: route.AgentID, Context: dm, SessionPolicy: route.SessionPolicy})
++	const want = "sk_v1_bd60789427ad9577ade505cafb5f771d7d4107adb48458ad1d326f5ce7e89556"
++	if got.SessionKey != want {
++		t.Fatalf("Telegram DM SessionKey = %q, want unchanged %q", got.SessionKey, want)
++	}
++}
