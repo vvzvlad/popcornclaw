@@ -47,7 +47,7 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
     private TextView mic;
     private GrokbotMark mark;
     private String pendingId;
-    private String botName = "Grok Bot";
+    private String botName = "popcornclaw";   // popcornclaw: our name, not Grok Bot's
     private static final int HISTORY = 30;
     private Theme t;
     private Typeface mono;
@@ -87,7 +87,7 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
         mark = new GrokbotMark(this);
         CompanionOverlay.paint(mark, cfg);
         head.addView(mark, new LinearLayout.LayoutParams(dp(40), dp(40)));
-        TextView title = text(botName + " · Grok Bot Companion (TV)", 16, t.fgBright, true);
+        TextView title = text("popcornclaw", 16, t.fgBright, true);   // popcornclaw: our name, not Grok Bot's
         title.setPadding(dp(12), 0, 0, 0);
         head.addView(title, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         panel.addView(head);
@@ -107,7 +107,7 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
         row.setPadding(0, dp(10), 0, 0);
         input = new EditText(this);
         input.setSingleLine(true);
-        input.setHint("Ask " + botName + "…  (OK / Enter to send)");
+        input.setHint("Спросить агента…  (OK / Enter — отправить)");   // popcornclaw: questions go to the agent
         input.setTextColor(t.fgBright);
         input.setHintTextColor(t.fgDim);
         input.setTypeface(mono);
@@ -134,7 +134,7 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
             log.removeAllViews();
         });
         row.addView(clear);
-        TextView foot = text("Built for @tcballard's Grok Bot Desktop Companion v0.1.0 (MIT) · try \"open YouTube\"", 10, t.fgDim, false);
+        TextView foot = text("«open YouTube» открывает приложение сразу, без агента", 10, t.fgDim, false);   // popcornclaw: no Grok credit
         foot.setPadding(0, dp(8), 0, 0);
         panel.addView(foot);
 
@@ -171,7 +171,7 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
     private String routeNote() {
         return "companion".equals(route())
                 ? "Answers come from @tcballard's Grok Bot Desktop Companion on your PC (omarchy-link)."
-                : "No PC companion linked: questions go to OmarchyTV's Ask.";
+                : "Вопросы уходят агенту на приставке.";   // popcornclaw: Ask hands them to the agent (PicoLink)
     }
 
     private void send(String raw) {
@@ -187,7 +187,7 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
             mark.pose("think");
             OmarchyLink.grokbotAsk(pendingId, q, null);
         } else {
-            line("OmarchyTV", "Opening Ask with your question…", false);
+            line("popcornclaw", "Передаю вопрос агенту…", false);   // popcornclaw: our name
             startActivity(new Intent(this, AskActivity.class).putExtra("cmd", q));
         }
     }
@@ -196,11 +196,11 @@ public class CompanionChatActivity extends Activity implements OmarchyLink.Liste
         Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE, MainActivity.speechLanguage(this))
-                .putExtra(RecognizerIntent.EXTRA_PROMPT, "Ask " + botName);
+                .putExtra(RecognizerIntent.EXTRA_PROMPT, "Спросить агента");   // popcornclaw: not Grok Bot
         try {
             startActivityForResult(i, REQ_VOICE);
         } catch (ActivityNotFoundException e) {
-            line("OmarchyTV", "No speech recognizer on this TV: type instead (the keyboard's own mic may work).", false);
+            line("popcornclaw", "На приставке нет распознавателя речи: напишите вопрос.", false);   // popcornclaw: our name
             input.requestFocus();
         }
     }
