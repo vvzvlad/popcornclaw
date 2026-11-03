@@ -7,6 +7,13 @@
         <item name="android:windowAnimationStyle">@null</item>
     </style>
 
+    <!-- PopcornClaw: VoiceAssistActivity captures the phone remote's ASSIST silently. Translucent and undimmed
+         so the video playing behind it is only paused, never stopped, and never replaced by the launcher. -->
+    <style name="Theme.VoiceCapture" parent="@android:style/Theme.Translucent.NoTitleBar">
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+
     <!-- Waybar module: monospace label with icon, accent block when focused. -->
     <style name="TopButton">
         <item name="android:layout_width">wrap_content</item>

@@ -102,6 +102,32 @@ public final class PicoLink {
         keepAlive();
     }
 
+    /**
+     * Sends a voice note captured from the TV remote to the agent over the pico channel. The gateway
+     * transcribes it (Groq ASR) and it becomes the owner's message on the shared TV/Telegram dialog; the
+     * recognized text returns as a "user" frame, so this does not touch the turn state. Any thread.
+     */
+    public static void sendAudio(byte[] wav) {
+        if (wav == null || wav.length == 0) return;
+        String dataUrl = "data:audio/wav;base64," + android.util.Base64.encodeToString(wav, android.util.Base64.NO_WRAP);
+        main.post(() -> {
+            connect();
+            String frame;
+            try {
+                JSONObject payload = new JSONObject().put("audio", dataUrl);
+                frame = new JSONObject().put("type", "message.send")
+                        .put("id", Long.toHexString(ids.nextLong())).put("payload", payload).toString();
+            } catch (JSONException e) {
+                throw new IllegalStateException(e);
+            }
+            if (socket == null || !socket.send(frame)) {
+                android.util.Log.w("popcornclaw-voice", "voice: audio frame not sent, socket down");
+            } else {
+                android.util.Log.i("popcornclaw-voice", "voice: sent " + wav.length + " WAV bytes to the gateway");
+            }
+        });
+    }
+
     /** Opens the connection unless it is open or opening. Main thread. */
     static void connect() {
         main.removeCallbacks(reconnect);

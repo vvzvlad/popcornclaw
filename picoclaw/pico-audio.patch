@@ -1,0 +1,166 @@
+diff --git a/pkg/channels/pico/pico.go b/pkg/channels/pico/pico.go
+index c06848c..55513de 100644
+--- a/pkg/channels/pico/pico.go
++++ b/pkg/channels/pico/pico.go
+@@ -23,6 +23,7 @@ import (
+ 	"github.com/sipeed/picoclaw/pkg/config"
+ 	"github.com/sipeed/picoclaw/pkg/identity"
+ 	"github.com/sipeed/picoclaw/pkg/logger"
++	"github.com/sipeed/picoclaw/pkg/media"
+ 	"github.com/sipeed/picoclaw/pkg/utils"
+ )
+ 
+@@ -1185,6 +1186,16 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
+ 		return
+ 	}
+ 
++	// popcornclaw: a voice note captured from the TV remote (see launcher VoiceHelper). Store it and mark it
++	// [voice] so the agent transcribes it on the same Groq ASR path as a Telegram voice note; shared-session
++	// then mirrors the recognized text to the owner's Telegram DM.
++	if ref, ok := c.storeInlineAudio(pc, msg); ok {
++		media = append(media, ref)
++		if strings.TrimSpace(content) == "" {
++			content = "[voice]"
++		}
++	}
++
+ 	if strings.TrimSpace(content) == "" && len(media) == 0 {
+ 		errMsg := newErrorWithPayload("empty_content", "message content is empty", map[string]any{
+ 			"request_id": msg.ID,
+@@ -1235,6 +1246,63 @@ func (c *PicoChannel) handleMessageSend(pc *picoConn, msg PicoMessage) {
+ 	c.HandleInboundContext(c.ctx, chatID, content, media, inboundCtx, sender)
+ }
+ 
++// storeInlineAudio stores a base64 "data:audio/..." payload from the TV remote under the media store and
++// returns its ref. The agent transcribes it like any other audio (utils.IsAudioFile → al.transcriber, the
++// Groq ASR path shared with Telegram voice notes). Returns ok=false when there is no audio or it is unusable.
++func (c *PicoChannel) storeInlineAudio(pc *picoConn, msg PicoMessage) (string, bool) {
++	raw, _ := msg.Payload["audio"].(string)
++	raw = strings.TrimSpace(raw)
++	if raw == "" {
++		return "", false
++	}
++	if !strings.HasPrefix(raw, "data:audio/") {
++		logger.WarnCF("pico", "ignoring non-audio data URL", map[string]any{"head": truncate(raw, 16)})
++		return "", false
++	}
++	header, b64, found := strings.Cut(raw, ",")
++	if !found || !strings.Contains(header, ";base64") {
++		return "", false
++	}
++	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(b64))
++	if err != nil || len(data) == 0 {
++		logger.WarnCF("pico", "bad audio payload", map[string]any{"error": err})
++		return "", false
++	}
++	store := c.GetMediaStore()
++	if store == nil {
++		return "", false
++	}
++	f, err := os.CreateTemp("", "pico-voice-*.wav")
++	if err != nil {
++		logger.WarnCF("pico", "cannot create temp audio file", map[string]any{"error": err})
++		return "", false
++	}
++	if _, err := f.Write(data); err != nil {
++		f.Close()
++		os.Remove(f.Name())
++		return "", false
++	}
++	f.Close()
++	sessionID := msg.SessionID
++	if sessionID == "" {
++		sessionID = pc.sessionID
++	}
++	scope := channels.BuildMediaScope("pico", "pico:"+sessionID, msg.ID)
++	ref, err := store.Store(f.Name(), media.MediaMeta{
++		Filename:      "voice.wav",
++		ContentType:   "audio/wav",
++		Source:        "pico",
++		CleanupPolicy: media.CleanupPolicyDeleteOnCleanup,
++	}, scope)
++	if err != nil {
++		os.Remove(f.Name())
++		logger.WarnCF("pico", "cannot store audio", map[string]any{"error": err})
++		return "", false
++	}
++	logger.InfoCF("pico", "stored TV voice note", map[string]any{"bytes": len(data), "ref": ref})
++	return ref, true
++}
++
+ // truncate truncates a string to maxLen runes.
+ func truncate(s string, maxLen int) string {
+ 	runes := []rune(s)
+diff --git a/pkg/channels/pico/voice_test.go b/pkg/channels/pico/voice_test.go
+new file mode 100644
+index 0000000..afa3260
+--- /dev/null
++++ b/pkg/channels/pico/voice_test.go
+@@ -0,0 +1,67 @@
++package pico
++
++import (
++	"bytes"
++	"context"
++	"encoding/base64"
++	"os"
++	"testing"
++	"time"
++
++	"github.com/sipeed/picoclaw/pkg/bus"
++	"github.com/sipeed/picoclaw/pkg/config"
++	"github.com/sipeed/picoclaw/pkg/media"
++	"github.com/sipeed/picoclaw/pkg/utils"
++)
++
++// A voice note from the TV remote arrives as a base64 "data:audio/..." URL in message.send. The channel
++// stores it as audio and marks the message [voice], so the agent transcribes it on the same Groq ASR path as
++// a Telegram voice note (and shared-session mirrors the recognized text to Telegram).
++func TestHandleMessageSend_StoresTVVoiceNote(t *testing.T) {
++	msgBus := bus.NewMessageBus()
++	bc := &config.Channel{Type: config.ChannelPico, Enabled: true}
++	cfg := &config.PicoSettings{}
++	cfg.SetToken("test-token")
++	ch, err := NewPicoChannel(bc, cfg, msgBus)
++	if err != nil {
++		t.Fatalf("NewPicoChannel: %v", err)
++	}
++	ch.ctx = context.Background()
++	store := media.NewFileMediaStore()
++	ch.SetMediaStore(store)
++
++	wav := []byte("RIFF\x00\x00\x00\x00WAVEfake pcm payload")
++	dataURL := "data:audio/wav;base64," + base64.StdEncoding.EncodeToString(wav)
++	ch.handleMessageSend(&picoConn{id: "c1", sessionID: "tv"}, PicoMessage{
++		Type:      TypeMessageSend,
++		ID:        "m1",
++		SessionID: "tv",
++		Payload:   map[string]any{"audio": dataURL},
++	})
++
++	select {
++	case inbound := <-msgBus.InboundChan():
++		if inbound.Content != "[voice]" {
++			t.Fatalf("content = %q, want [voice]", inbound.Content)
++		}
++		if len(inbound.Media) != 1 {
++			t.Fatalf("media refs = %d, want 1", len(inbound.Media))
++		}
++		path, meta, err := store.ResolveWithMeta(inbound.Media[0])
++		if err != nil {
++			t.Fatalf("ResolveWithMeta: %v", err)
++		}
++		if !utils.IsAudioFile(meta.Filename, meta.ContentType) {
++			t.Fatalf("stored media not audio: filename=%q content_type=%q", meta.Filename, meta.ContentType)
++		}
++		got, err := os.ReadFile(path)
++		if err != nil {
++			t.Fatalf("read stored file: %v", err)
++		}
++		if !bytes.Equal(got, wav) {
++			t.Fatalf("stored bytes = %d, want %d", len(got), len(wav))
++		}
++	case <-time.After(2 * time.Second):
++		t.Fatal("expected an inbound pico voice message")
++	}
++}

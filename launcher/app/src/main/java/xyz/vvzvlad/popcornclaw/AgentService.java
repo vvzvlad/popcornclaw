@@ -64,6 +64,51 @@ public final class AgentService extends Service {
         popup.start();
         // The TV's half of the dialog with no screen open: the gateway has somewhere to send it.
         PicoLink.connect();
+        // SPIKE: keep the voice helpers warm for the phone remote's ~15 s window.
+        worker.post(this::startVoiceHelpers);
+    }
+
+    /**
+     * SPIKE: launches the two voice helpers kept warm for the phone remote (see {@link VoiceHelper}). The relay
+     * must be root (only uid < AID_APP may ServiceManager.addService); the worker must be the assistant
+     * package's uid so its transact(1) passes the service's uid gate, and it must open /dev/binder already as
+     * that uid, so it is a fresh app_process under su, not a fork of root.
+     */
+    private void startVoiceHelpers() {
+        int katnissUid;
+        try {
+            katnissUid = getPackageManager().getPackageUid("com.google.android.katniss", 0);
+        } catch (Exception e) {
+            Log.w(TAG, "voice: no assistant package (com.google.android.katniss); helpers not started", e);
+            return;
+        }
+        String cp = "CLASSPATH=" + getPackageCodePath();
+        String cls = "xyz.vvzvlad.popcornclaw.VoiceHelper";
+        String relay = "app_process /system/bin --nice-name=pcvoicerelay " + cls + " relay";
+        String worker = "app_process /system/bin --nice-name=pcvoiceworker " + cls + " worker";
+        String log = DIR + "/voice.log";
+        // One root su: drop stale helpers, start the relay as root, the worker as the assistant uid. setsid so
+        // both outlive this su; the env assignment goes before setsid (setsid would take VAR=val as its
+        // program). pkill matches the process names (comm, which VoiceHelper.main sets with Thread.setName --
+        // --nice-name only sets argv[0], leaving comm "main"), not the cmdline, so it does not kill this very su
+        // whose command text also names the helper. Keep setName in VoiceHelper or this stops killing helpers.
+        // The log is world-readable for pickup.
+        String script = "touch " + log + " && chmod 666 " + log + "\n"
+                + "pkill pcvoicerelay; pkill pcvoiceworker\n"
+                + cp + " setsid " + relay + " >> " + log + " 2>&1 < /dev/null &\n"
+                + "setsid su " + katnissUid + " -c \"" + cp + " " + worker + "\" >> " + log + " 2>&1 < /dev/null &\n";
+        try {
+            Process p = new ProcessBuilder("su", "--mount-master", "-c", script).redirectErrorStream(true).start();
+            p.getOutputStream().close();
+            try (BufferedReader out = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
+                for (String line; (line = out.readLine()) != null; ) Log.w(TAG, "voice su: " + line);
+            }
+            Log.i(TAG, "voice: helpers launched (worker uid " + katnissUid + ", exit " + p.waitFor() + ")");
+        } catch (IOException e) {
+            Log.e(TAG, "voice: launching helpers failed", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     @Override

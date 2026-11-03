@@ -122,12 +122,6 @@
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
-            <!-- Lets OmarchyTV hold the Assistant role, so remotes whose mic key sends KEYCODE_ASSIST (handled by the
-                 system before any app, e.g. the SHIELD remote) open Walker instead of Google Assistant. -->
-            <intent-filter>
-                <action android:name="android.intent.action.ASSIST" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
             <!-- v2.14: remotes and keyboards that send a voice command or a long Search press open the Grok Bot
                  companion (voiceKey "companion", the default; Walker or Google Assistant when chosen). -->
             <intent-filter>
@@ -136,6 +130,24 @@
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.SEARCH_LONG_PRESS" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+
+        <!-- PopcornClaw: holds the Assistant role and catches ACTION_ASSIST. The phone remote's ASSIST carries the
+             decoded-audio binder: this activity captures it silently (translucent, own task, finishes in onCreate)
+             so the playing video stays on screen instead of dropping to the launcher. A binder-less ASSIST
+             (KEYCODE_ASSIST from other remotes) is handed to MainActivity's companion/Walker voice path. -->
+        <activity
+            android:name="xyz.vvzvlad.popcornclaw.VoiceAssistActivity"
+            android:exported="true"
+            android:taskAffinity=""
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:stateNotNeeded="true"
+            android:theme="@style/Theme.VoiceCapture">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>

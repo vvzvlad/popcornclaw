@@ -990,6 +990,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         // the default) or Walker ("launcher"; pressed again while Walker is open it starts voice search).
         String act = getIntent().getAction();
         if (Intent.ACTION_ASSIST.equals(act) || Intent.ACTION_VOICE_COMMAND.equals(act) || Intent.ACTION_SEARCH_LONG_PRESS.equals(act)) {
+            // popcornclaw: the phone remote's ASSIST (carrying the audio binder) is captured silently by
+            // VoiceAssistActivity and never reaches here; a binder-less ASSIST it hands back opens the voice UI.
             setIntent(new Intent(getIntent()).setAction(Intent.ACTION_MAIN));
             handler.post(() -> {
                 if (voiceToCompanion()) openCompanionChat(true);
