@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">OmarchyTV</string>
+    <string name="app_name">popcornclaw</string>
     <string name="brand" translatable="false">OmarchyTV</string>
     <string name="brand_short" translatable="false">[otv]</string>
     <string name="prompt" translatable="false">user@omarchytv:~$</string>
