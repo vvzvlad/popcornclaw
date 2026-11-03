@@ -798,7 +798,7 @@ public class AskActivity extends Activity implements OmarchyLink.Listener {
 
     private void askPcBridge(String text) {
         Theme t = Theme.cur();
-        if (!linked() || !OmarchyLink.connected()) {
+        if (!xyz.vvzvlad.popcornclaw.PicoLink.ENABLED && (!linked() || !OmarchyLink.connected())) {   // PopcornClaw
             String msg = isIt()
                     ? "Modalità TV standalone attiva (nessun PC Omarchy collegato in questo momento).\n"
                       + "  • Puoi controllare subito la TV con comandi come: \"tema jade-horse\", \"sfondo\", \"screensaver\", \"apri YouTube\", \"stato\", \"temi\".\n"
@@ -809,7 +809,7 @@ public class AskActivity extends Activity implements OmarchyLink.Listener {
             line("grok-bot", msg, t.yellow);
             return;
         }
-        if (pendingId != null) {
+        if (pendingId != null && !xyz.vvzvlad.popcornclaw.PicoLink.ENABLED) {   // PopcornClaw: the agent picks a question up mid-turn
             line("sys", getString(R.string.ask_busy), t.yellow);
             return;
         }
@@ -836,6 +836,7 @@ public class AskActivity extends Activity implements OmarchyLink.Listener {
         pendingId = id;
         replyStart = -1;
         log.postDelayed(timeout, ANSWER_TIMEOUT_MS);
+        if (xyz.vvzvlad.popcornclaw.PicoLink.ENABLED) xyz.vvzvlad.popcornclaw.PicoLink.ask(d); else   // PopcornClaw: the agent
         OmarchyLink.ask(d, err -> {
             if (err == null || isDestroyed() || !id.equals(pendingId)) return;
             pendingId = null;
@@ -848,11 +849,13 @@ public class AskActivity extends Activity implements OmarchyLink.Listener {
     protected void onStart() {
         super.onStart();
         OmarchyLink.addListener(this);
+        xyz.vvzvlad.popcornclaw.PicoLink.listen(this, this::onLinkEvent);   // PopcornClaw
     }
 
     @Override
     protected void onStop() {
         OmarchyLink.removeListener(this);
+        xyz.vvzvlad.popcornclaw.PicoLink.unlisten(this);   // PopcornClaw
         super.onStop();
     }
 
@@ -862,6 +865,12 @@ public class AskActivity extends Activity implements OmarchyLink.Listener {
             applyThemeStyle();
             return;
         }
+        if ("question".equals(type)) {   // PopcornClaw: a Telegram message or a turn the screen joins; replies start below it
+            pendingId = d.optString("id");   // PopcornClaw
+            replyStart = -1;   // PopcornClaw
+            if (!d.optString("text").isEmpty()) line(isIt() ? "tu" : "you", d.optString("text"), Theme.cur().green);   // PopcornClaw
+            return;   // PopcornClaw
+        }   // PopcornClaw
         if (pendingId == null || !pendingId.equals(d.optString("id"))) return;
         if ("answer_error".equals(type)) {
             pendingId = null;
@@ -964,7 +973,7 @@ public class AskActivity extends Activity implements OmarchyLink.Listener {
     private void listen() {
         Intent i = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, MainActivity.speechLanguage(this))
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, xyz.vvzvlad.popcornclaw.PicoLink.SPEECH_LANGUAGE)   // PopcornClaw
                 .putExtra(RecognizerIntent.EXTRA_PROMPT, getString(R.string.ask_prompt));
         try {
             startActivityForResult(i, REQ_SPEECH);
@@ -982,6 +991,12 @@ public class AskActivity extends Activity implements OmarchyLink.Listener {
         List<String> r = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
         if (r != null && !r.isEmpty()) runCommand(r.get(0));
     }
+
+    @Override   // PopcornClaw
+    public boolean dispatchKeyEvent(KeyEvent e) {   // PopcornClaw: typed text goes to the input line wherever the focus is
+        if (e.getAction() == KeyEvent.ACTION_DOWN && e.getUnicodeChar() >= ' ' && !input.hasFocus()) input.requestFocus();   // PopcornClaw
+        return super.dispatchKeyEvent(e);   // PopcornClaw
+    }   // PopcornClaw
 
     @Override
     public boolean onKeyUp(int keyCode, KeyEvent event) {

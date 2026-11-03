@@ -73,6 +73,7 @@ dependencies {
     // Send to TV player (PROTOCOL.md Cast): progressive MP4/MKV/WebM/MPEG-TS over http(s) and local files.
     implementation 'androidx.media3:media3-exoplayer:1.4.1'
     implementation 'androidx.media3:media3-exoplayer-hls:1.4.1'   // v2.13: user IPTV playlists (HLS)
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'   // PopcornClaw: PicoLink's WebSocket to the agent
     // JVM unit tests of the Omarchy Link core against omarchy-link/docs/vectors.json
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.json:json:20231013'
