@@ -1,0 +1,47 @@
+diff --git a/pkg/commands/cmd_start.go b/pkg/commands/cmd_start.go
+index 8b500aa..0dfb22b 100644
+--- a/pkg/commands/cmd_start.go
++++ b/pkg/commands/cmd_start.go
+@@ -1,14 +1,12 @@
+ package commands
+ 
+-import "context"
+-
++// startCommand keeps /start in the bot's command menu but has no handler, so the executor passes it
++// through to the agent: the model greets the user in the language and role its workspace gives it,
++// instead of a fixed English line.
+ func startCommand() Definition {
+ 	return Definition{
+ 		Name:        "start",
+ 		Description: "Start the bot",
+ 		Usage:       "/start",
+-		Handler: func(_ context.Context, req Request, _ *Runtime) error {
+-			return req.Reply("Hello! I am PicoClaw 🦞")
+-		},
+ 	}
+ }
+diff --git a/pkg/commands/cmd_start_test.go b/pkg/commands/cmd_start_test.go
+new file mode 100644
+index 0000000..503e16d
+--- /dev/null
++++ b/pkg/commands/cmd_start_test.go
+@@ -0,0 +1,19 @@
++package commands
++
++import (
++	"context"
++	"testing"
++)
++
++// /start goes to the agent, which greets in the language and role its workspace gives it.
++func TestBuiltinStartCommand_PassthroughsToAgentLogic(t *testing.T) {
++	ex := NewExecutor(NewRegistry(BuiltinDefinitions()), nil)
++	var reply string
++	res := ex.Execute(context.Background(), Request{
++		Text:  "/start",
++		Reply: func(text string) error { reply = text; return nil },
++	})
++	if res.Outcome != OutcomePassthrough || res.Command != "start" || reply != "" {
++		t.Fatalf("/start outcome=%v command=%q reply=%q, want a passthrough to the agent", res.Outcome, res.Command, reply)
++	}
++}

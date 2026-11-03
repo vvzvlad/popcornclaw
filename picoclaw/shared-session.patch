@@ -1,12 +1,12 @@
 diff --git a/pkg/agent/agent.go b/pkg/agent/agent.go
-index 26abe90..7ac00ec 100644
+index 26abe90..a458c56 100644
 --- a/pkg/agent/agent.go
 +++ b/pkg/agent/agent.go
 @@ -167,6 +167,7 @@ func (al *AgentLoop) Run(ctx context.Context) error {
  			if !ok {
  				return nil
  			}
-+			msg = al.joinLinkedDM(msg)
++			msg = al.joinLinkedChat(msg)
  
  			// Resolve the session key for this message
  			sessionKey, agentID, ok := al.resolveSteeringTarget(msg)
@@ -40,14 +40,15 @@ index 419664e..58d090b 100644
  	var logContent string
 diff --git a/pkg/agent/shared_dialog.go b/pkg/agent/shared_dialog.go
 new file mode 100644
-index 0000000..184731e
+index 0000000..3cf84d7
 --- /dev/null
 +++ b/pkg/agent/shared_dialog.go
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,93 @@
 +package agent
 +
 +import (
 +	"context"
++	"strings"
 +	"time"
 +
 +	"github.com/sipeed/picoclaw/pkg/bus"
@@ -55,27 +56,34 @@ index 0000000..184731e
 +	"github.com/sipeed/picoclaw/pkg/logger"
 +)
 +
-+// The TV (a pico client) and the owner's Telegram DM are one dialog when session.identity_links joins
-+// them. A TV message becomes a message of that DM: it shares the DM's session and its turns, a message
-+// in the middle of a turn is steered into it as in Telegram, and the turn answers in the DM as usual
-+// while the channel manager mirrors the DM's text (not its files) to the TV. Each side also sees the owner's
-+// messages typed on the other one, and the TV is told when a turn is over.
++// The TV (a pico client) and the owner's Telegram DM (or a Telegram group) are one dialog when
++// session.identity_links joins them. A TV message becomes a message of that chat: it shares the chat's
++// session and its turns, a message in the middle of a turn is steered into it as in Telegram, and the
++// turn answers in the chat as usual while the channel manager mirrors the chat's text (not its files) to
++// the TV. Each side also sees the owner's messages typed on the other one, and the TV is told when a
++// turn is over.
 +
 +const (
 +	messageKindUser    = "user"     // the owner's message, shown in the other chats of the dialog
 +	messageKindTurnEnd = "turn_end" // the dialog's turn is over
 +)
 +
-+// joinLinkedDM turns a pico message from a chat linked to a Telegram DM into a message of that DM.
-+// Its sender stays the pico one, which tells where the message was typed.
-+func (al *AgentLoop) joinLinkedDM(msg bus.InboundMessage) bus.InboundMessage {
++// joinLinkedChat turns a pico message from a chat linked to a Telegram chat into a message of that chat.
++// Its sender stays the pico one, which tells where the message was typed. The linked chat may be a
++// group as well as a DM: Telegram group ids are negative, and a group message's session is keyed by
++// the "group" chat type, so the TV's message must carry it to land in the group's session.
++func (al *AgentLoop) joinLinkedChat(msg bus.InboundMessage) bus.InboundMessage {
 +	if msg.Channel != "pico" {
 +		return msg
 +	}
 +	for _, c := range al.GetConfig().Session.LinkedChats(msg.Channel, msg.ChatID) {
 +		if c.Channel == "telegram" {
++			chatType := "direct"
++			if strings.HasPrefix(c.ChatID, "-") {
++				chatType = "group"
++			}
 +			return bus.NormalizeInboundMessage(bus.InboundMessage{
-+				Context:    bus.InboundContext{Channel: c.Channel, ChatID: c.ChatID, ChatType: "direct", SenderID: c.ChatID},
++				Context:    bus.InboundContext{Channel: c.Channel, ChatID: c.ChatID, ChatType: chatType, SenderID: c.ChatID},
 +				Sender:     msg.Sender,
 +				Content:    msg.Content,
 +				Media:      msg.Media,
@@ -87,7 +95,7 @@ index 0000000..184731e
 +}
 +
 +// echoToLinkedChats shows the owner's message in the other chats of its dialog: a TV message in the
-+// Telegram DM as "📺 <text>", a DM message on the TV.
++// linked Telegram chat as "📺 <text>", a Telegram message on the TV.
 +func (al *AgentLoop) echoToLinkedChats(ctx context.Context, msg bus.InboundMessage) {
 +	fromTV := msg.Sender.Platform == "pico" && msg.Channel != "pico"
 +	for _, c := range al.GetConfig().Session.LinkedChats(msg.Channel, msg.ChatID) {
@@ -131,10 +139,10 @@ index 0000000..184731e
 +}
 diff --git a/pkg/agent/shared_dialog_test.go b/pkg/agent/shared_dialog_test.go
 new file mode 100644
-index 0000000..cd7466c
+index 0000000..625f1cd
 --- /dev/null
 +++ b/pkg/agent/shared_dialog_test.go
-@@ -0,0 +1,201 @@
+@@ -0,0 +1,229 @@
 +package agent
 +
 +import (
@@ -181,7 +189,15 @@ index 0000000..cd7466c
 +
 +func (p *dialogProvider) GetDefaultModel() string { return "dialog-mock" }
 +
++// A Telegram group: v=1|agent=main|channel=telegram|account=default|chat=group:-1009876543.
++const ownerGroupKey = "sk_v1_4acc457bb9ce2c4b7e9f17b36f9e25409e07af2e5891e40c08ce6d97df13fb44"
++
 +func startDialogLoop(t *testing.T, provider *dialogProvider) (*AgentLoop, *bus.MessageBus) {
++	return startLinkedDialogLoop(t, provider, "telegram:11111111")
++}
++
++// startLinkedDialogLoop links the TV to the given Telegram chat, as session.identity_links does on the box.
++func startLinkedDialogLoop(t *testing.T, provider *dialogProvider, telegramChat string) (*AgentLoop, *bus.MessageBus) {
 +	t.Helper()
 +	cfg := &config.Config{
 +		Agents: config.AgentsConfig{
@@ -195,7 +211,7 @@ index 0000000..cd7466c
 +		// As config.json on the box loads (the chat dimension is LoadConfig's default).
 +		Session: config.SessionConfig{
 +			Dimensions:    []string{"chat"},
-+			IdentityLinks: map[string][]string{"owner": {"telegram:11111111", "pico:tv"}},
++			IdentityLinks: map[string][]string{"owner": {telegramChat, "pico:tv"}},
 +		},
 +	}
 +	msgBus := bus.NewMessageBus()
@@ -276,6 +292,26 @@ index 0000000..cd7466c
 +	}
 +}
 +
++// A TV linked to a Telegram group joins the group's dialog: its question lands in the session a message
++// typed in the group gets, the group sees it as "📺 …" and gets the answer.
++func TestSharedDialog_TVMessageJoinsALinkedTelegramGroup(t *testing.T) {
++	al, msgBus := startLinkedDialogLoop(t, &dialogProvider{answers: []string{"answer"}}, "telegram:-1009876543")
++	publishInbound(t, msgBus, tvMessage("tv question"))
++
++	want := []sent{
++		{"telegram", "-1009876543", "user", "📺 tv question"},
++		{"telegram", "-1009876543", "final", "answer"},
++		{"pico", "pico:tv", "turn_end", ""},
++	}
++	if got := sentUntilTurnEnd(t, msgBus); !reflect.DeepEqual(got, want) {
++		t.Fatalf("sent = %v, want %v", got, want)
++	}
++	history := al.GetRegistry().GetDefaultAgent().Sessions.GetHistory(ownerGroupKey)
++	if len(history) == 0 || history[0].Role != "user" || history[0].Content != "tv question" {
++		t.Fatalf("Telegram group session history = %#v, want the TV question first", history)
++	}
++}
++
 +// A Telegram message shows on the TV as the owner's line, and the TV learns when its turn is over.
 +func TestSharedDialog_TelegramMessageShowsOnTheTV(t *testing.T) {
 +	_, msgBus := startDialogLoop(t, &dialogProvider{answers: []string{"answer"}})
@@ -338,7 +374,7 @@ index 0000000..cd7466c
 +}
 diff --git a/pkg/channels/linked_mirror.go b/pkg/channels/linked_mirror.go
 new file mode 100644
-index 0000000..7ed6697
+index 0000000..15b4909
 --- /dev/null
 +++ b/pkg/channels/linked_mirror.go
 @@ -0,0 +1,57 @@
@@ -353,8 +389,8 @@ index 0000000..7ed6697
 +)
 +
 +// mirrorToLinkedChats copies a message for a chat that session.identity_links joins with others into
-+// one dialog to those other chats, so a turn shows in all of them: the TV gets every text the owner's
-+// Telegram DM gets, from the outbound queue and from SendMessage (the message tool), but no files
++// one dialog to those other chats, so a turn shows in all of them: the TV gets every text the linked
++// Telegram chat gets, from the outbound queue and from SendMessage (the message tool), but no files
 +// (SendMedia). The owner's echoes ("user") and the turn end ("turn_end") are addressed by the agent to
 +// the chats that need them and are not copied. Returns false when ctx is done.
 +func (m *Manager) mirrorToLinkedChats(ctx context.Context, msg bus.OutboundMessage) bool {
