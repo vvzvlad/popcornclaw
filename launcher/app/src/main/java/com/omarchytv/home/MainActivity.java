@@ -720,7 +720,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     /** Runs a "keys" action binding. Unknown ids do nothing. */
     private void runKeyAction(String id) {
         if (home == null || movingPos >= 0) return;
-        if (id.equals("home") || id.startsWith("workspace-")) {   // one screen now: every such key means "show home"
+        if (id.equals("home")) {
             if (walker != null) walker.close();
             if (menu != null && menu.isShowing()) menu.dismiss();
             home.onHomeShown();
@@ -1395,7 +1395,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     }
 
     private String keyActionLabel(String id) {
-        if (id.startsWith("workspace-")) return getString(R.string.keys_action_workspace, id.substring(id.length() - 1));
         switch (id) {
             case "walker": return str(R.string.keys_action_walker);
             case "voice": return str(R.string.keys_action_voice);

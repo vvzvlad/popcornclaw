@@ -57,8 +57,7 @@ final class LauncherConfig {
     static final String[] KEY_PRESSES = {"single", "double", "triple", "long"};
     static final int LONG_PRESS = 3;
     /** OmarchyTV actions a key can run (see MainActivity.runKeyAction). */
-    static final String[] KEY_ACTIONS = {"walker", "voice", "home", "menu", "screensaver",
-            "workspace-1", "workspace-2", "workspace-3", "workspace-4", "workspace-5"};
+    static final String[] KEY_ACTIONS = {"walker", "voice", "home", "menu", "screensaver"};
 
     /** Maps a key name without the KEYCODE_ prefix to an Android keycode; 0 or less = unknown. */
     interface KeyNames {
