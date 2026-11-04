@@ -295,22 +295,16 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         setupHomeV29();
     }
 
-    // ---- v2.9 home (HomeV29: Waybar, fastfetch, widgets, app window; workspace 2 = the full grid) -------------
+    // ---- v2.9 home (HomeV29: Waybar, fastfetch, widgets, app window; one non-switchable home screen) ----------
 
     private HomeV29 home;
     private Walker walker;
-    private int workspace = 1;
 
     private void setupHomeV29() {
         home = new HomeV29(this, new HomeV29.Host() {
             @Override
             public void openSettings(View anchor) {
-                showMenu(null, null);
-            }
-
-            @Override
-            public void showWorkspace(int ws) {
-                setWorkspace(ws);   // v2.10: 1 home · 2 tv · 3 app · 4 pc · 5 sistema
+                showSystemMenu();   // the former "sistema" workspace, now the home's settings button
             }
 
             @Override
@@ -364,11 +358,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             }
 
             @Override
-            public List<HomeV29.Source> sources() {
-                return tvSources();
-            }
-
-            @Override
             public void sys(String id) {
                 sysAction(id);
             }
@@ -406,20 +395,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         ViewGroup.MarginLayoutParams gl = (ViewGroup.MarginLayoutParams) gridFrame.getLayoutParams();
         gl.topMargin = home.barHeight() - (int) (34 * density);
         gridFrame.setLayoutParams(gl);
-        setWorkspace(reopenWs);
+        gridFrame.setVisibility(View.GONE);   // the legacy grid is replaced by HomeV29's single home screen
     }
-
-    private void setWorkspace(int ws) {
-        if (ws < 1 || ws > 5) return;
-        if (!LauncherConfig.get(this).workspaceShown(ws)) ws = 1;   // left out of "workspaces": {"order"}, e.g. a saved reopen
-        workspace = ws;
-        reopenWs = ws;
-        home.setWorkspace(ws);
-        gridFrame.setVisibility(View.GONE);   // v2.10: the app grid is workspace 3 inside HomeV29
-    }
-
-    /** Workspace to come back to after a settings rebuild (recreate()). */
-    private static int reopenWs = 1;
 
     private boolean openFirst(Intent... intents) {
         for (Intent i : intents) {
@@ -433,7 +410,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         return false;
     }
 
-    /** OK lungo on an app tile (home row or workspace 3): Sposta / Nascondi. The TV tile never gets here. */
+    /** OK lungo on an app tile in the home dock: Sposta / Nascondi. The TV tile never gets here. */
     private void appTileMenu(int position, View anchor) {
         if (home.movingApp >= 0 || position < 0 || position >= adapter.getItemCount()) return;
         String pkg = adapter.packageAt(position);
@@ -499,14 +476,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         home.bind(LauncherConfig.get(this), adapter);
     }
 
-    /** Workspace 2 · tv: the TV (Live TV app, last channel) and the connected HDMI inputs, CEC name when known. */
-    private List<HomeV29.Source> tvSources() {
-        List<HomeV29.Source> out = new ArrayList<>();
-        if (liveTvIntent() != null) out.add(new HomeV29.Source("TV", str(R.string.live_tv), R.drawable.ln_monitor, this::onTvClick));
-        out.addAll(hdmiSources());
-        return out;
-    }
-
     /** Connected HDMI / HDMI-CEC passthrough sources from TvInputManager. */
     private List<HomeV29.Source> hdmiSources() {
         List<HomeV29.Source> out = new ArrayList<>();
@@ -552,7 +521,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         return out;
     }
 
-    /** Workspace 5 · sistema rows. */
+    /** The "sistema" settings rows (opened from the home's settings button, see {@link #systemPage}). */
     private void sysAction(String id) {
         switch (id) {
             case "android":
@@ -603,11 +572,43 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         }
     }
 
-    /** Saves one workspace-5 option and redraws in place (no recreate). */
+    /** Saves one "sistema" option and redraws in place (no recreate). */
     private void sysSet(LauncherConfig.Edit edit) {
         builtWith = LauncherConfig.update(this, edit);
         home.bind(builtWith, adapter);
         resetIdle();
+    }
+
+    /** The home's settings button: opens the "sistema" rows (the former workspace 5) as a floating menu. */
+    private void showSystemMenu() {
+        if (menu != null && menu.isShowing()) menu.dismiss();
+        menu = new AsciiMenu(this, 420);
+        menu.showBelow(btnMenu, systemPage());
+    }
+
+    /**
+     * The "sistema" settings page: the rows the old workspace 5 showed, each dispatching the same
+     * {@link #sysAction} as before. Shown by the home's settings button ({@link #showSystemMenu}).
+     */
+    private AsciiMenu.Page systemPage() {
+        LauncherConfig cfg = LauncherConfig.get(this);
+        String on = str(R.string.on), off = str(R.string.off);
+        AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.v29_system));
+        // Rows that open another menu / dialog / external screen: close this popup first, then dispatch.
+        p.add(str(R.string.v210_sys_android), null, r -> { handler.post(() -> sysAction("android")); return false; });
+        p.add(str(R.string.v210_sys_themes), Theme.cur().name, r -> { handler.post(() -> sysAction("themes")); return false; });
+        p.add(str(R.string.v210_sys_transparency), cfg.transparency + "%", r -> { handler.post(() -> sysAction("layout")); return false; });
+        p.add(str(R.string.v210_sys_widgets), null, r -> { handler.post(() -> sysAction("widgets")); return false; });
+        p.add(str(R.string.v210_arrange), null, r -> { handler.post(() -> sysAction("arrange")); return false; });
+        p.add(str(R.string.menu_screensaver), null, r -> { handler.post(() -> sysAction("screensaver")); return false; });
+        // In-place toggles: run and update the row's value, keeping the menu open.
+        p.add(str(R.string.v210_ss_after), idleLabel(cfg.screensaverIdleSec), r -> { sysAction("idle"); r.setValue(idleLabel(LauncherConfig.get(this).screensaverIdleSec)); return true; });
+        p.add(str(R.string.v210_logo_anim), cfg.logoAnim ? on : off, r -> { sysAction("logoAnim"); r.setValue(LauncherConfig.get(this).logoAnim ? on : off); return true; });
+        p.add(str(R.string.v210_text_tiles), cfg.textTiles ? on : off, r -> { sysAction("textTiles"); r.setValue(LauncherConfig.get(this).textTiles ? on : off); return true; });
+        p.add(str(R.string.set_hidden), String.valueOf(cfg.hidden.size()), r -> { handler.post(() -> sysAction("hidden")); return false; });
+        p.add(str(R.string.v210_sys_all), null, r -> { handler.post(() -> sysAction("menu")); return false; });
+        p.add(str(R.string.menu_about), null, r -> { handler.post(() -> sysAction("about")); return false; });
+        return p;
     }
 
     private String currentNetworkName() {
@@ -719,11 +720,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     /** Runs a "keys" action binding. Unknown ids do nothing. */
     private void runKeyAction(String id) {
         if (home == null || movingPos >= 0) return;
-        if (id.startsWith("workspace-") || id.equals("home")) {
+        if (id.equals("home") || id.startsWith("workspace-")) {   // one screen now: every such key means "show home"
             if (walker != null) walker.close();
             if (menu != null && menu.isShowing()) menu.dismiss();
-            int ws = id.equals("home") ? 1 : id.charAt(id.length() - 1) - '0';
-            setWorkspace(ws);
             home.onHomeShown();
             return;
         }
@@ -1527,7 +1526,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             case "wallpaper": return wallpaperPage();
             case "themes": return themesPage();
             case "arrange": return arrangePage();
-            case "workspaces": return workspacesPage();
             case "screensaver": return screensaverPage();
             case "hidden": return hiddenPage();
             case "widgets": return widgetsPage();
@@ -1688,7 +1686,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             return true;
         });
         // v2.10: the old per-pane toggles (clock, ai, sysinfo, ...) drove the removed pane layer and did nothing on the
-        // home; every home panel is switched in Widgets (workspace 5).
+        // home; every home panel is switched in Widgets.
         p.add(str(R.string.set_widgets), "›", r -> push(widgetsPage()));
         // Only with a remote that has a profile in assets/remotes.json: nothing to set up on other TVs.
         if (!connectedRemotes().isEmpty()) p.add(str(R.string.menu_remote_keys), "\u203a", r -> push(remoteKeysPage()));
@@ -1724,7 +1722,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             return false;
         });
         p.add(str(R.string.set_hidden), String.valueOf(cfg.hidden.size()), r -> push(hiddenPage()));
-        p.add(str(R.string.set_workspaces), "›", r -> push(workspacesPage()));
         p.add(str(R.string.set_reset_order), null, r -> {
             LauncherConfig.update(this, j -> {
                 j.remove("order");
@@ -2204,98 +2201,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         return b.append("] ").append(current).append("dp").toString();
     }
 
-    /**
-     * "workspaces": numbers or names in the bar, then the bar's workspaces by position and the hidden ones;
-     * OK on one opens move / hide / rename.
-     */
-    private AsciiMenu.Page workspacesPage() {
-        LauncherConfig cfg = LauncherConfig.get(this);
-        AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.set_workspaces));
-        String lLabels = str(R.string.ws_labels);
-        p.add(lLabels, str(cfg.workspaceNamesInBar ? R.string.ws_labels_names : R.string.ws_labels_numbers), r -> {
-            boolean names = !cfg.workspaceNamesInBar;
-            applyLive("workspaces", lLabels, j -> workspacesJson(j).put("labels", names ? "names" : "numbers"));
-            return true;
-        });
-        for (int n : cfg.workspaceOrder) {
-            p.add(cfg.workspaceName(n), String.valueOf(cfg.positionOf(n)), r -> push(workspacePage(n)));
-        }
-        for (int n = 1; n <= LauncherConfig.WORKSPACE_IDS.length; n++) {
-            final int ws = n;
-            if (!cfg.workspaceShown(ws)) p.add(cfg.workspaceName(ws), str(R.string.off), r -> push(workspacePage(ws)));
-        }
-        p.add(str(R.string.ws_reset), null, r -> {
-            applyLive("workspaces", str(R.string.ws_reset), j -> j.remove("workspaces"));
-            return false;
-        });
-        p.hint(str(R.string.ws_hint));
-        return p;
-    }
-
-    /** One workspace: move it left / right in the bar, hide it or show it again (at the end), rename it. Home can't be hidden. */
-    private AsciiMenu.Page workspacePage(int n) {
-        LauncherConfig cfg = LauncherConfig.get(this);
-        List<Integer> order = new ArrayList<>(cfg.workspaceOrder);
-        int pos = order.indexOf(n);
-        AsciiMenu.Page p = new AsciiMenu.Page(cfg.workspaceName(n));
-        if (pos > 0) p.add(str(R.string.ws_move_left), null, r -> saveWorkspaceOrder(n, order, () -> Collections.swap(order, pos, pos - 1)));
-        if (pos >= 0 && pos < order.size() - 1) p.add(str(R.string.ws_move_right), null, r -> saveWorkspaceOrder(n, order, () -> Collections.swap(order, pos, pos + 1)));
-        if (n != 1 && pos >= 0) p.add(str(R.string.ws_hide), null, r -> saveWorkspaceOrder(n, order, () -> order.remove(pos)));
-        if (pos < 0) p.add(str(R.string.ws_show), null, r -> saveWorkspaceOrder(n, order, () -> order.add(n)));
-        p.add(str(R.string.ws_rename), null, r -> {
-            handler.post(() -> renameWorkspaceDialog(n));
-            return false;
-        });
-        return p;
-    }
-
-    /** Applies {@code change} to {@code order}, saves it as "workspaces": {"order"} and reopens the list on workspace {@code n}. */
-    private boolean saveWorkspaceOrder(int n, List<Integer> order, Runnable change) {
-        change.run();
-        org.json.JSONArray names = new org.json.JSONArray();
-        for (int ws : order) names.put(LauncherConfig.workspaceId(ws));
-        applyLive("workspaces", LauncherConfig.get(this).workspaceName(n), j -> workspacesJson(j).put("order", names));
-        return false;
-    }
-
-    /** "workspaces": {"names"}: an empty name (or the id itself) goes back to the id. */
-    private void renameWorkspaceDialog(int n) {
-        String id = LauncherConfig.workspaceId(n);
-        android.widget.EditText e = new android.widget.EditText(this);
-        e.setSingleLine(true);
-        e.setText(LauncherConfig.get(this).workspaceName(n));
-        e.setSelection(e.getText().length());
-        e.setHint(id);
-        e.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        e.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(12)});
-        new android.app.AlertDialog.Builder(this)
-                .setTitle(str(R.string.ws_rename) + "  ·  " + id)
-                .setView(e)
-                .setPositiveButton(android.R.string.ok, (d, w) -> {
-                    String v = LauncherConfig.workspaceNamePart(e.getText().toString());
-                    boolean reset = v.isEmpty() || v.equals(id);
-                    applyLive("workspaces", reset ? id : v, j -> {
-                        org.json.JSONObject names = workspacesJson(j).optJSONObject("names");
-                        if (names == null) workspacesJson(j).put("names", names = new org.json.JSONObject());
-                        if (reset) names.remove(id);
-                        else names.put(id, v);
-                    });
-                })
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
-    }
-
-    /** omarchytv.json "workspaces", created when missing. */
-    private static org.json.JSONObject workspacesJson(org.json.JSONObject j) throws org.json.JSONException {
-        org.json.JSONObject w = j.optJSONObject("workspaces");
-        if (w == null) j.put("workspaces", w = new org.json.JSONObject());
-        return w;
-    }
-
-    /** v2.10 "Disponi riquadri": pick a home panel, move it with the D-pad (OK saves, Back cancels), or reset. */
+    /** "Disponi riquadri": pick a home panel, move it with the D-pad (OK saves, Back cancels), or reset. */
     private AsciiMenu.Page arrangePage() {
         AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.v210_arrange));
-        int[] names = {R.string.v210_w_term, R.string.v210_w_weather, R.string.v210_w_pc, R.string.v210_w_ai, R.string.v210_w_deploys};
+        int[] names = {R.string.v210_w_term, R.string.v210_w_weather};
         for (int i = 0; i < HomeV29.PANEL_IDS.length; i++) {
             final String id = HomeV29.PANEL_IDS[i];
             View v = home.panelView(id);
@@ -2303,7 +2212,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             p.add(str(names[i]), shown ? "›" : str(R.string.off), r -> {
                 if (!shown) return true;
                 if (menu != null) menu.dismiss();
-                setWorkspace(1);
                 home.post(() -> {
                     if (home.editPanel(id)) Toast.makeText(this, R.string.v210_arrange_hint, Toast.LENGTH_LONG).show();
                 });
@@ -2859,8 +2767,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             setIntent(intent);
             return;
         }
-        if (home != null && walker == null && (menu == null || !menu.isShowing())) {   // HOME key: back to workspace 1
-            if (workspace != 1) setWorkspace(1);
+        if (home != null && walker == null && (menu == null || !menu.isShowing())) {   // HOME key: refocus the home
             home.onHomeShown();
         }
     }
@@ -2882,21 +2789,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                     if (e.getAction() == KeyEvent.ACTION_UP) openWalker();
                     return true;
                 }
-            }
-            // v2.10 workspaces: 1-5 jump, CH+/CH− next/previous (only reaches us while the launcher is in front).
-            if (kc >= KeyEvent.KEYCODE_1 && kc <= KeyEvent.KEYCODE_5) {
-                int n = LauncherConfig.get(this).workspaceAt(kc - KeyEvent.KEYCODE_0);   // the key is the bar position
-                if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0 && n > 0) setWorkspace(n);
-                return true;
-            }
-            if (kc == KeyEvent.KEYCODE_CHANNEL_UP || kc == KeyEvent.KEYCODE_CHANNEL_DOWN || kc == KeyEvent.KEYCODE_PAGE_UP || kc == KeyEvent.KEYCODE_PAGE_DOWN) {
-                boolean up = kc == KeyEvent.KEYCODE_CHANNEL_UP || kc == KeyEvent.KEYCODE_PAGE_DOWN;
-                if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) setWorkspace(LauncherConfig.get(this).nextWorkspace(workspace, up ? 1 : -1));
-                return true;
-            }
-            if (workspace != 1 && kc == KeyEvent.KEYCODE_BACK) {
-                if (e.getAction() == KeyEvent.ACTION_UP) setWorkspace(1);
-                return true;
             }
             if (home.onKey(e)) return true;
         }
@@ -3491,15 +3383,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         // 1. Try dedicated OEM / Android TV Live TV app activity first (Sony, Sharp, Philips PlayTV, etc.).
         if (tryOpen(liveTvAppIntent())) return;
         // 2. If the user watches TV via an external digibox/STB on HDMI (e.g. Philips TPM171E in Issue #2),
-        //    open the single connected HDMI/CEC source directly, or switch to Workspace 2 (Sources) if multiple.
+        //    open the single connected HDMI/CEC source directly, or the input picker if there are several.
         List<HomeV29.Source> hdmi = hdmiSources();
         if (hdmi.size() == 1) {
             hdmi.get(0).open.run();
             return;
         }
         if (hdmi.size() > 1) {
-            if (home != null && LauncherConfig.get(this).workspaceShown(2)) setWorkspace(2);
-            else showInputs();
+            showInputs();
             return;
         }
         // 3. Fall back to the system DVB/ATSC tuner passthrough URI or generic TIF channels URI.
