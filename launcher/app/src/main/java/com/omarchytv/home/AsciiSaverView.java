@@ -22,7 +22,7 @@ import java.util.Random;
  * Native re-creation of Omarchy's screensaver (bin/omarchy-screensaver), plus the v2.13
  * Omarchy Cyber-TUI Aquarium mode ("aquarium").
  * <ul>
- *   <li>Logo modes ("omarchy-tv", "omarchy", "cinemarchy", "original"): loops terminal-text-effect intros
+ *   <li>Logo modes ("omarchy-tv", "omarchy", "original"): loops terminal-text-effect intros
  *       (decrypt, rain, beams, print, slide, expand, matrix, wipe, burn) over the half-block art on a character grid.</li>
  *   <li>Aquarium mode ("aquarium"): multi-layered Omarchy Cyber-TUI ocean using all active Omarchy theme colors
  *       (bg, fg, accent, accent2, fgDim, cyan, green, magenta, yellow) with animated water surface shimmer,

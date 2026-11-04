@@ -22,7 +22,6 @@ public final class LinkHarness {
         host.code = args.length > 2 ? args[2] : "123456";
         File secrets = args.length > 3 ? new File(args[3]) : new File(dir, "link.json");
         secrets.getParentFile().mkdirs();
-        host.castDir = new File(secrets.getParentFile(), "cast");
         LinkServer server = new LinkServer(host, new LinkStore(secrets));
         host.server = server;
         server.limits = !"0".equals(System.getenv("OTV_LIMITS"));
@@ -65,11 +64,6 @@ public final class LinkHarness {
                 case "rawframe": server.debugRawFrame(rest); break;
                 case "idle": reply = String.valueOf(server.idle()); break;
                 case "status": reply = server.status().toString(); break;
-                case "cast": host.castOn = "on".equals(p[1]); break;
-                case "castmax": server.castUploadMax = Long.parseLong(p[1]); break;
-                case "castplay": host.castPlay = "on".equals(p[1]); break;
-                case "castlive": host.castLiveBytes = Integer.parseInt(p[1]); break;
-                case "castkinds": host.castKinds = new java.util.ArrayList<>(java.util.Arrays.asList(p[1].split(","))); break;
                 case "ask": {   // ask PROVIDER|- SESSION|- TEXT
                     String[] q = rest.split(" ", 3);
                     JSONObject d = new JSONObject().put("id", "h" + (++n)).put("text", q.length > 2 ? q[2] : rest).put("lang", "it-IT");

@@ -94,18 +94,7 @@ public final class AmbilightController {
         return "off".equals(n) ? "theme" : n;
     }
 
-    /** Cinemarchy: dim bias light on the TV LEDs + hub (unless Ambilight is off). */
-    public static void cinemaDim(Context ctx) {
-        LauncherConfig cfg = LauncherConfig.get(ctx);
-        if ("off".equals(cfg.ambilightMode)) return;
-        Theme t = Theme.cur();
-        com.omarchytv.home.lights.Lights.push(ctx, t.accent, t.accent2, t.bg, cfg.ambilightBrightness, true);
-        String tv = cfg.ambilightTvIp;
-        int c = scale(t.accent2, Math.min(cfg.ambilightBrightness, 15));
-        EXEC.execute(() -> applyPhilipsStaticColor(tv, c));
-    }
-
-    /** Lights hub only (Hue / Home Assistant), back on screen: theme colours, dim inside Cinemarchy. TV LEDs untouched. */
+    /** Lights hub only (Hue / Home Assistant), back on screen: theme colours, dim in cinema mode. TV LEDs untouched. */
     public static void paintHub(Context ctx, boolean dim) {
         LauncherConfig cfg = LauncherConfig.get(ctx);
         if ("off".equals(cfg.ambilightMode)) return;

@@ -13,9 +13,8 @@ import android.view.View;
 import java.util.Random;
 
 /**
- * The home-screen and Cinemarchy wordmark: the pixel ASCII wordmark chosen by config "logo"
- * (default "omarchy-tv": Omarchy's logo.txt plus a matching "TV", or "cinemarchy": 35mm film-reel + "CINE"
- * in accent gradient + Omarchy's "MARCHY" in foreground), drawn as exact rectangles so it is sharp at 1080p and 4K.
+ * The home-screen wordmark: the pixel ASCII wordmark chosen by config "logo"
+ * (default "omarchy-tv": Omarchy's logo.txt plus a matching "TV"), drawn as exact rectangles so it is sharp at 1080p and 4K.
  * {@link #reveal()} plays a short "decrypt": cells scramble in comment blue and lock into blocks left to right (~650 ms, then static).
  */
 public class WordmarkView extends View {

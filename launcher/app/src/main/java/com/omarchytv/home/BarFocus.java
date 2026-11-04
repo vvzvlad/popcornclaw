@@ -35,9 +35,4 @@ final class BarFocus {
         }
         return -1;
     }
-
-    /** ▶ on the last usable item (nothing further right): the floating companion is the next stop. */
-    static <T> boolean pastEnd(List<T> order, T current, boolean right, Predicate<? super T> usable) {
-        return right && order.indexOf(current) >= 0 && next(order, current, true, usable) < 0;
-    }
 }

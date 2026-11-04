@@ -141,9 +141,8 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
                 }
             }
             if (icon == null) icon = ctx.getDrawable(R.drawable.ic_web);
-            Drawable banner = "grok-bot".equals(w.id) ? grokBotBanner(ctx) : null;
             Entry en = new Entry(w.name, new ComponentName(ctx.getPackageName(),
-                    ("grok-bot".equals(w.id) ? AskActivity.class.getName() : WebAppActivity.class.getName()) + "#" + w.id), key, banner, icon);
+                    WebAppActivity.class.getName() + "#" + w.id), key, null, icon);
             en.system = true;   // no uninstall / app info; "Remove web app" instead
             en.web = w;
             fresh.add(en);
@@ -357,10 +356,6 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
     private void launch(Entry e) {
         AmbilightController.restoreFollowVideo(ctx);
         if (e.web != null) {
-            if ("grok-bot".equals(e.web.id)) {
-                AskActivity.open(ctx);
-                return;
-            }
             WebAppActivity.open(ctx, e.web);
             return;
         }
@@ -536,61 +531,4 @@ public class AppAdapter extends RecyclerView.Adapter<AppAdapter.Holder> {
         }
     }
 
-    /** Live Omarchy TUI 16:9 banner for the Grok Bot tile on the Home shelf, rendered dynamically in Theme.cur() colors. */
-    static Drawable grokBotBanner(Context ctx) {
-        final android.graphics.Typeface tf = CastUi.font(ctx);
-        final android.graphics.Typeface tfBold = android.graphics.Typeface.create(tf, android.graphics.Typeface.BOLD);
-        return new Drawable() {
-            private final android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
-
-            @Override
-            public void draw(@NonNull android.graphics.Canvas c) {
-                android.graphics.Rect b = getBounds();
-                int w = b.width(), h = b.height();
-                if (w <= 0 || h <= 0) return;
-                Theme t = Theme.cur();
-                p.setStyle(android.graphics.Paint.Style.FILL);
-                p.setColor(t.bg);
-                c.drawRect(b, p);
-
-                // Subtle inner terminal frame
-                int pad = Math.max(4, Math.round(w * 0.04f));
-                p.setStyle(android.graphics.Paint.Style.STROKE);
-                p.setStrokeWidth(Math.max(1.5f, w * 0.008f));
-                p.setColor(t.muted);
-                c.drawRect(b.left + pad, b.top + pad, b.right - pad, b.bottom - pad, p);
-
-                p.setStyle(android.graphics.Paint.Style.FILL);
-                // Top terminal prompt: grokbot@tv:~$
-                p.setTypeface(tf);
-                p.setTextSize(h * 0.14f);
-                p.setTextAlign(android.graphics.Paint.Align.LEFT);
-                p.setColor(t.green);
-                c.drawText("grokbot@tv:~$", b.left + pad * 2.2f, b.top + h * 0.28f, p);
-
-                // Center title: > GROK BOT
-                p.setTypeface(tfBold);
-                p.setTextSize(h * 0.23f);
-                p.setColor(t.fgBright);
-                c.drawText("> GROK BOT", b.left + pad * 2.2f, b.top + h * 0.58f, p);
-
-                // Bottom badge: [ omarchy · tui ]
-                p.setTypeface(tf);
-                p.setTextSize(h * 0.135f);
-                p.setColor(t.cyan);
-                c.drawText("[ omarchy · tui ]", b.left + pad * 2.2f, b.top + h * 0.82f, p);
-            }
-
-            @Override
-            public void setAlpha(int alpha) {}
-
-            @Override
-            public void setColorFilter(android.graphics.ColorFilter colorFilter) {}
-
-            @Override
-            public int getOpacity() {
-                return android.graphics.PixelFormat.OPAQUE;
-            }
-        };
-    }
 }

@@ -7,13 +7,11 @@ import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 
 /**
- * The ASCII logos shared by the home wordmark, Cinemarchy hub, and the screensaver. Config value ("logo"):
+ * The ASCII logos shared by the home wordmark and the screensaver. Config value ("logo"):
  * <ul>
  * <li>"omarchy-tv" (default): Omarchy's logo.txt (MIT) with a matching "TV" drawn in the same
  *     half-block style (res/raw/omarchy_tv_logo.txt; the TV glyphs are original).</li>
  * <li>"omarchy": Omarchy's logo.txt unchanged (MIT, Copyright (c) David Heinemeier Hansson).</li>
- * <li>"cinemarchy": 35mm film-reel frame + "CINE" in Omarchy half-block style + Omarchy's "MARCHY"
- *     verbatim from logo.txt (MIT, Copyright (c) David Heinemeier Hansson).</li>
  * <li>"original": OmarchyTV's own block font ({@link BlockFont}), no Omarchy artwork at all.</li>
  * </ul>
  */
@@ -22,15 +20,11 @@ final class Art {
     /** First column of "TV" in omarchy_tv_logo.txt. */
     private static final int OMARCHY_TV_SPLIT = 86;
 
-    /** First column of "MARCHY" in cinemarchy_logo.txt (columns < 40 are "CINE"). */
-    static final int CINEMARCHY_SPLIT = 40;
-
     private Art() {
     }
 
     static String normalise(String which) {
         if ("omarchy".equals(which)) return "omarchy";
-        if ("cinemarchy".equals(which)) return "cinemarchy";
         if ("aquarium".equals(which)) return "aquarium";
         if ("aquarium-classic".equals(which)) return "aquarium-classic";
         if ("original".equals(which) || "omarchytv".equals(which)) return "original";
@@ -40,7 +34,6 @@ final class Art {
     static String load(Context c, String which) {
         switch (normalise(which)) {
             case "omarchy": return raw(c, R.raw.omarchy_logo);
-            case "cinemarchy": return raw(c, R.raw.cinemarchy_logo);
             case "original": return blockFontArt();
             default: return raw(c, R.raw.omarchy_tv_logo);
         }
@@ -50,15 +43,14 @@ final class Art {
     static int split(String which) {
         switch (normalise(which)) {
             case "omarchy": return -1;
-            case "cinemarchy": return CINEMARCHY_SPLIT;
             case "original": return BlockFont.splitColumn(WordmarkView.TEXT);
             default: return OMARCHY_TV_SPLIT;
         }
     }
 
-    /** True when columns BEFORE {@link #split(String)} get the accent gradient and columns AFTER get foreground ("cinemarchy"). */
+    /** True when columns BEFORE {@link #split(String)} get the accent gradient and columns AFTER get foreground. */
     static boolean isPrefixAccent(String which) {
-        return "cinemarchy".equals(normalise(which));
+        return false;
     }
 
     private static String blockFontArt() {

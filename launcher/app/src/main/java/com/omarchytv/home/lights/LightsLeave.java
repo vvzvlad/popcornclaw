@@ -8,7 +8,7 @@ package com.omarchytv.home.lights;
 public final class LightsLeave {
     public static final String OFF = "off", RESTORE = "restore", KEEP = "keep";
     public static final String[] POLICIES = {OFF, RESTORE, KEEP};
-    /** A launcher activity handing over to another one (Home → Cinemarchy → player) stops and starts within this. */
+    /** A launcher activity handing over to another one (Home → player) stops and starts within this. */
     public static final long DEBOUNCE_MS = 2500;
 
     private LightsLeave() {

@@ -11,15 +11,15 @@ import android.os.Handler;
 import android.os.Looper;
 
 /**
- * Lights hub follows the launcher being on screen. Every activity of the main process (Home, Cinemarchy, the
- * player, the YouTube embed, Settings) counts as "inside"; when none is started for {@link LightsLeave#DEBOUNCE_MS}
+ * Lights hub follows the launcher being on screen. Every activity of the main process (Home, the
+ * player, Settings) counts as "inside"; when none is started for {@link LightsLeave#DEBOUNCE_MS}
  * (another app such as Netflix or the YouTube app took over) or the screen goes off, the leave policy runs.
  * Coming back paints the theme again. The Philips Ambilight TV LEDs are not touched here.
  */
 public final class LightsPresence implements Application.ActivityLifecycleCallbacks {
     private static LightsPresence installed;
 
-    /** Hook: paint the hub for the activity now on screen (Home: theme; Cinemarchy: its dim level). */
+    /** Hook: paint the hub for the activity now on screen (Home: theme; player: its dim level). */
     public interface Painter {
         void paint(Activity a);
 

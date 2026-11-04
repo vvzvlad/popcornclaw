@@ -18,7 +18,7 @@ import android.util.Log;
  * thread; it runs in the launcher's main process (no android:process), the same process as {@link PicoLink} and
  * {@link AgentService}, so the captured WAV reaches the open pico WebSocket. A binder-less ASSIST (KEYCODE_ASSIST
  * from remotes without a phone mic) carries no AUDIO_STREAM_KEY: it is handed to MainActivity's existing
- * companion/Walker voice path, whose UI comes up as before.
+ * Walker voice path, whose UI comes up as before.
  */
 public final class VoiceAssistActivity extends Activity {
     @Override

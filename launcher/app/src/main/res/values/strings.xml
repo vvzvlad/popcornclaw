@@ -137,17 +137,12 @@
     <string name="apps_prompt" translatable="false">&gt; Apps</string>
     <string name="search_entry">> search</string>
     <string name="search_none">no match</string>
-    <string name="search_again">try again</string>
-    <string name="ask_entry">> ask</string>
-    <string name="ask_settings">Assistant</string>
+    <string name="search_again">try again</string>    <string name="ask_settings">Assistant</string>
     <string name="ask_provider">Provider</string>
     <string name="ask_tts">Read answers aloud</string>
     <string name="voice_key">Mic / Search key</string>
     <string name="voice_key_assistant">Google Assistant</string>
-    <string name="voice_key_launcher">> search</string>
-    <string name="voice_key_companion">Grok Bot companion</string>
-    <string name="ask_key">> ask key</string>
-    <string name="ask_need_link">connect Omarchy Linux first (logo menu → Connect Omarchy Linux). Answers come from your PC; the TV holds no API keys.</string>
+    <string name="voice_key_launcher">> search</string>    <string name="ask_need_link">connect Omarchy Linux first (logo menu → Connect Omarchy Linux). Answers come from your PC; the TV holds no API keys.</string>
     <string name="ask_need_link_short">connect Omarchy Linux first</string>
     <string name="ask_hint">OK = speak   ← = type   BACK = exit</string>
     <string name="ask_prompt">Ask anything</string>
@@ -335,9 +330,7 @@
     <string name="v210_w_weather">─ weather ─</string>
     <string name="v210_w_pc">─ omarchy · pc ─</string>
     <string name="v210_w_ai">─ ai credits · pc ─</string>
-    <string name="v210_w_deploys">─ deploys · pc ─</string>
-    <string name="v210_cast">Send to TV (cast)</string>
-    <string name="wp_next">Next background</string>
+    <string name="v210_w_deploys">─ deploys · pc ─</string>    <string name="wp_next">Next background</string>
     <string name="v210_w_term">─ terminal · logo ─</string>
     <string name="v210_arrange">Arrange panels</string>
     <string name="v210_arrange_hint">◀▶▲▼ move · OK save · Back cancel</string>
@@ -347,11 +340,6 @@
     <string name="speed_normal">normal</string>
     <string name="speed_fast">fast</string>
     <string name="wp_sync_pc">Sync PC wallpaper</string>
-    <string name="grok_bot_hub">Grok Bot &amp; AI</string>
-    <string name="grok_bot_open">Grok Bot (WebApp)</string>
-    <string name="grok_bot_pin_all">Pin AI WebApps to Home</string>
-    <string name="grok_bot_mcp">MCP Server (/mcp)</string>
-    <string name="cinemarchy_hub">Cinemarchy (Media &amp; TV)</string>
     <string name="amb_title">Ambilight &amp; Lights</string>
     <string name="amb_enabled">Ambilight</string>
     <string name="amb_mode">Mode</string>
@@ -407,10 +395,8 @@
     <string name="keys_action_walker">Search (Walker)</string>
     <string name="keys_action_voice">Voice search</string>
     <string name="keys_action_home">Home</string>
-    <string name="keys_action_ask">Grok Bot</string>
     <string name="keys_action_menu">Menu</string>
     <string name="keys_action_screensaver">Screensaver</string>
-    <string name="keys_action_next_theme">Next theme</string>
     <string name="keys_action_workspace">Workspace %1$s</string>
     <string name="keys_none">No supported remote connected.</string>
     <string name="keys_default">Unbound: %1$s</string>

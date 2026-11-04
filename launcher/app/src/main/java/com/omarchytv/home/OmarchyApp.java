@@ -8,7 +8,7 @@ import android.webkit.WebView;
 /**
  * v2.14: each extra process (:web, :saver, ...) gets its own WebView data directory. On Android 9+ a WebView
  * data directory can be held by only one process, so the :web web apps crashed in onCreate (crbug 558377)
- * once the main process had used a WebView (YouTube embed, companion). Their cookies and logins now live in
+ * once the main process had used a WebView. Their cookies and logins now live in
  * app_webview_web/ and persist across launches.
  */
 public class OmarchyApp extends Application {
