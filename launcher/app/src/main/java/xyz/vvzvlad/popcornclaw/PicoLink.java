@@ -80,6 +80,14 @@ public final class PicoLink {
     }
 
     /**
+     * A turn is running: one the screen asked or a voice note from the remote opened, or one whose frames
+     * have come. Main thread.
+     */
+    static boolean turnOpen() {
+        return turn.id() != null;
+    }
+
+    /**
      * Sends the question {@code d} ({"id", "text"}) to the agent; the gateway steers it into a turn that
      * is running. Main thread.
      */
@@ -104,19 +112,22 @@ public final class PicoLink {
 
     /**
      * Sends a voice note captured from the TV remote to the agent over the pico channel. The gateway
-     * transcribes it (Groq ASR) and it becomes the owner's message on the shared TV/Telegram dialog; the
-     * recognized text returns as a "user" frame, so this does not touch the turn state. Any thread.
+     * transcribes it (Groq ASR) and it becomes the owner's message on the shared TV/Telegram dialog. The
+     * gateway does not send the TV's own message back, so the turn is opened here, as for a question the
+     * screen asks: its steps come as this turn's lines and its end (or the gateway's error frame for an
+     * unusable note) closes it. Any thread.
      */
     public static void sendAudio(byte[] wav) {
         if (wav == null || wav.length == 0) return;
         String dataUrl = "data:audio/wav;base64," + android.util.Base64.encodeToString(wav, android.util.Base64.NO_WRAP);
         main.post(() -> {
             connect();
+            String id = Long.toHexString(ids.nextLong());
             String frame;
             try {
                 JSONObject payload = new JSONObject().put("audio", dataUrl);
                 frame = new JSONObject().put("type", "message.send")
-                        .put("id", Long.toHexString(ids.nextLong())).put("payload", payload).toString();
+                        .put("id", id).put("payload", payload).toString();
             } catch (JSONException e) {
                 throw new IllegalStateException(e);
             }
@@ -124,6 +135,8 @@ public final class PicoLink {
                 android.util.Log.w("popcornclaw-voice", "voice: audio frame not sent, socket down");
             } else {
                 android.util.Log.i("popcornclaw-voice", "voice: sent " + wav.length + " WAV bytes to the gateway");
+                turn.ask(id);
+                show(turn.join());
             }
         });
     }

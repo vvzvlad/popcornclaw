@@ -33,8 +33,11 @@ import java.util.Map;
 
 /**
  * Shows each new user message of any PicoClaw session (Telegram, the command line) in a window over
- * everything, video included, at the top of the screen for {@link #SHOW_MS}. Lines already in the session
- * files when it starts do not count. Needs the SYSTEM_ALERT_WINDOW app-op (granted by `make app`).
+ * everything, video included, at the top of the screen, and under it the agent's messages as the Telegram
+ * chat gets them (each step, interim text, the answer, an error; PicoLink's events). While the agent's turn
+ * runs the window stays up with a spinner; otherwise it hides {@link #SHOW_MS} after the last change. Lines
+ * already in the session files when it starts do not count. Needs the SYSTEM_ALERT_WINDOW app-op (granted by
+ * `make app`).
  */
 final class CommandPopup {
     private static final String TAG = "PopcornClawPopup";
@@ -42,8 +45,93 @@ final class CommandPopup {
     private static final long POLL_MS = 1000;
     private static final long SHOW_MS = 10_000;
     private static final int TEXT_SP = 16;
-    private static final int MAX_LINES = 6;
+    private static final int MAX_LINES = 10;
     private static final float WIDTH_SHARE = 0.6f;
+    // About three lines of the window.
+    private static final int COMMAND_CHARS = 200;
+    private static final String[] SPINNER = {"|", "/", "-", "\\"};
+    private static final long SPIN_MS = 150;
+
+    /**
+     * What the window shows: the last command, the agent's last message and whether its turn runs (a spinner,
+     * no hide) or not (the window hides {@link #SHOW_MS} later). No Android types, so it is unit-tested.
+     */
+    static final class State {
+        String command = "";
+        String agent = "";
+        boolean running;
+        // A Telegram message a question event showed, until the session files bring it too.
+        private String echo;
+
+        /**
+         * A new user message from the session files. Outside a turn it starts a new one, so the old agent
+         * message goes; a message steered into a running turn keeps the turn's last line. turnOpen: PicoLink
+         * has a turn open, as after a question asked on the TV's assistant screen, which sends no question
+         * event; the spinner runs from the question on. A Telegram message its question event showed already
+         * is skipped once: its turn may have ended (an error) before the files were polled.
+         */
+        void command(String text, boolean turnOpen) {
+            if (text.equals(echo)) {
+                echo = null;
+                return;
+            }
+            if (!running) {
+                agent = "";
+            }
+            command = text;
+            running = running || turnOpen;
+        }
+
+        /** A PicoLink event; false when it changes nothing (the keepalive, an unknown type). */
+        boolean event(String type, JSONObject d) {
+            switch (type) {
+                case "question":
+                    // A Telegram message starts or joins a turn. Its text is "" when the listener joins mid-turn,
+                    // when it is not known yet (a voice note from the remote: the session files bring it) and
+                    // before an agent message outside a turn (PicoTurn.alone), which then shows on its own.
+                    String text = Transcript.clean(Transcript.str(d, "text"));
+                    if (!running) {
+                        // A new turn, even when its text repeats the last command; the old command goes too.
+                        agent = "";
+                        command = text;
+                    }
+                    if (!text.isEmpty()) {
+                        command = text;
+                        echo = text;
+                    }
+                    running = true;
+                    return true;
+                case "answer":
+                    if (!d.optBoolean("done")) {
+                        // A step or interim text; "" is the keepalive.
+                        String line = Transcript.clean(Transcript.str(d, "text"));
+                        if (line.isEmpty()) {
+                            return false;
+                        }
+                        agent = line;
+                        running = true;
+                        return true;
+                    }
+                    // The turn's answer, or its end without one: the last line stays.
+                    String answer = Transcript.clean(Transcript.str(d, "final"));
+                    if (!answer.isEmpty()) {
+                        agent = answer;
+                    }
+                    running = false;
+                    return true;
+                case "answer_error":
+                    agent = Transcript.clean(Transcript.str(d, "message"));
+                    running = false;
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        boolean empty() {
+            return command.isEmpty() && agent.isEmpty();
+        }
+    }
 
     /** Where reading of one session file stands. */
     static final class Seen {
@@ -68,10 +156,12 @@ final class CommandPopup {
     private final Map<String, Seen> seen = new HashMap<>();
     private String lastError;
     // Main thread only.
+    private final State state = new State();
     private TextView view;
     private boolean attached;
     private boolean overlayFailed;
     private boolean stopped;
+    private int frame;
 
     private final Runnable tick = new Runnable() {
         @Override
@@ -93,6 +183,16 @@ final class CommandPopup {
 
     private final Runnable hide = this::hide;
 
+    // Posted only while the turn runs and the window is attached.
+    private final Runnable spin = new Runnable() {
+        @Override
+        public void run() {
+            frame = (frame + 1) % SPINNER.length;
+            view.setText(text(Palette.get()));
+            main.postDelayed(this, SPIN_MS);
+        }
+    };
+
     CommandPopup(Context context) {
         this.context = context;
         wm = context.getSystemService(WindowManager.class);
@@ -111,11 +211,18 @@ final class CommandPopup {
             }
             worker.postDelayed(tick, POLL_MS);
         });
+        // The agent's messages as the Telegram chat gets them; start() runs on the main thread.
+        PicoLink.listen(this, (type, d) -> {
+            if (state.event(type, d)) {
+                show();
+            }
+        });
     }
 
     /** On the main thread (the service's onDestroy); a show() the worker already posted is dropped. */
     void stop() {
         thread.quit();
+        PicoLink.unlisten(this);
         stopped = true;
         hide();
     }
@@ -143,7 +250,10 @@ final class CommandPopup {
         }
         if (last != null) {
             final String text = last;
-            main.post(() -> show(text));
+            main.post(() -> {
+                state.command(text, PicoLink.turnOpen());
+                show();
+            });
         }
     }
 
@@ -234,8 +344,13 @@ final class CommandPopup {
         }
     }
 
-    private void show(String text) {
+    /** Draws the state; while the turn runs the window stays up with a spinner, otherwise it hides SHOW_MS later. */
+    private void show() {
         if (stopped) {
+            return;
+        }
+        if (state.empty()) {
+            hide();
             return;
         }
         if (view == null) {
@@ -255,14 +370,7 @@ final class CommandPopup {
         DisplayMetrics dm = new DisplayMetrics();
         wm.getDefaultDisplay().getRealMetrics(dm);
         view.setMaxWidth(Math.round(dm.widthPixels * WIDTH_SHARE));
-        // The prompt mark the feed puts before a user message; the text itself as it came (voice: "[voice: …]").
-        SpannableStringBuilder sb = new SpannableStringBuilder("› ");
-        sb.setSpan(new ForegroundColorSpan(p.accent), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        sb.setSpan(new StyleSpan(Typeface.BOLD), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        int start = sb.length();
-        sb.append(text);
-        sb.setSpan(new ForegroundColorSpan(p.text), start, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        view.setText(sb);
+        view.setText(text(p));
         if (!attached) {
             try {
                 wm.addView(view, layoutParams(dm));
@@ -284,13 +392,52 @@ final class CommandPopup {
                 return;
             }
         }
-        // A newer message keeps the window up for its own full time.
         main.removeCallbacks(hide);
-        main.postDelayed(hide, SHOW_MS);
+        main.removeCallbacks(spin);
+        if (state.running) {
+            main.postDelayed(spin, SPIN_MS);
+        } else {
+            // A newer message keeps the window up for its own full time.
+            main.postDelayed(hide, SHOW_MS);
+        }
+    }
+
+    /** "› command" and under it the agent's last message, after a spinner while the turn runs. */
+    private CharSequence text(Palette p) {
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+        if (!state.command.isEmpty()) {
+            // The prompt mark the feed puts before a user message; the text itself as it came (voice: "[voice: …]").
+            sb.append("› ");
+            sb.setSpan(new ForegroundColorSpan(p.accent), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            sb.setSpan(new StyleSpan(Typeface.BOLD), 0, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            int start = sb.length();
+            // A long command (dictated voice, a pasted link) would push the agent's line out of the window.
+            sb.append(Transcript.cut(state.command, COMMAND_CHARS));
+            sb.setSpan(new ForegroundColorSpan(p.text), start, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        if (state.running || !state.agent.isEmpty()) {
+            if (sb.length() > 0) {
+                sb.append('\n');
+            }
+            if (state.running) {
+                int start = sb.length();
+                sb.append(SPINNER[frame]);
+                sb.setSpan(new ForegroundColorSpan(p.accent), start, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                sb.append(' ');
+            }
+            if (!state.agent.isEmpty()) {
+                int start = sb.length();
+                // Telegram shows `tool` as code; on the TV the backticks are noise.
+                sb.append(state.agent.replace("`", ""));
+                sb.setSpan(new ForegroundColorSpan(p.output), start, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+        }
+        return sb;
     }
 
     private void hide() {
         main.removeCallbacks(hide);
+        main.removeCallbacks(spin);
         if (attached) {
             wm.removeView(view);
             attached = false;

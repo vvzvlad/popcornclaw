@@ -19,7 +19,7 @@ import java.net.URL;
  * row, and not within a minute of its own last start, it (re)starts the gateway as root through su.
  * {@link #ACTION_RESTART} kills and starts it at once. The gateway is a separate root process that outlives
  * this app: its output goes to a file, never to a pipe back here. It also shows every new command to the agent
- * in a popup over everything ({@link CommandPopup}).
+ * and the agent's messages as the Telegram chat gets them in a popup over everything ({@link CommandPopup}).
  */
 public final class AgentService extends Service {
     public static final String ACTION_RESTART = "xyz.vvzvlad.popcornclaw.RESTART";
@@ -59,7 +59,7 @@ public final class AgentService extends Service {
         thread.start();
         worker = new Handler(thread.getLooper());
         worker.post(check);
-        // The service always runs, so it is the one that pops up each command the agent gets.
+        // The service always runs, so it is the one that pops up each command the agent gets and its messages.
         popup = new CommandPopup(this);
         popup.start();
         // The TV's half of the dialog with no screen open: the gateway has somewhere to send it.

@@ -423,7 +423,7 @@ final class Transcript {
     }
 
     /** At most n chars, the last one "…" when something was cut. */
-    private static String cut(String s, int n) {
+    static String cut(String s, int n) {
         if (s.length() <= n) {
             return s;
         }

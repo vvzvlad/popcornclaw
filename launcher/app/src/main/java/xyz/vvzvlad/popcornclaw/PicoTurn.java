@@ -11,10 +11,10 @@ import java.util.function.Supplier;
 /**
  * The dialog's turn as the assistant screen sees it: the gateway's frames, the screen's own questions and a
  * lost connection in, events for the screen out, under the id the screen shows the turn by. The events are
- * those of the paired-PC bridge: "question" (a Telegram message, or a turn the screen joins), "answer" (each
- * step and interim text a line, the turn's answer as done with final, the turn end as done without it) and
- * "answer_error". No Android main loop here: PicoLink feeds it on the main thread and keeps the screen's
- * timeout from firing while {@link #id} is not null.
+ * those of the paired-PC bridge: "question" (a Telegram message, a turn the screen joins or a voice note from
+ * the remote, whose text is not known yet), "answer" (each step and interim text a line, the turn's answer as
+ * done with final, the turn end as done without it) and "answer_error". No Android main loop here: PicoLink
+ * feeds it on the main thread and keeps the screen's timeout from firing while {@link #id} is not null.
  */
 final class PicoTurn {
     /** A gateway frame as the screen reads it. */
@@ -87,8 +87,8 @@ final class PicoTurn {
     }
 
     /**
-     * The screen sent its question {@code questionId}. The gateway steers it into a running turn, which the
-     * screen then shows under the new id.
+     * The screen sent its question {@code questionId}, or PicoLink a voice note from the remote. The gateway
+     * steers it into a running turn, which the screen then shows under the new id.
      */
     void ask(String questionId) {
         id = questionId;
