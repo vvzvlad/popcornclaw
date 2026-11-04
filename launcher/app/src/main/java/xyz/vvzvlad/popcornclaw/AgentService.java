@@ -1,7 +1,11 @@
 package xyz.vvzvlad.popcornclaw;
 
 import android.app.Service;
+import android.bluetooth.BluetoothDevice;
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
@@ -20,6 +24,7 @@ import java.net.URL;
  * {@link #ACTION_RESTART} kills and starts it at once. The gateway is a separate root process that outlives
  * this app: its output goes to a file, never to a pipe back here. It also shows every new command to the agent
  * and the agent's messages as the Telegram chat gets them in a popup over everything ({@link CommandPopup}).
+ * And it strips the keys that stop a bonded Bluetooth remote from reconnecting ({@link #fixRemoteKeys}).
  */
 public final class AgentService extends Service {
     public static final String ACTION_RESTART = "xyz.vvzvlad.popcornclaw.RESTART";
@@ -66,6 +71,64 @@ public final class AgentService extends Service {
         PicoLink.connect();
         // SPIKE: keep the voice helpers warm for the phone remote's ~15 s window.
         worker.post(this::startVoiceHelpers);
+        new Thread(() -> fixRemoteKeys(1), "popcornclaw-bt").start();
+        registerReceiver(bonded, new IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED));
+    }
+
+    /** A new bond may bring the keys {@link #fixRemoteKeys} strips; its HID record is saved a few seconds later. */
+    private final BroadcastReceiver bonded = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context c, Intent i) {
+            if (i.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, 0) != BluetoothDevice.BOND_BONDED) return;
+            new Thread(() -> fixRemoteKeys(30), "popcornclaw-bt").start();
+        }
+    };
+
+    /**
+     * Strips the identity keys (LE_KEY_PID, LE_KEY_LID) of bonded LE HID devices with a public address from the
+     * Bluetooth config, then restarts Bluetooth so the stack rereads it. With those keys Android 9 puts the device
+     * into the controller's resolving list and connects to it from a private address; the Xiaomi remote answers
+     * only its host's public address, so every reconnect fails with 0x3E. The link keys (LE_KEY_PENC, LE_KEY_LENC)
+     * stay. The stack writes the config from memory once more in its cleanup, ~3 s after Bluetooth reports OFF,
+     * right before the Bluetooth process exits; an earlier edit is lost, so the file is edited only once that process
+     * is gone, through cat so it keeps the bluetooth owner. Looks every 2 s, up to {@code tries} times.
+     */
+    // synchronized: the start-up run and a bond's run must not edit the file at the same time.
+    private static synchronized void fixRemoteKeys(int tries) {
+        String script = "f=/data/misc/bluedroid/bt_config.conf\n"
+                + "need() {\n"
+                + "  for a in $(sed -n 's/^\\[\\(..:..:..:..:..:..\\)\\]$/\\1/p' $f); do\n"
+                + "    s=$(sed -n \"/^\\[$a\\]/,/^\\[/p\" $f)\n"
+                + "    echo \"$s\" | grep -q '^HidDescriptor' && echo \"$s\" | grep -q '^AddrType = 0'"
+                + " && echo \"$s\" | grep -qE '^LE_KEY_(PID|LID) ' && echo $a\n"
+                + "  done\n"
+                + "}\n"
+                + "for i in $(seq 1 " + tries + "); do l=$(need); [ -n \"$l\" ] && break; sleep 2; done\n"
+                + "[ -n \"$l\" ] || exit 0\n"
+                + "p=$(pidof com.android.bluetooth)\n"
+                + "svc bluetooth disable\n"
+                + "for i in $(seq 1 30); do [ -n \"$p\" ] && [ -d /proc/$p ] || break; sleep 1; done\n"
+                + "for g in $f /data/misc/bluedroid/bt_config.bak; do\n"
+                + "  for a in $l; do\n"
+                // Not .new: the stack saves the config through bt_config.conf.new itself.
+                + "    sed \"/^\\[$a\\]/,/^\\[/{/^LE_KEY_PID /d;/^LE_KEY_LID /d;}\" $g > $g.strip && cat $g.strip > $g\n"
+                + "  done\n"
+                + "  rm -f $g.strip\n"
+                + "done\n"
+                + "svc bluetooth enable\n"
+                + "echo stripped the identity keys of $l\n";
+        try {
+            Process p = new ProcessBuilder("su", "-c", script).redirectErrorStream(true).start();
+            p.getOutputStream().close();
+            try (BufferedReader out = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
+                for (String line; (line = out.readLine()) != null; ) Log.i(TAG, "remote keys: " + line);
+            }
+            Log.i(TAG, "remote keys: su exited with " + p.waitFor());
+        } catch (IOException e) {
+            Log.e(TAG, "remote keys: su failed", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**
@@ -119,6 +182,7 @@ public final class AgentService extends Service {
 
     @Override
     public void onDestroy() {
+        unregisterReceiver(bonded);
         popup.stop();
         thread.quit();
         super.onDestroy();
