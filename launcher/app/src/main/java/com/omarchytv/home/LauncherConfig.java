@@ -17,7 +17,7 @@ import java.util.List;
 /**
  * Launcher settings, read from an optional local JSON file that overrides res/values/config.xml.
  * File: <external files dir>/omarchytv.json, i.e. /sdcard/Android/data/com.omarchytv.home/files/omarchytv.json
- * (writable over adb without root; the omarchy-link bridge writes the same file).
+ * (writable over adb without root).
  * The home screen re-reads it on every resume when its modification time changed. Schema: see PLUGINS.md.
  */
 final class LauncherConfig {
@@ -130,23 +130,6 @@ final class LauncherConfig {
         }
     }
 
-    /** Built-in AI WebApps (like Omarchy desktop webapps, zero API cost, persistent login in :web). */
-    static final WebApp[] BUILTIN_AI_WEBAPPS = new WebApp[]{
-            new WebApp("chatgpt", "ChatGPT", "https://chatgpt.com", "C", "desktop"),
-            new WebApp("claude", "Claude", "https://claude.ai", "A", "desktop"),
-            new WebApp("hermes", "Hermes", "https://hermes.nousresearch.com", "H", "desktop"),
-    };
-
-    static WebApp findBuiltinAiWebApp(String idOrName) {
-        if (idOrName == null) return null;
-        String k = idOrName.trim().toLowerCase(java.util.Locale.ROOT);
-        if (k.startsWith("web:")) k = k.substring(4);
-        for (WebApp w : BUILTIN_AI_WEBAPPS) {
-            if (w.id.equalsIgnoreCase(k) || w.name.equalsIgnoreCase(k)) return w;
-        }
-        return null;
-    }
-
     /** Ensures a WebApp exists in {@code root.webapps} and optionally pins {@code web:<id>} in {@code root.dock}. */
     static void ensureWebApp(JSONObject root, WebApp w, boolean pinToDock) throws Exception {
         JSONArray wa = root.optJSONArray("webapps");
@@ -189,20 +172,6 @@ final class LauncherConfig {
     static String slug(String s) {
         String out = s.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", "-").replaceAll("(^-|-$)", "");
         return out.isEmpty() ? "app" : out;
-    }
-
-    /** "> ask" assistant: providers announced by the PC (link.aiProviders), chosen provider, TTS, optional colour key. */
-    final List<Provider> aiProviders;
-    final String assistantProvider;
-    final boolean assistantTts;
-
-    static final class Provider {
-        final String id, name;
-
-        Provider(String id, String name) {
-            this.id = id;
-            this.name = name;
-        }
     }
 
     /** A pane pushed by the PC (PUT /v1/widgets → link.panes). Text only. */
@@ -594,19 +563,6 @@ final class LauncherConfig {
             }
         }
         webapps = Collections.unmodifiableList(web);
-        List<Provider> provs = new ArrayList<>();
-        JSONObject lk = j != null ? j.optJSONObject("link") : null;
-        JSONArray pa = lk != null ? lk.optJSONArray("aiProviders") : null;
-        if (pa != null) {
-            for (int i = 0; i < pa.length() && provs.size() < 16; i++) {
-                JSONObject o = pa.optJSONObject(i);
-                if (o != null && !o.optString("id").isEmpty()) provs.add(new Provider(o.optString("id"), o.optString("name", o.optString("id"))));
-            }
-        }
-        aiProviders = Collections.unmodifiableList(provs);
-        JSONObject as = j != null ? j.optJSONObject("assistant") : null;
-        assistantProvider = as != null ? as.optString("provider", "") : "";
-        assistantTts = as != null && as.optBoolean("tts", false);
         // The voice key opens Walker ("launcher", the default); "assistant" (Google Assistant) stays selectable.
         String vk = j != null ? j.optString("voiceKey", "launcher") : "launcher";
         voiceKey = "assistant".equals(vk) ? vk : "launcher";

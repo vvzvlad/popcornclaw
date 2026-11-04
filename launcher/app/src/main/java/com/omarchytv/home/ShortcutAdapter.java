@@ -18,8 +18,8 @@ import java.util.List;
 
 /**
  * The "> omarchy" section between the apps and "> tv": a prompt header and one app-sized tile per shortcut
- * the paired PC pushed (link.shortcuts). Hidden when there are none or the row is switched off.
- * "app"/"view" shortcuts work without the PC; "pc" ones need it connected and say "not connected" otherwise.
+ * in omarchytv.json "link":{"shortcuts"}. Hidden when there are none or the row is switched off.
+ * "app"/"view" shortcuts open an app or a URL; "pc" ones needed the removed bridge and now do nothing.
  */
 final class ShortcutAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
 
@@ -139,10 +139,6 @@ final class ShortcutAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
                 card.animate().scaleX(s).scaleY(s).setDuration(90).start();
                 AppAdapter.setMuted(banner, !focused);
                 AppAdapter.setMuted(icon, !focused);
-                if (!focused && item != null && "pc".equals(item.type) && !OmarchyLink.connected()) {
-                    banner.setColorFilter(AppAdapter.UNAVAILABLE);
-                    icon.setColorFilter(AppAdapter.UNAVAILABLE);
-                }
                 name.animate().alpha(focused ? 1f : 0f).setDuration(90).start();
                 if (focused) listener.onShortcutFocused(offset + getBindingAdapterPosition(), x);
             });
@@ -156,7 +152,6 @@ final class ShortcutAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
 
         void bind(LauncherConfig.Shortcut s) {
             item = s;
-            boolean pcOff = "pc".equals(s.type) && !OmarchyLink.connected();
             Drawable art = null, ic = null;
             if ("app".equals(s.type) || ("view".equals(s.type) && !s.pkg.isEmpty())) {
                 PackageManager pm = ctx.getPackageManager();
@@ -183,12 +178,8 @@ final class ShortcutAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
             }
             AppAdapter.setMuted(banner, !focused);
             AppAdapter.setMuted(icon, !focused);
-            if (pcOff) {   // greyed but opaque: readability over transparency
-                banner.setColorFilter(AppAdapter.UNAVAILABLE);
-                icon.setColorFilter(AppAdapter.UNAVAILABLE);
-            }
-            // Name under the tile on focus; a PC command says why it would not run.
-            name.setText(pcOff ? s.label + " · " + ctx.getString(R.string.link_offline) : s.label);
+            // Name under the tile on focus.
+            name.setText(s.label);
             name.setAlpha(focused ? 1f : 0f);
         }
     }

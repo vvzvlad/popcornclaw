@@ -110,33 +110,15 @@
     <string name="menu_layout">Layout (Hyprland)</string>
     <string name="step_hint">OK = nächste Stufe</string>
     <string name="menu_link">Omarchy Linux verbinden</string>
-    <string name="link_tv_ip">TV-Adresse</string>
-    <string name="link_code">Kopplungscode</string>
-    <string name="link_status">Status</string>
-    <string name="link_paired">gekoppelt</string>
-    <string name="link_waiting">wartet auf Omarchy Linux</string>
-    <string name="link_pc">Omarchy Linux</string>
-    <string name="link_new_code">Neuer Code</string>
-    <string name="link_forget">Omarchy Linux vergessen</string>
-    <string name="link_coming">Omarchy Link für Omarchy Linux: demnächst</string>
     <string name="pane_ai">ai-guthaben</string>
     <string name="set_pane_ai">Bereich: AI-Guthaben</string>
     <string name="ai_empty">Omarchy Linux verbinden, um AI-Guthaben zu sehen</string>
     <string name="ai_stale">veraltet %1$s</string>
     <string name="search_entry">> search</string>
     <string name="search_none">kein Treffer</string>
-    <string name="search_again">nochmal</string>    <string name="ask_settings">Assistent</string>
-    <string name="ask_provider">Anbieter</string>
-    <string name="ask_tts">Antworten vorlesen</string>
-    <string name="voice_key">Mikrofon-/Suchtaste</string>
+    <string name="search_again">nochmal</string>    <string name="voice_key">Mikrofon-/Suchtaste</string>
     <string name="voice_key_assistant">Google Assistant</string>
-    <string name="voice_key_launcher">> search</string>    <string name="ask_need_link">zuerst Omarchy Linux verbinden (Logo-Menü → Omarchy Linux verbinden). Antworten kommen vom PC; der TV speichert keine API-Schlüssel.</string>
-    <string name="ask_need_link_short">zuerst Omarchy Linux verbinden</string>
-    <string name="ask_hint">OK = sprechen   ← = tippen   BACK = zurück</string>
-    <string name="ask_prompt">Frag etwas</string>
-    <string name="ask_you">du</string>
-    <string name="ask_sys">sys</string>
-    <string name="web_apps">Web-Apps</string>
+    <string name="voice_key_launcher">> search</string>    <string name="web_apps">Web-Apps</string>
     <string name="web_add">Web-App hinzufügen</string>
     <string name="web_remove">Web-App entfernen</string>
     <string name="web_remove_short">entfernen</string>
@@ -151,34 +133,17 @@
     <string name="web_exit">Beenden</string>
     <string name="web_old">Android System WebView %1$s ist alt: im Play Store aktualisieren für moderne Seiten</string>
     <string name="web_http_lan_only">http:// funktioniert nur für Adressen im Heimnetz (z. B. http://192.168.1.20:8123); für Websites https:// verwenden</string>
-    <string name="link_paired_n">gekoppelt: %1$d</string>
-    <string name="link_forget_short">vergessen</string>
-    <string name="link_service">Link-Dienst</string>
     <string name="set_tv">TV</string>
     <string name="set_tv_show">Bereich &gt; tv zeigen</string>
     <string name="tv_tile">TV</string>
     <string name="tv_tile_hint">Live-TV · setzt beim letzten Sender fort</string>
     <string name="search_prompt">Sag einen App-Namen</string>
 
-    <string name="link_service_on">aktiv</string>
-    <string name="link_service_off">kein Netzwerk</string>
-    <string name="remote_service">OmarchyTV remote</string>
-    <string name="remote_service_desc">Erlaubt einem gekoppelten Omarchy-Linux-PC, am Fernseher Zurück zu drücken. Liest nichts vom Bildschirm.</string>
     <string name="keymap_service">OmarchyTV Fernbedienungstasten</string>
     <string name="keymap_service_desc">Führt die Aktionen aus, die du Fernbedienungstasten zuweist, in jeder App. Sieht nur Tastendrücke; liest nichts vom Bildschirm.</string>
-    <string name="link_remote">Fernbedienung (Zurück)</string>
     <string name="home_service">OmarchyTV-Home-Taste</string>
     <string name="home_service_desc">Öffnet OmarchyTV, wenn die Home-Taste den Startbildschirm des Fernsehers zeigt. Sieht nur, welcher Startbildschirm geöffnet wurde, und liest nichts vom Bildschirm.</string>
     <string name="set_home_override">Home-Taste öffnet OmarchyTV</string>
-    <string name="link_usage">Nutzungszugriff (aktuelle App)</string>
-    <string name="link_paired_toast">Gekoppelt mit %1$s</string>
-    <string name="link_online">verbunden</string>
-    <string name="ai_settings">KI-Guthaben</string>
-    <string name="ai_sources_hint">Quellen von Omarchy Linux</string>
-    <string name="ai_src_missing">nicht auf dem PC</string>
-    <string name="ai_src_failed">Omarchy Linux: %1$s</string>
-    <string name="ask_not_connected">nicht verbunden</string>
-    <string name="ask_busy">eine Frage nach der anderen, gleich noch einmal</string>
     <string name="ai_pc_offline">nicht verbunden</string>
     <string name="ai_offline_row">Wenn nicht verbunden</string>
     <string name="ai_offline_stale">letzte Werte zeigen</string>
@@ -211,38 +176,6 @@
     <string name="cast_no_adaptive">HLS/DASH-Streams werden noch nicht unterstützt</string>
     <string name="set_prompt_name">Prompt-Name</string>
     <string name="set_prompt_host">Hostname</string>
-    <!-- v2.8 agent monitor (PROTOCOL.md §6 Agents) -->
-    <string name="pane_agents">agenten</string>
-    <string name="set_pane_agents">Agenten-Bereich</string>
-    <string name="link_connected_word">verbunden</string>
-    <string name="agent_needs_input">braucht Eingabe</string>
-    <string name="agent_answer_on_pc">Am PC antworten</string>
-    <string name="agent_confirm_on_pc">Am PC bestätigen</string>
-    <string name="agent_running">läuft…</string>
-    <string name="agent_none">gerade keine Agenten</string>
-    <string name="agent_off">der Agenten-Monitor ist am PC aus</string>
-    <string name="agent_presence_only">dieser Agent zeigt nur Aktivität; er nimmt keine Eingaben vom TV an</string>
-    <string name="agent_wait_done">arbeitet; du kannst schreiben, wenn er fertig ist</string>
-    <string name="agent_input_hint">tippen, oder das Mikro nutzen</string>
-    <string name="agent_mic">mic</string>
-    <string name="agent_hint">◀ ▶ Agent   ▼ schreiben   OK Tastatur   mic sprechen   zurück schließen</string>
-    <string name="agent_st_thinking">denkt</string>
-    <string name="agent_st_running">läuft</string>
-    <string name="agent_st_waiting">wartet</string>
-    <string name="agent_st_idle">untätig</string>
-    <string name="agent_st_done">fertig</string>
-    <string name="agent_st_error">Fehler</string>
-    <string name="agent_err_disabled">Steuerung vom TV ist am PC aus.</string>
-    <string name="agent_err_unsupported">Dieser Agent nimmt keine Eingaben vom TV an.</string>
-    <string name="agent_err_busy">Der Agent ist beschäftigt. Versuch es, wenn er fertig ist.</string>
-    <string name="agent_err_wait">Kurz warten, bevor du erneut sendest.</string>
-    <string name="agent_err_not_found">Diese Sitzung ist nicht mehr auf dem PC.</string>
-    <string name="agent_err_not_approved">Am PC nicht bestätigt.</string>
-    <string name="agent_err_cannot_confirm">Der PC kann gerade nicht nachfragen.</string>
-    <string name="agent_err_bad_request">Leer oder zu lang (höchstens 2000 Zeichen).</string>
-    <string name="agent_err_timeout">Keine Antwort rechtzeitig.</string>
-    <string name="agent_err_not_connected">PC nicht verbunden.</string>
-    <string name="agent_err_failed">Der Agent ist gescheitert.</string>
     <!-- v2.8.1 Layout → App size -->
     <string name="size_compact">kompakt</string>
     <string name="set_app_size">App-Größe</string>
@@ -268,9 +201,7 @@
     <string name="v29_theme">thema</string>
     <string name="v29_up">up</string>
     <string name="v29_wx_locating">orte…</string>
-    <string name="v29_pc_off">pc nicht verbunden</string>
     <string name="v29_volume">Lautstärke</string>
-    <string name="v29_screen_pc">PC-Bildschirm</string>
     <string name="v29_walker_hint">▲▼ wählen · OK öffnen · Zurück schließen · Mikro: Sprachsuche</string>
     <string name="v29_type_app">app</string>
     <string name="v29_type_settings">einstellungen</string>
@@ -283,9 +214,6 @@
     <string name="v29_wx_title">wetter-ort</string>
     <string name="v29_wx_none">keine Stadt gefunden</string>
     <string name="v29_wx_current">Ort</string>
-    <string name="v29_screen_start">PC-Bildschirm spiegeln</string>
-    <string name="v29_screen_note">der PC fragt nach Bestätigung</string>
-    <string name="v29_screen_asked">PC gefragt: dort bestätigen</string>
     <string name="v29_set_display">Bildschirm</string>
     <string name="v29_set_sound">Ton</string>
     <string name="v29_set_bt">Bluetooth</string>
@@ -302,9 +230,6 @@
     <string name="v210_tv_hints">OK fernsehen · ▲ Leiste · lang OK: Walker</string>
     <string name="v210_app_hints">OK öffnen · ▲ Leiste · lang OK: Verschieben / Ausblenden</string>
     <string name="v210_grid_hints">OK öffnen · lang OK: Verschieben / Ausblenden · 1-%1$d Workspaces</string>
-    <string name="v210_pc_link">Omarchy Linux verbinden</string>
-    <string name="v210_pc_link_hint">Koppel den PC, um hier Status, AI-Guthaben und Deploys zu sehen.</string>
-    <string name="v210_pc_pair">koppeln</string>
     <string name="v210_sys_android">Android-Einstellungen</string>
     <string name="v210_sys_themes">Themes</string>
     <string name="v210_sys_transparency">Transparenz</string>

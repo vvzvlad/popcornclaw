@@ -291,9 +291,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
 
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
         if (cm != null) cm.registerDefaultNetworkCallback(networkCallback);
-        // Omarchy Link (TV side): LAN server + mDNS, lives with the launcher process.
-        OmarchyLink.start(this);
-        OmarchyLink.addListener(linkListener);
         startService(new Intent(this, xyz.vvzvlad.popcornclaw.AgentService.class));   // PopcornClaw
         setupHomeV29();
     }
@@ -372,17 +369,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             }
 
             @Override
-            public boolean pcPaired() {
-                return !OmarchyLink.pcs().isEmpty();
-            }
-
-            @Override
-            public void pairPc() {
-                OmarchyLink.openPairing();   // same as menu → Omarchy Link: a new code each time the page opens
-                showMenu("link", null);
-            }
-
-            @Override
             public void sys(String id) {
                 sysAction(id);
             }
@@ -393,11 +379,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             }
 
             @Override
-            public void screenPc(View anchor) {
-                showScreenPc();
-            }
-
-            @Override
             public void openWalker() {
                 MainActivity.this.openWalker();
             }
@@ -405,11 +386,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             @Override
             public void weatherMenu(View anchor) {
                 showWeatherMenu();
-            }
-
-            @Override
-            public void aiMenu(View anchor) {
-                showMenu("ai", null);
             }
 
             @Override
@@ -600,9 +576,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             case "hidden":
                 showMenu("hidden", null);
                 break;
-            case "agents":
-                open(new Intent(this, AgentActivity.class));
-                break;
             case "about":
                 showAbout();
                 break;
@@ -640,23 +613,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     private String currentNetworkName() {
         updateWifiLabel();
         return btnWifi.getText().toString();
-    }
-
-    private void showScreenPc() {
-        if (menu != null && menu.isShowing()) menu.dismiss();
-        menu = new AsciiMenu(this, 420);
-        AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.v29_screen_pc).toLowerCase(java.util.Locale.ROOT));
-        if (!OmarchyLink.connected()) {
-            p.hint(str(R.string.v29_pc_off));
-        } else {
-            p.add(str(R.string.v29_screen_start), null, r -> {
-                OmarchyLink.screenMirror(true);
-                Toast.makeText(this, R.string.v29_screen_asked, Toast.LENGTH_LONG).show();
-                return false;
-            });
-            p.hint(str(R.string.v29_screen_note));
-        }
-        menu.showBelow(btnMenu, p);
     }
 
     private void showWeatherMenu() {
@@ -730,14 +686,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             items.add(new Walker.Item(adapter.labelAt(i), tApp, () -> adapter.launchAt(pos)));
         }
         LauncherConfig cfg = LauncherConfig.get(this);
-        java.util.Set<String> seenNames = new java.util.HashSet<>();
-        for (Walker.Item it : items) seenNames.add(it.name.toLowerCase(java.util.Locale.ROOT));
-        for (LauncherConfig.WebApp w : LauncherConfig.BUILTIN_AI_WEBAPPS) {
-            final LauncherConfig.WebApp fw = w;
-            if (!seenNames.contains(w.name.toLowerCase(java.util.Locale.ROOT))) {
-                items.add(new Walker.Item(w.name, tApp, () -> WebAppActivity.open(this, fw)));
-            }
-        }
         items.add(new Walker.Item("Aquarium Screensaver (Omarchy Cyber-TUI Ocean)", str(R.string.menu_screensaver), () -> {
             LauncherConfig.update(this, j -> screensaver(j).put("art", "aquarium").put("mode", "aquarium"));
             open(new Intent(this, ScreensaverPreviewActivity.class));
@@ -802,109 +750,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         }
     }
 
-    private boolean resumed, linkRefreshing, linkConfigPending;
-    private String pendingSourcesId;
+    private boolean resumed;
     /** "> omarchy" shortcuts section (between apps and "> tv"). */
     private ShortcutAdapter sc;
     private FadeTopFrame gridFrame;
 
-    private final OmarchyLink.Listener linkListener = (type, data) -> {
-        switch (type) {
-            case "pcs": {
-                String n = data.optString("paired", "");
-                if (!n.isEmpty()) Toast.makeText(this, getString(R.string.link_paired_toast, n), Toast.LENGTH_LONG).show();
-                refreshMenu("link");
-                break;
-            }
-            case "pairing":
-                refreshMenu("link");
-                break;
-            case "config":
-                onLinkConfig();
-                break;
-            case "clients":
-                if (resumed) {
-                    if (home != null) home.refresh();
-                    updatePanes();
-                    sc.notifyItemRangeChanged(0, sc.getItemCount());   // "pc" tiles: connected / not connected
-                }
-                break;
-            case "agent_activity":
-                if (resumed) updateAgentsPane();
-                break;
-            case "stats":
-                if (resumed && home != null) home.refresh();
-                break;
-            case "banners":   // a custom app banner was pushed or removed (banners/<package>.png)
-                if (resumed && adapter != null) {
-                    adapter.reload();
-                    if (home != null) home.bind(LauncherConfig.get(this), adapter);
-                }
-                break;
-            case "ai_sources_ok":
-                if (data.optString("id").equals(pendingSourcesId)) pendingSourcesId = null;
-                break;
-            case "ai_sources_error":
-                if (data.optString("id").equals(pendingSourcesId)) {
-                    pendingSourcesId = null;
-                    // The switch reverts by itself: the stored aiSources never changed.
-                    Toast.makeText(this, getString(R.string.ai_src_failed,
-                            data.optString("message", data.optString("error"))), Toast.LENGTH_LONG).show();
-                    refreshMenu("ai");
-                }
-                break;
-            default:
-                break;
-        }
-    };
-
-    private static boolean sameShortcuts(LauncherConfig a, LauncherConfig b) {
-        if (a.shortcutsOn != b.shortcutsOn || a.shortcuts.size() != b.shortcuts.size()) return false;
-        for (int i = 0; i < a.shortcuts.size(); i++) {
-            LauncherConfig.Shortcut x = a.shortcuts.get(i), y = b.shortcuts.get(i);
-            if (!(x.id + x.label + x.type + x.pkg + x.uri + x.command).equals(y.id + y.label + y.type + y.pkg + y.uri + y.command)) return false;
-        }
-        return true;
-    }
-
-    /** Re-renders an open settings page in place (new code, PC paired, sources switched). */
-    private void refreshMenu(String key) {
-        if (!resumed || menu == null || !menu.isShowing() || !key.equals(menuPage)) return;
-        linkRefreshing = true;
-        menu.dismiss();
-        linkRefreshing = false;
-        showMenu(key, null);
-    }
-
-    /** The PC pushed something: credits only refresh the panes; theme/wallpaper/layout rebuild the screen. */
-    private void onLinkConfig() {
-        if (!resumed) return;   // onResume compares the config anyway
-        LauncherConfig cfg = LauncherConfig.get(this);
-        if (cfg == builtWith) return;
-        // Compared in memory (LauncherConfig.restSig): no extra file read on the UI thread.
-        if (builtWith != null && cfg.restSig.equals(builtWith.restSig) && cfg.dataSig.equals(builtWith.dataSig)) {
-            // Only the agent list (PUT /v1/agents, every 60 s) changed: update in place, keep focus.
-            builtWith = cfg;
-            updateAgentsPane();
-            return;
-        }
-        if (builtWith != null && cfg.restSig.equals(builtWith.restSig)) {
-            boolean scChanged = !sameShortcuts(builtWith, cfg);
-            builtWith = cfg;
-            buildPanes();   // PC panes may come, go or change size
-            if (scChanged) applyShortcuts();
-            refreshMenu("ai");
-            return;
-        }
-        if (menu != null && menu.isShowing()) {
-            linkConfigPending = true;   // rebuild when the menu closes
-            return;
-        }
-        builtWith = null;
-        recreate();
-    }
-
-    /** Config the views were built with; a newer JSON file (adb push, omarchy-link) rebuilds the screen. */
+    /** Config the views were built with; a newer JSON file (adb push) rebuilds the screen. */
     private LauncherConfig builtWith;
 
     @Override
@@ -938,7 +789,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 }
             });
         }
-        OmarchyLink.setHomeVisible(true);
         hideSaver();   // back from the screensaver window (own process)
         Theme.apply(getWindow().getDecorView());
         ((WallpaperView) findViewById(R.id.wallpaper)).refreshIfChanged();
@@ -972,8 +822,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             HomeCheck.asked(this);
             handler.postDelayed(this::homePrompt, 600);
         }
-        // The agents pane is on screen: ask the PC for fresh activity (nothing is sent with no PC connected).
-        if (agentsPane() != null) OmarchyLink.agentSnapshot();
         handler.postDelayed(minuteTick, untilNextMinute());
         handler.postDelayed(blink, BLINK_MS);
 
@@ -1002,11 +850,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     protected void onPause() {
         super.onPause();
         resumed = false;
-        OmarchyLink.setHomeVisible(false);
         handler.removeCallbacks(idle);
         handler.removeCallbacks(minuteTick);
         handler.removeCallbacks(blink);
-        handler.removeCallbacks(agentsTick);
         if (home != null) {
             home.stopLogo();   // no timers while the home is not visible
             if (home.movingApp >= 0) finishHomeMove(false);
@@ -1021,7 +867,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         super.onDestroy();
         ConnectivityManager cm = getSystemService(ConnectivityManager.class);
         if (cm != null) cm.unregisterNetworkCallback(networkCallback);
-        OmarchyLink.removeListener(linkListener);
     }
 
     @Override
@@ -1666,12 +1511,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     private void showMenu(String pageKey, String row) {
         if (menu != null && menu.isShowing()) menu.dismiss();
         menu = new AsciiMenu(this, 420);
-        menu.setOnDismiss(() -> {
-            if (linkConfigPending && !linkRefreshing && builtWith != null) {
-                linkConfigPending = false;
-                handler.post(this::onLinkConfig);
-            }
-        });
         AsciiMenu.Page main = mainPage();
         AsciiMenu.Page page = pageKey == null ? null : page(pageKey);
         if (page == null) menu.showBelow(btnMenu, main);
@@ -1691,12 +1530,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             case "workspaces": return workspacesPage();
             case "screensaver": return screensaverPage();
             case "hidden": return hiddenPage();
-            case "link": return linkPage();
-            case "ai": return aiPage();
             case "widgets": return widgetsPage();
             case "tv": return tvPage();
             case "webapps": return webAppsPage();
-            case "assistant": return assistantPage();
             case "ambilight": return ambilightPage();
             case "lights": return lightsPage();
             case "wireguard": return wireguardPage();
@@ -1716,7 +1552,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 .add(str(R.string.menu_layout), "›", r -> push(layoutPage()))
                 .add(str(R.string.set_tv), "›", r -> push(tvPage()))
                 .add(str(R.string.web_apps), "›", r -> push(webAppsPage()))
-                .add(str(R.string.ask_settings), "›", r -> push(assistantPage()))
                 .add(str(R.string.menu_wallpaper), "›", r -> push(wallpaperPage()))
                 .add(str(R.string.menu_reorder), null, r -> {
                     Toast.makeText(this, R.string.reorder_hint, Toast.LENGTH_LONG).show();
@@ -1724,18 +1559,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 })
                 .add(str(R.string.menu_screensaver), "›", r -> push(screensaverPage()))
                 .add(str(R.string.amb_title), "›", r -> push(ambilightPage()))
-                .add(str(R.string.ai_settings), "›", r -> push(aiPage()))
                 .add(str(R.string.set_widgets), "›", r -> push(widgetsPage()))
-                .add(str(R.string.menu_link), "›", r -> {
-                    OmarchyLink.openPairing();   // new code each time the page opens
-                    LauncherConfig.update(this, j -> {
-                        link(j).remove("pairingCode");   // v2 draft kept these in the public file
-                        link(j).remove("token");
-                        link(j).remove("pc");
-                    });
-                    builtWith = LauncherConfig.get(this);
-                    return push(linkPage());
-                })
                 .add("WireGuard VPN", "›", r -> push(wireguardPage()))
                 .add(str(R.string.settings), null, r -> {
                     open(new Intent(Settings.ACTION_SETTINGS));
@@ -2631,7 +2455,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         return p;
     }
 
-    /** Same folder as OmarchyLink.wallpaperDir(): the link's files (custom themes live in themes/). */
+    /** &lt;external files dir&gt;/link, where custom themes live under themes/ (see CustomThemes). */
     private java.io.File linkDir() {
         java.io.File d = getExternalFilesDir(null);
         return new java.io.File(d != null ? d : getFilesDir(), "link");
@@ -2750,59 +2574,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         return p;
     }
 
-    // ---- Omarchy Link (omarchy-link/docs/PROTOCOL.md; server in OmarchyLink) --------------------------
-
-    static final int LINK_PORT = com.omarchytv.home.link.LinkServer.PORT;
-    /** Settings page on screen that a Link event may re-render: "link", "ai" or null. */
-    private String menuPage;
-
-    /**
-     * Connect Omarchy Linux. While this page is visible pairing is open (at most 5 minutes) and the mDNS TXT
-     * says pair=1. The code lives in memory only; tokens in internal storage; omarchytv.json gets link.pcs[].
-     */
-    private AsciiMenu.Page linkPage() {
-        String code = OmarchyLink.currentCode();
-        if (code == null) code = OmarchyLink.openPairing();
-        java.util.List<com.omarchytv.home.link.LinkStore.Pc> pcs = OmarchyLink.pcs();
-        String ip = tvAddress();
-        AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.menu_link));
-        menuPage = "link";
-        p.onLeave = () -> {
-            if (linkRefreshing) return;
-            menuPage = null;
-            OmarchyLink.closePairing();
-        };
-        p.add(str(R.string.link_tv_ip), ip == null ? str(R.string.offline) : ip + ":" + LINK_PORT, r -> true);
-        p.add(str(R.string.link_code), code.substring(0, 3) + " " + code.substring(3), r -> true);
-        p.add(str(R.string.link_status), !pcs.isEmpty() ? getString(R.string.link_paired_n, pcs.size()) : str(R.string.link_waiting), r -> true);
-        for (com.omarchytv.home.link.LinkStore.Pc pc : pcs) {
-            final String id = pc.id;
-            String where = pc.lastAddress == null ? "" : " · " + pc.lastAddress;
-            String state = str(OmarchyLink.connected(id) ? R.string.link_online : R.string.link_offline)
-                    + " · " + str(R.string.link_forget_short);
-            p.add(pc.name + where, state, r -> {
-                OmarchyLink.forget(id);   // sends "unpaired", closes its sockets, deletes the token
-                return true;              // the "pcs" event re-renders this page
-            });
-        }
-        p.add(str(R.string.link_new_code), null, r -> {
-            OmarchyLink.openPairing();
-            refreshMenu("link");
-            return true;
-        });
-        p.add(str(R.string.link_service), OmarchyLink.running() ? str(R.string.link_service_on) : str(R.string.link_service_off), r -> true);
-        // Optional extras the PC can use (PROTOCOL.md §6): Back key and the app in front.
-        p.add(str(R.string.link_remote), str(OmarchyRemote.enabled() ? R.string.on : R.string.off), r -> {
-            open(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
-            return false;
-        });
-        p.add(str(R.string.link_usage), str(usageAccess() ? R.string.on : R.string.off), r -> {
-            open(new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS));
-            return false;
-        });
-        return p;
-    }
-
     private static org.json.JSONObject pcWidgets(org.json.JSONObject j) throws org.json.JSONException {
         org.json.JSONObject w = j.optJSONObject("pcWidgets");
         if (w == null) j.put("pcWidgets", w = new org.json.JSONObject());
@@ -2849,95 +2620,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         return p;
     }
 
-    private boolean usageAccess() {
-        android.app.AppOpsManager ops = getSystemService(android.app.AppOpsManager.class);
-        @SuppressWarnings("deprecation")
-        int mode = ops == null ? android.app.AppOpsManager.MODE_ERRORED
-                : ops.checkOpNoThrow(android.app.AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), getPackageName());
-        return mode == android.app.AppOpsManager.MODE_ALLOWED;
-    }
-
-    /**
-     * AI credits: one switch per source the PC mirrors (omarchytv.json "aiSources", only when the PC sent it).
-     * Flipping one sends "ai_sources" with the complete enabled list; the PC answers and re-pushes the credits,
-     * so the switch shows the new state only once the PC confirmed it (an error reverts it with a message).
-     */
-    private AsciiMenu.Page aiPage() {
-        LauncherConfig cfg = LauncherConfig.get(this);
-        AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.ai_settings));
-        menuPage = "ai";
-        p.onLeave = () -> {
-            if (!linkRefreshing) menuPage = null;
-        };
-        String lOff = str(R.string.ai_offline_row);
-        p.add(lOff, str("hide".equals(cfg.aiOffline) ? R.string.ai_offline_hide : R.string.ai_offline_stale), r -> {
-            String n = "hide".equals(cfg.aiOffline) ? "stale" : "hide";
-            applyLive("ai", lOff, j -> {
-                org.json.JSONObject ap = j.optJSONObject("aiPane");
-                if (ap == null) j.put("aiPane", ap = new org.json.JSONObject());
-                ap.put("offline", n);
-            });
-            return true;
-        });
-        if (cfg.aiSources.isEmpty()) {
-            p.hint(str(R.string.ai_empty));
-            return p;
-        }
-        p.hint(str(R.string.ai_sources_hint));
-        for (LauncherConfig.AiSource src : cfg.aiSources) {
-            String value = !src.available ? str(R.string.ai_src_missing) : str(src.enabled ? R.string.on : R.string.off);
-            p.add(src.name, value, r -> {
-                if (!OmarchyLink.connected()) {
-                    Toast.makeText(this, R.string.ask_not_connected, Toast.LENGTH_LONG).show();
-                    return true;
-                }
-                org.json.JSONArray enabled = new org.json.JSONArray();
-                for (LauncherConfig.AiSource o : cfg.aiSources) {
-                    boolean on = o.id.equals(src.id) ? !src.enabled : o.enabled;
-                    if (on) enabled.put(o.id);
-                }
-                String id = Long.toHexString(new java.security.SecureRandom().nextLong());
-                org.json.JSONObject req;
-                try {
-                    req = new org.json.JSONObject().put("id", id).put("enabled", enabled);
-                } catch (org.json.JSONException e) {
-                    return true;
-                }
-                pendingSourcesId = id;
-                r.setValue("…");
-                OmarchyLink.aiSources(req, err -> {
-                    if (err == null || !id.equals(pendingSourcesId)) return;
-                    pendingSourcesId = null;
-                    r.setValue(value);
-                    Toast.makeText(this, "busy".equals(err) ? R.string.ask_busy : R.string.ask_not_connected, Toast.LENGTH_SHORT).show();
-                });
-                return true;
-            });
-        }
-        return p;
-    }
-
-    private static org.json.JSONObject link(org.json.JSONObject j) throws org.json.JSONException {
-        org.json.JSONObject l = j.optJSONObject("link");
-        if (l == null) {
-            l = new org.json.JSONObject();
-            j.put("link", l);
-        }
-        return l;
-    }
-
-    /** IPv4 address of the active network (Wi-Fi or Ethernet), or null. */
-    private String tvAddress() {
-        ConnectivityManager cm = getSystemService(ConnectivityManager.class);
-        if (cm == null || cm.getActiveNetwork() == null) return null;
-        android.net.LinkProperties lp = cm.getLinkProperties(cm.getActiveNetwork());
-        if (lp == null) return null;
-        for (android.net.LinkAddress a : lp.getLinkAddresses()) {
-            if (a.getAddress() instanceof java.net.Inet4Address) return a.getAddress().getHostAddress();
-        }
-        return null;
-    }
-
     private static org.json.JSONObject screensaver(org.json.JSONObject j) throws org.json.JSONException {
         org.json.JSONObject s = j.optJSONObject("screensaver");
         if (s == null) {
@@ -2956,8 +2638,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             String label = basePkg;
             if (raw.startsWith("web:")) {
                 String wid = raw.substring(4);
-                LauncherConfig.WebApp bw = LauncherConfig.findBuiltinAiWebApp(wid);
-                label = bw != null ? bw.name : wid;
+                label = wid;
                 for (LauncherConfig.WebApp w : cfg.webapps) if (w.id.equals(wid)) label = w.name;
             } else {
                 try {
@@ -3144,7 +2825,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
 
     private void startSaver() {
         saverShown = true;
-        OmarchyLink.setScreensaver(true);
         try {
             startActivity(new Intent(this, ScreensaverPreviewActivity.class));
             overridePendingTransition(0, 0);
@@ -3156,7 +2836,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     private void hideSaver() {
         if (!saverShown) return;
         saverShown = false;
-        OmarchyLink.setScreensaver(false);
     }
 
     private final java.util.Set<Integer> loggedKeys = new java.util.HashSet<>();
@@ -3309,28 +2988,23 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         LinearLayout row1 = paneRow();
         panes.addView(row1);
         for (String id : cfg.panes) {
-            if (!"clock".equals(id) && !"ai".equals(id) && !"sysinfo".equals(id) && !"weather".equals(id) && !"agents".equals(id)) continue;
+            if (!"clock".equals(id) && !"ai".equals(id) && !"sysinfo".equals(id) && !"weather".equals(id)) continue;
             // Weather is in the default row but has no location out of the box (nothing personal in the
             // public build): skip it until "weather" {lat, lon} is set, unless the user listed it explicitly.
             if ("weather".equals(id) && Double.isNaN(cfg.weatherLat) && cfg.panes.equals(defaultPanes())) continue;
             int title = "clock".equals(id) ? R.string.pane_clock : "ai".equals(id) ? R.string.pane_ai
-                    : "sysinfo".equals(id) ? R.string.pane_sysinfo : "agents".equals(id) ? R.string.pane_agents : R.string.pane_weather;
+                    : "sysinfo".equals(id) ? R.string.pane_sysinfo : R.string.pane_weather;
             View v = newPane(row1, id, getString(title));
             if ("clock".equals(id)) ((TextView) v.findViewById(R.id.paneBody)).setLineSpacing(0, 0.95f);
-            if ("agents".equals(id)) setupAgentsPane(v);
-            if ("ai".equals(id) || "agents".equals(id)) {
+            if ("ai".equals(id)) {
                 // Compact: smaller text so clock, weather and AI credits fit in one row.
                 ((TextView) v.findViewById(R.id.paneBody)).setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 10f);
                 v.setMinimumWidth(0);
             }
             paneViews.add(v);
-            // The agents pane can be wide and tall: it is placed by the same fit as the PC panes (row 1 if it
-            // fits next to the wordmark, else row 2, else skipped), ahead of them.
-            if ("agents".equals(id)) agentsFit = v;
-            else row1.addView(v);
+            row1.addView(v);
         }
         List<View> pc = new ArrayList<>();
-        if (agentsFit != null) pc.add(agentsFit);
         if (cfg.pcPanesOn) {
             for (LauncherConfig.PcPane pp : cfg.pcPanes) {
                 if (cfg.hiddenPcPanes.contains(pp.id)) continue;
@@ -3342,11 +3016,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 paneViews.add(v);
             }
         }
-        buildingPanes = true;
         updatePanes();   // texts first: the fit below measures them
-        buildingPanes = false;
         fitPcPanes(row1, pc);
-        agentsFit = null;
         panes.setVisibility(paneViews.isEmpty() ? View.GONE : View.VISIBLE);
         if (cfg.panes.contains("weather")) Weather.refreshIfStale(this, cfg.weatherLat, cfg.weatherLon, this::updatePanes);
     }
@@ -3422,20 +3093,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             Object tag = v.getTag();
             if (tag instanceof LauncherConfig.PcPane) {
                 LauncherConfig.PcPane pp = (LauncherConfig.PcPane) tag;
-                boolean connected = OmarchyLink.connected();
-                long since = pp.at > 0 ? pp.at : c.widgetsAt;
-                long age = since > 0 ? System.currentTimeMillis() / 1000 - since : 0;
-                // Connected: dim after ttl, hide after 2 x ttl (PROTOCOL.md). Not connected: last data marked
-                // "not connected", or hidden (same setting as AI credits).
-                boolean hide = connected ? age > 2L * pp.ttl : "hide".equals(c.aiOffline);
+                // No PC bridge: show the last data marked "not connected", or hide it (same setting as AI credits).
+                boolean hide = "hide".equals(c.aiOffline);
                 v.setVisibility(hide ? View.GONE : View.VISIBLE);
-                body.setAlpha(connected && age > pp.ttl ? 0.55f : 1f);
-                body.setText(pcPaneText(pp, !connected, c.accent));
+                body.setAlpha(1f);
+                body.setText(pcPaneText(pp, true, c.accent));
                 continue;
             }
             String id = (String) tag;
-            if ("agents".equals(id)) updateAgentsPane(v, c);
-            else if ("clock".equals(id)) body.setText(clockText());
+            if ("clock".equals(id)) body.setText(clockText());
             else if ("ai".equals(id)) {
                 // PC off: keep the last numbers, marked stale, or hide the pane (setting); never wait for the PC.
                 boolean hide = "hide".equals(c.aiOffline) && pcOffline(c);
@@ -3445,102 +3111,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             else if ("sysinfo".equals(id)) body.setText(sysinfoText());
             else body.setText(weatherText());
         }
-    }
-
-    // ---- agents pane (PROTOCOL.md §6 Agents) ---------------------------------------------------------
-
-    private View agentsFit;
-    private boolean buildingPanes;
-
-    /** Shows/hides the agents pane; a change re-runs the pane fit (rare: data arrives, PC goes away). */
-    private void setAgentsVisible(View v, boolean show) {
-        int want = show ? View.VISIBLE : View.GONE;
-        if (v.getVisibility() == want) return;
-        v.setVisibility(want);
-        if (!buildingPanes) handler.post(() -> {
-            if (resumed && v.getParent() != null) buildPanes();
-        });
-    }
-
-    /** The agents pane, when it is in the pane rows. */
-    private View agentsPane() {
-        for (View v : paneViews) if ("agents".equals(v.getTag())) return v;
-        return null;
-    }
-
-    /** Focusable like a window: the Hyprland active border when focused; OK opens the full agent view. */
-    private void setupAgentsPane(View v) {
-        v.setFocusable(true);
-        android.graphics.drawable.GradientDrawable border = new android.graphics.drawable.GradientDrawable();
-        border.setColor(0);
-        border.setStroke(Math.max(1, Math.round(LauncherConfig.get(this).borderDp * density)), Theme.cur().activeBorder);
-        android.graphics.drawable.StateListDrawable fg = new android.graphics.drawable.StateListDrawable();
-        fg.addState(new int[]{android.R.attr.state_focused}, border);
-        v.setForeground(fg);
-        v.setOnClickListener(x -> {
-            Intent i = new Intent(this, AgentActivity.class);
-            com.omarchytv.home.link.Agents a = com.omarchytv.home.link.Agents.parse(OmarchyLink.agents());
-            if (!a.list.isEmpty()) i.putExtra(AgentActivity.EXTRA_AGENT, a.list.get(0).id);   // PC order: needs input first
-            open(i);
-        });
-    }
-
-    private void updateAgentsPane() {
-        View v = agentsPane();
-        if (v != null) updateAgentsPane(v, LauncherConfig.get(this));
-    }
-
-    /** Ticks the elapsed timers once a second, only while home is resumed and an agent is working. */
-    private final Runnable agentsTick = this::updateAgentsPane;
-
-    /**
-     * One line per agent: status glyph, name, current step, elapsed. Hidden while the PC reports the monitor off
-     * or no agents; with the PC off it says "not connected" (only on TVs that ever got agent data), and nothing
-     * runs: no timer, no request.
-     */
-    private void updateAgentsPane(View v, LauncherConfig c) {
-        handler.removeCallbacks(agentsTick);
-        TextView body = v.findViewById(R.id.paneBody);
-        boolean connected = OmarchyLink.connected();
-        if (!connected) {
-            setAgentsVisible(v, c.agentsAt > 0);
-            android.text.SpannableString off = new android.text.SpannableString(getString(R.string.link_offline));
-            off.setSpan(new android.text.style.ForegroundColorSpan(Theme.m(0xFFFF9E64)), 0, off.length(), 0);
-            body.setText(off);
-            return;
-        }
-        com.omarchytv.home.link.Agents a = com.omarchytv.home.link.Agents.parse(OmarchyLink.agents());
-        boolean show = a.enabled && !a.list.isEmpty();
-        if (!show && v.hasFocus()) findViewById(R.id.btnSettings).requestFocus();
-        setAgentsVisible(v, show);
-        if (!show) return;
-        body.setText(agentsText(a, System.currentTimeMillis()));
-        if (resumed && a.anyLive()) handler.postDelayed(agentsTick, 1000);
-    }
-
-    CharSequence agentsText(com.omarchytv.home.link.Agents a, long now) {
-        android.text.SpannableStringBuilder b = new android.text.SpannableStringBuilder();
-        int nameW = 10;   // fixed columns: the pane keeps its size while agents come and go
-        for (com.omarchytv.home.link.Agents.Agent g : a.list) {
-            if (b.length() > 0) b.append('\n');
-            int line = b.length();
-            b.append(styled(AgentUi.glyph(g.status), AgentUi.color(g.status))).append(' ');
-            String name = String.format(java.util.Locale.ROOT, "%-" + nameW + "s", AgentUi.clip(g.name, 10));
-            b.append(styled(name, LauncherConfig.get(this).accent)).append(' ');
-            String step = g.needsInput ? getString(R.string.agent_needs_input)
-                    : g.step.isEmpty() ? AgentUi.word(this, g.status) : g.step;
-            String el = com.omarchytv.home.link.Agents.span(a.elapsedNow(g, now));
-            b.append(String.format(java.util.Locale.ROOT, "%-24s", AgentUi.clip(step, 24))).append(' ');
-            int d = b.length();
-            b.append(String.format(java.util.Locale.ROOT, "%3s", el));
-            b.setSpan(new android.text.style.ForegroundColorSpan(Theme.cur().fgDim), d, b.length(), 0);
-            if (g.needsInput) {
-                // Needs input: the whole row in the selection colour, text in yellow (Omarchy urgent).
-                b.setSpan(new android.text.style.BackgroundColorSpan(Theme.withAlpha(Theme.cur().yellow, 0.16f)), line, b.length(), 0);
-                b.setSpan(new android.text.style.ForegroundColorSpan(Theme.cur().yellow), line + 2 + name.length() + 1, d, 0);
-            }
-        }
-        return b;
     }
 
     /** "label  value" lines, text only (never HTML); label in the accent like the AI credit names. */
@@ -3640,9 +3210,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         return b;
     }
 
-    /** Credits came from a PC that is not connected now (aiAt known). In-memory check, no I/O, no waiting. */
+    /** Credits came from a PC bridge that no longer exists (aiAt known). In-memory check, no I/O, no waiting. */
     private static boolean pcOffline(LauncherConfig cfg) {
-        return !cfg.ai.isEmpty() && cfg.aiAt > 0 && !OmarchyLink.connected();
+        return !cfg.ai.isEmpty() && cfg.aiAt > 0;
     }
 
     static String amountText(double v, String unit) {
@@ -3793,12 +3363,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 break;
             }
             default:
-                if (!OmarchyLink.connected()) {
-                    Toast.makeText(this, R.string.link_offline, Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                OmarchyLink.shortcut(s.command);
-                Toast.makeText(this, R.string.sc_sent, Toast.LENGTH_SHORT).show();
+                // "pc" shortcuts needed the Omarchy Link bridge, which no longer exists.
+                Toast.makeText(this, R.string.not_available, Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -4051,44 +3617,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 })
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
-    }
-
-    private AsciiMenu.Page assistantPage() {
-        LauncherConfig cfg = LauncherConfig.get(this);
-        AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.ask_settings));
-        String lProv = str(R.string.ask_provider), lTts = str(R.string.ask_tts), lKey = str(R.string.voice_key);
-        String provName = "—";
-        for (LauncherConfig.Provider pr : cfg.aiProviders) if (pr.id.equals(cfg.assistantProvider)) provName = pr.name;
-        if ("—".equals(provName) && !cfg.aiProviders.isEmpty()) provName = cfg.aiProviders.get(0).name;
-        p.add(lProv, cfg.aiProviders.isEmpty() ? str(R.string.ask_need_link_short) : provName, r -> {
-            if (cfg.aiProviders.isEmpty()) return true;
-            int cur = 0;
-            for (int i = 0; i < cfg.aiProviders.size(); i++) if (cfg.aiProviders.get(i).id.equals(cfg.assistantProvider)) cur = i;
-            String next = cfg.aiProviders.get((cur + 1) % cfg.aiProviders.size()).id;
-            applyLive("assistant", lProv, j -> assistantJson(j).put("provider", next));
-            return true;
-        });
-        p.add(lTts, str(cfg.assistantTts ? R.string.on : R.string.off), r -> {
-            boolean n = !cfg.assistantTts;
-            applyLive("assistant", lTts, j -> assistantJson(j).put("tts", n));
-            return true;
-        });
-        // The mic / Search key: Walker's > search ("launcher") → Google Assistant ("assistant").
-        p.add(lKey, str("launcher".equals(cfg.voiceKey) ? R.string.voice_key_launcher : R.string.voice_key_assistant), r -> {
-            String n = "launcher".equals(cfg.voiceKey) ? "assistant" : "launcher";
-            applyLive("assistant", lKey, j -> j.put("voiceKey", n));
-            return true;
-        });
-        return p;
-    }
-
-    static org.json.JSONObject assistantJson(org.json.JSONObject j) throws org.json.JSONException {
-        org.json.JSONObject a = j.optJSONObject("assistant");
-        if (a == null) {
-            a = new org.json.JSONObject();
-            j.put("assistant", a);
-        }
-        return a;
     }
 
     @Override

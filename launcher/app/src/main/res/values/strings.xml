@@ -120,15 +120,6 @@
     <string name="menu_layout">Layout (Hyprland)</string>
     <string name="step_hint">OK = next step</string>
     <string name="menu_link">Connect Omarchy Linux</string>
-    <string name="link_tv_ip">TV address</string>
-    <string name="link_code">Pairing code</string>
-    <string name="link_status">Status</string>
-    <string name="link_paired">paired</string>
-    <string name="link_waiting">waiting for Omarchy Linux</string>
-    <string name="link_pc">Omarchy Linux</string>
-    <string name="link_new_code">New code</string>
-    <string name="link_forget">Forget Omarchy Linux</string>
-    <string name="link_coming">Omarchy Link for Omarchy Linux: coming soon</string>
     <string name="pane_ai">ai credits</string>
     <string name="set_pane_ai">Pane: AI credits</string>
     <string name="ai_empty">connect Omarchy Linux to show AI credits</string>
@@ -137,18 +128,9 @@
     <string name="apps_prompt" translatable="false">&gt; Apps</string>
     <string name="search_entry">> search</string>
     <string name="search_none">no match</string>
-    <string name="search_again">try again</string>    <string name="ask_settings">Assistant</string>
-    <string name="ask_provider">Provider</string>
-    <string name="ask_tts">Read answers aloud</string>
-    <string name="voice_key">Mic / Search key</string>
+    <string name="search_again">try again</string>    <string name="voice_key">Mic / Search key</string>
     <string name="voice_key_assistant">Google Assistant</string>
-    <string name="voice_key_launcher">> search</string>    <string name="ask_need_link">connect Omarchy Linux first (logo menu → Connect Omarchy Linux). Answers come from your PC; the TV holds no API keys.</string>
-    <string name="ask_need_link_short">connect Omarchy Linux first</string>
-    <string name="ask_hint">OK = speak   ← = type   BACK = exit</string>
-    <string name="ask_prompt">Ask anything</string>
-    <string name="ask_you">you</string>
-    <string name="ask_sys">sys</string>
-    <string name="web_apps">Web apps</string>
+    <string name="voice_key_launcher">> search</string>    <string name="web_apps">Web apps</string>
     <string name="web_add">Add web app</string>
     <string name="web_remove">Remove web app</string>
     <string name="web_remove_short">remove</string>
@@ -163,34 +145,17 @@
     <string name="web_exit">Exit</string>
     <string name="web_old">Android System WebView %1$s is old: update it in the Play Store for modern sites</string>
     <string name="web_http_lan_only">http:// works only for LAN addresses (e.g. http://192.168.1.20:8123); use https:// for websites</string>
-    <string name="link_paired_n">paired: %1$d</string>
-    <string name="link_forget_short">forget</string>
-    <string name="link_service">Link service</string>
     <string name="set_tv">TV</string>
     <string name="set_tv_show">Show the &gt; tv section</string>
     <string name="tv_tile">TV</string>
     <string name="tv_tile_hint">Live TV · resumes the last channel</string>
     <string name="search_prompt">Say an app name</string>
 
-    <string name="link_service_on">listening</string>
-    <string name="link_service_off">no network</string>
-    <string name="remote_service">OmarchyTV remote</string>
-    <string name="remote_service_desc">Lets a paired Omarchy Linux PC press Back on the TV. It reads nothing on screen.</string>
     <string name="keymap_service">OmarchyTV remote buttons</string>
     <string name="keymap_service_desc">Runs the actions you assign to remote buttons, in any app. It sees button presses only; it reads nothing on screen.</string>
-    <string name="link_remote">Remote control (Back)</string>
     <string name="home_service">OmarchyTV home button</string>
     <string name="home_service_desc">Opens OmarchyTV when Home shows the TV\'s own home screen. It only sees which home screen opened and reads nothing on screen.</string>
     <string name="set_home_override">Home button opens OmarchyTV</string>
-    <string name="link_usage">Usage access (current app)</string>
-    <string name="link_paired_toast">Paired with %1$s</string>
-    <string name="link_online">connected</string>
-    <string name="ai_settings">AI credits</string>
-    <string name="ai_sources_hint">sources mirrored by Omarchy Linux</string>
-    <string name="ai_src_missing">not on PC</string>
-    <string name="ai_src_failed">Omarchy Linux: %1$s</string>
-    <string name="ask_not_connected">not connected</string>
-    <string name="ask_busy">one question at a time, try again in a moment</string>
     <string name="ai_pc_offline">not connected</string>
     <string name="ai_offline_row">When not connected</string>
     <string name="ai_offline_stale">show last data</string>
@@ -224,38 +189,6 @@
     <string name="cast_no_adaptive">HLS/DASH streams are not supported yet</string>
     <string name="set_prompt_name">Prompt name</string>
     <string name="set_prompt_host">Host name</string>
-    <!-- v2.8 agent monitor (PROTOCOL.md §6 Agents) -->
-    <string name="pane_agents">agents</string>
-    <string name="set_pane_agents">Agents pane</string>
-    <string name="link_connected_word">connected</string>
-    <string name="agent_needs_input">needs input</string>
-    <string name="agent_answer_on_pc">Answer on your PC</string>
-    <string name="agent_confirm_on_pc">Confirm on your PC</string>
-    <string name="agent_running">running…</string>
-    <string name="agent_none">no agents right now</string>
-    <string name="agent_off">the agent monitor is off on the PC</string>
-    <string name="agent_presence_only">this agent shows activity only; it takes no input from the TV</string>
-    <string name="agent_wait_done">working; you can write when it is done</string>
-    <string name="agent_input_hint">type, or use the mic</string>
-    <string name="agent_mic">mic</string>
-    <string name="agent_hint">◀ ▶ agent   ▼ write   OK keyboard   mic speak   back close</string>
-    <string name="agent_st_thinking">thinking</string>
-    <string name="agent_st_running">running</string>
-    <string name="agent_st_waiting">waiting</string>
-    <string name="agent_st_idle">idle</string>
-    <string name="agent_st_done">done</string>
-    <string name="agent_st_error">error</string>
-    <string name="agent_err_disabled">Control from the TV is off on the PC.</string>
-    <string name="agent_err_unsupported">This agent can\'t take input from the TV.</string>
-    <string name="agent_err_busy">The agent is busy. Try again when it is done.</string>
-    <string name="agent_err_wait">Wait a moment before sending again.</string>
-    <string name="agent_err_not_found">That session is no longer on the PC.</string>
-    <string name="agent_err_not_approved">Not confirmed on the PC.</string>
-    <string name="agent_err_cannot_confirm">The PC can\'t ask for confirmation right now.</string>
-    <string name="agent_err_bad_request">Empty or too long (2000 characters at most).</string>
-    <string name="agent_err_timeout">No answer in time.</string>
-    <string name="agent_err_not_connected">PC not connected.</string>
-    <string name="agent_err_failed">The agent failed.</string>
     <!-- v2.8.1 Layout → App size -->
     <string name="size_compact">compact</string>
     <string name="set_app_size">App size</string>
@@ -281,9 +214,7 @@
     <string name="v29_theme">theme</string>
     <string name="v29_up">up</string>
     <string name="v29_wx_locating">locating…</string>
-    <string name="v29_pc_off">pc not connected</string>
     <string name="v29_volume">volume</string>
-    <string name="v29_screen_pc">PC screen</string>
     <string name="v29_walker_hint">▲▼ choose · OK open · Back close · mic: voice search</string>
     <string name="v29_type_app">app</string>
     <string name="v29_type_settings">settings</string>
@@ -296,9 +227,6 @@
     <string name="v29_wx_title">weather location</string>
     <string name="v29_wx_none">no city found</string>
     <string name="v29_wx_current">Location</string>
-    <string name="v29_screen_start">Mirror PC screen</string>
-    <string name="v29_screen_note">the PC asks for confirmation</string>
-    <string name="v29_screen_asked">Asked the PC: confirm on its screen</string>
     <string name="v29_set_display">Display</string>
     <string name="v29_set_sound">Sound</string>
     <string name="v29_set_bt">Bluetooth</string>
@@ -315,9 +243,6 @@
     <string name="v210_tv_hints">OK watch TV · ▲ bar · long OK: Walker</string>
     <string name="v210_app_hints">OK open · ▲ bar · long OK: Move / Hide</string>
     <string name="v210_grid_hints">OK open · long OK: Move / Hide · 1-%1$d workspaces</string>
-    <string name="v210_pc_link">Connect Omarchy Linux</string>
-    <string name="v210_pc_link_hint">Pair the PC to see its status, AI credits and deploys here.</string>
-    <string name="v210_pc_pair">pair</string>
     <string name="v210_sys_android">Android settings</string>
     <string name="v210_sys_themes">Themes</string>
     <string name="v210_sys_transparency">Transparency</string>

@@ -4,9 +4,8 @@ import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 
-import com.omarchytv.home.link.LinkServer;
-
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
@@ -18,12 +17,16 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
- * Panes the TV fetches itself, for data that has no PC on the LAN to push it (e.g. market prices from a
- * server): omarchytv.json "remotePanes": {"url": "https://…/panes.json", "refreshSec": 300}. The body is the
- * one of PUT /v1/widgets, panes only (a URL cannot add shortcuts or actions), checked with the same limits
- * ({@link LinkServer#cleanPanes}). HTTPS, or plain http:// only to a literal private / link-local LAN address
+ * Panes the TV fetches itself, for data that has no server on the LAN to push it (e.g. market prices from a
+ * server): omarchytv.json "remotePanes": {"url": "https://…/panes.json", "refreshSec": 300}. The body is a
+ * JSON object with a "panes" array, text only (a URL cannot add shortcuts or actions), checked with the
+ * limits in {@link #cleanPanes}. HTTPS, or plain http:// only to a literal private / link-local LAN address
  * (the web tiles' rule, {@link #urlAllowed}; e.g. Node-RED at home), no redirects, at most 64 KiB, fetched on a
  * background thread at most every refreshSec, only while the home screen is resumed; the last good answer is cached in the files dir, so the
  * panes survive a restart and go stale on their own ttl (dim after ttl, hidden after 2 x ttl).
@@ -31,6 +34,8 @@ import java.nio.charset.StandardCharsets;
 final class RemotePanes {
 
     static final int MAX_BYTES = 64 * 1024;
+    private static final Pattern WIDGET_ID = Pattern.compile("^[a-z0-9][a-z0-9._-]{0,47}$");
+    private static final Set<String> LINE_TONES = new HashSet<>(Arrays.asList("up", "down"));
     private static volatile boolean fetching;
     private static volatile long lastAttemptMs;
 
@@ -108,7 +113,7 @@ final class RemotePanes {
                 }
                 JSONArray in = new JSONObject(new String(body, StandardCharsets.UTF_8)).optJSONArray("panes");
                 String[] why = new String[2];
-                JSONArray panes = LinkServer.cleanPanes(in != null ? in : new JSONArray(), System.currentTimeMillis() / 1000L, why);
+                JSONArray panes = cleanPanes(in != null ? in : new JSONArray(), System.currentTimeMillis() / 1000L, why);
                 if (panes == null) return;
                 JSONObject out = new JSONObject().put("url", url).put("fetchedAt", System.currentTimeMillis()).put("panes", panes);
                 File f = cacheFile(c), tmp = new File(f.getPath() + ".tmp");
@@ -135,5 +140,67 @@ final class RemotePanes {
             b.write(buf, 0, n);
         }
         return b.toByteArray();
+    }
+
+    /** Printable text only (no control characters), trimmed, at most {@code max} code points. */
+    private static String printable(String s, int max) {
+        if (s == null) return "";
+        StringBuilder b = new StringBuilder();
+        int n = 0;
+        for (int i = 0; i < s.length() && n < max; ) {
+            int cp = s.codePointAt(i);
+            i += Character.charCount(cp);
+            if (Character.isISOControl(cp) || Character.getType(cp) == Character.FORMAT && cp != 0x200D) continue;
+            b.appendCodePoint(cp);
+            n++;
+        }
+        return b.toString().trim();
+    }
+
+    /**
+     * The fetched panes, checked and cleaned (text only, bounded): at most 8 panes, 8 lines each, with an id,
+     * a title, optional per-line "tone" (up/down) and an optional "at" timestamp. Returns null with
+     * {code, message} in {@code why}.
+     */
+    static JSONArray cleanPanes(JSONArray panesIn, long nowSec, String[] why) throws JSONException {
+        if (panesIn.length() > 8) {
+            why[0] = "too_many";
+            why[1] = "8 panes";
+            return null;
+        }
+        JSONArray panes = new JSONArray();
+        for (int i = 0; i < panesIn.length(); i++) {
+            JSONObject p = panesIn.optJSONObject(i);
+            if (p == null || !WIDGET_ID.matcher(p.optString("id", "")).matches()) {
+                why[0] = "bad_widgets";
+                why[1] = "pane id";
+                return null;
+            }
+            JSONArray lines = p.optJSONArray("lines");
+            if (lines != null && lines.length() > 8) {
+                why[0] = "too_many";
+                why[1] = "8 lines per pane";
+                return null;
+            }
+            JSONArray outLines = new JSONArray();
+            for (int k = 0; lines != null && k < lines.length(); k++) {
+                JSONObject l = lines.optJSONObject(k);
+                if (l == null) continue;
+                JSONObject line = new JSONObject().put("label", printable(l.optString("label", ""), 16))
+                        .put("value", printable(l.optString("value", ""), 64));
+                // Optional "tone": "up" | "down" colours the value (e.g. a price change); anything else is dropped.
+                String tone = l.optString("tone", "");
+                if (LINE_TONES.contains(tone)) line.put("tone", tone);
+                outLines.put(line);
+            }
+            int ttl = p.optInt("ttl", 180);
+            JSONObject pane = new JSONObject().put("id", p.getString("id")).put("title", printable(p.optString("title", p.getString("id")), 48))
+                    .put("icon", printable(p.optString("icon", ""), 16)).put("ttl", Math.max(10, Math.min(86_400, ttl))).put("lines", outLines);
+            // Optional "at" (unix seconds): when these live stats were taken; absent = the fetch time.
+            long paneAt = p.optLong("at", 0L);
+            if (paneAt > 0 && paneAt <= nowSec + 300) pane.put("at", paneAt);
+            panes.put(pane);
+        }
+        return panes;
     }
 }

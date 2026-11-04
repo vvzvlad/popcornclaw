@@ -50,10 +50,8 @@ final class HomeV29 extends FrameLayout {
         void openSettings(View anchor);
         void showWorkspace(int ws);
         void showInputs(View anchor);
-        void screenPc(View anchor);
         void openWalker();
         void weatherMenu(View anchor);
-        void aiMenu(View anchor);
         void launchApp(int position);
         String wifiName();
         // v2.10
@@ -64,8 +62,6 @@ final class HomeV29 extends FrameLayout {
         void moveApp(int from, int to);
         void finishMove(boolean save);
         List<Source> sources();
-        boolean pcPaired();
-        void pairPc();
         void sys(String id);
         void savePanelPos(String id, int cx, int cy);
     }
@@ -189,7 +185,7 @@ final class HomeV29 extends FrameLayout {
         right.addView(barWx, bwl);
         barWx.setVisibility(GONE);
         // v2.10: no gear (the menu is the Omarchy logo on the left).
-        int[] icons = {R.drawable.ln_wifi, R.drawable.ln_bt, R.drawable.ln_vol, R.drawable.ln_input, R.drawable.ln_monitor};
+        int[] icons = {R.drawable.ln_wifi, R.drawable.ln_bt, R.drawable.ln_vol, R.drawable.ln_input};
         for (int ic : icons) {
             View b = iconButton(ic, 24 + 26, 24);
             right.addView(b);
@@ -202,7 +198,6 @@ final class HomeV29 extends FrameLayout {
             if (am != null) am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC, android.media.AudioManager.ADJUST_SAME, android.media.AudioManager.FLAG_SHOW_UI);
         });
         barIcons.get(3).setOnClickListener(host::showInputs);
-        barIcons.get(4).setOnClickListener(host::screenPc);
         tip = text("", 19, false);
         tip.setVisibility(GONE);
         tip.setPadding(px(14), px(8), px(14), px(8));
@@ -296,7 +291,6 @@ final class HomeV29 extends FrameLayout {
         }
         remoteRow.setVisibility(GONE);
         wxBox.setOnClickListener(host::weatherMenu);
-        ai.setOnClickListener(host::aiMenu);
 
         // ---- 3.4 app window: margins 32, padding 20×28 ----
         appWin = new BoxView(a, s, tf);
@@ -566,8 +560,10 @@ final class HomeV29 extends FrameLayout {
         for (BoxView b : remoteBox) b.setColors(winBg, t.muted, t.accent, t.cyan);
         // v2.10: every home widget can be switched off (Settings → Widgets); the clock lives only in the bar.
         wxBox.setVisibility(c.wWeather ? VISIBLE : GONE);
-        pcBox.setVisibility(c.wPc ? VISIBLE : GONE);
-        aiBoxRef.setVisibility(c.wAi ? VISIBLE : GONE);
+        // The PC-bridge widgets (pc stats, ai credits, deploys) are gone with the bridge.
+        pcBox.setVisibility(GONE);
+        aiBoxRef.setVisibility(GONE);
+        depBox.setVisibility(GONE);
         term.setVisibility(activeWs == 1 && c.wTerm ? VISIBLE : GONE);
         if (editPanel == null) post(() -> applyPanelPos(c));
         gridName.setTextColor(t.accent);
@@ -626,8 +622,6 @@ final class HomeV29 extends FrameLayout {
         span(info, (up / 60 > 0 ? (up / 60) + " h " : "") + (up % 60) + " min", t.fg);
         termInfo.setText(info);
         updateWeather();
-        updatePc(pcBody, depBody, depBox, cfg.wDeploys);
-        updateAi(aiBody);
         updateRemote();
         if (activeWs == 4) buildWorkspace();
     }
@@ -716,118 +710,6 @@ final class HomeV29 extends FrameLayout {
         wxLine2.setText(mn != null && mx != null ? "min " + Weather.temp(mn.optDouble(0), cfg.tempF) + "° · max " + Weather.temp(mx.optDouble(0), cfg.tempF) + "°" : "");
     }
 
-    private TextView offline() {
-        TextView v = line(act.getString(R.string.v29_pc_off));
-        v.setTextColor(t.fg);
-        return v;
-    }
-
-    /** "label  [bar]  NN%": bar 12 px (CPU/RAM) or 10 px (AI), fill colour given, track = selection. */
-    private View barRow(String label, int labelCols, double frac, int fill, int barH, String right) {
-        LinearLayout r = hbox();
-        LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(-1, -2);
-        l.topMargin = px(6);
-        r.setLayoutParams(l);
-        TextView a = text(label, 19, false);
-        a.setTextColor(t.fg);
-        a.setSingleLine(true);
-        a.setEllipsize(TextUtils.TruncateAt.END);
-        float cw = a.getPaint().measureText("M");
-        r.addView(a, new LinearLayout.LayoutParams(Math.round(cw * labelCols), -2));
-        BarView b = new BarView(act, t.selection, fill, frac);
-        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(0, px(barH), 1f);
-        bl.leftMargin = px(8);
-        bl.rightMargin = px(10);
-        r.addView(b, bl);
-        TextView pct = text(right, 19, false);
-        pct.setTextColor(t.fg);
-        pct.setGravity(Gravity.END);
-        r.addView(pct, new LinearLayout.LayoutParams(Math.round(cw * 4), -2));
-        return r;
-    }
-
-    private void updatePc(LinearLayout pcBody, LinearLayout depBody, View depBox, boolean depOn) {
-        pcBody.removeAllViews();
-        depBody.removeAllViews();
-        JSONObject st = OmarchyLink.connected() ? com.omarchytv.home.link.LinkServer.stats() : null;
-        if (!OmarchyLink.connected()) {
-            pcBody.addView(offline());
-        } else if (st == null) {
-            pcBody.addView(line("…"));
-        } else {
-            if (st.has("cpu")) pcBody.addView(barRow("cpu", 4, st.optInt("cpu") / 100.0, t.green, 12, st.optInt("cpu") + "%"));
-            if (st.has("ram")) pcBody.addView(barRow("ram", 4, st.optInt("ram") / 100.0, t.yellow, 12, st.optInt("ram") + "%"));
-            JSONObject np = st.optJSONObject("nowPlaying");
-            if (np != null) {
-                LinearLayout r = hbox();
-                LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(-1, -2);
-                l.topMargin = px(8);
-                ImageView ic = new ImageView(act);
-                ic.setImageResource(R.drawable.ln_music);
-                ic.setColorFilter(t.magenta);
-                r.addView(ic, new LinearLayout.LayoutParams(px(19), px(19)));
-                String a = np.optString("artist", "");
-                TextView tx = text((a.isEmpty() ? "" : a + " — ") + np.optString("title"), 19, false);
-                tx.setTextColor(t.fg);
-                tx.setSingleLine(true);
-                tx.setEllipsize(TextUtils.TruncateAt.END);
-                LinearLayout.LayoutParams txl = new LinearLayout.LayoutParams(0, -2, 1f);
-                txl.leftMargin = px(8);
-                r.addView(tx, txl);
-                pcBody.addView(r, l);
-            }
-        }
-        JSONArray d = st != null ? st.optJSONArray("deploys") : null;
-        depBox.setVisibility(depOn && d != null && d.length() > 0 ? VISIBLE : GONE);
-        for (int i = 0; d != null && i < d.length(); i++) {
-            JSONObject x = d.optJSONObject(i);
-            String stt = x.optString("status");
-            int col = "green".equals(stt) || "ok".equals(stt) ? t.green : "yellow".equals(stt) || "building".equals(stt) ? t.yellow : t.red;
-            LinearLayout r = hbox();
-            TextView n = text(x.optString("name"), 19, false);
-            n.setTextColor(t.fg);
-            n.setSingleLine(true);
-            n.setEllipsize(TextUtils.TruncateAt.END);
-            r.addView(n, new LinearLayout.LayoutParams(0, -2, 1f));
-            TextView v = text(stt, 19, false);
-            v.setTextColor(col);
-            v.setSingleLine(true);
-            LinearLayout.LayoutParams vl = new LinearLayout.LayoutParams(-2, -2);
-            vl.leftMargin = px(12);
-            r.addView(v, vl);
-            LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(-1, -2);
-            l.topMargin = px(i == 0 ? 0 : 6);
-            depBody.addView(r, l);
-        }
-    }
-
-    private void updateAi(LinearLayout aiBody) {
-        aiBody.removeAllViews();
-        if (!OmarchyLink.connected() && cfg.aiAt > 0 || cfg.ai.isEmpty() && !OmarchyLink.connected()) {
-            aiBody.addView(offline());
-            return;
-        }
-        if (cfg.ai.isEmpty()) {
-            aiBody.addView(line(act.getString(R.string.ai_empty)));
-            return;
-        }
-        int nameW = 4;
-        for (LauncherConfig.AiEntry a : cfg.ai) nameW = Math.max(nameW, Math.min(8, a.name.length()));
-        int shown = 0;
-        for (LauncherConfig.AiEntry a : cfg.ai) {
-            if (shown++ >= 5) break;
-            double f = a.fraction();
-            if (f >= 0) {
-                int col = f > 0.9 ? t.red : f >= 0.7 ? t.yellow : t.green;
-                aiBody.addView(barRow(a.name, nameW, f, col, 10, Math.round(f * 100) + "%"));
-            } else {
-                TextView v = line(a.name + "  " + (a.usedUnknown() ? "?" : MainActivity.amountText(a.used, a.unit)));
-                v.setTextColor(t.fg);
-                aiBody.addView(v);
-            }
-        }
-    }
-
     // ---- bar tooltip (network name only in the menu shown while the icon is focused) ----
 
     private void showTip(View anchor, int k) {
@@ -835,8 +717,7 @@ final class HomeV29 extends FrameLayout {
             tip.setVisibility(GONE);
             return;
         }
-        String[] labels = {host.wifiName(), "bluetooth", act.getString(R.string.v29_volume), act.getString(R.string.inputs),
-                act.getString(R.string.v29_screen_pc)};
+        String[] labels = {host.wifiName(), "bluetooth", act.getString(R.string.v29_volume), act.getString(R.string.inputs)};
         if (k == 2) {
             android.media.AudioManager am = act.getSystemService(android.media.AudioManager.class);
             if (am != null) labels[2] += " " + Math.round(100f * am.getStreamVolume(3) / Math.max(1, am.getStreamMaxVolume(3))) + "%";
@@ -1024,71 +905,10 @@ final class HomeV29 extends FrameLayout {
         return f;
     }
 
-    // ---- 4 · pc: pairing prompt, or the omarchy · pc / ai credits / deploys widgets in large ----
+    // ---- 4 · pc: was the Omarchy Link bridge (PC stats, pairing, agents); empty now that the bridge is gone ----
 
     private void buildPc() {
-        boolean keep = pcWin.hasFocus();
         pcPaneBody.removeAllViews();
-        if (!host.pcPaired()) {
-            TextView m = text(act.getString(R.string.v210_pc_link), 34, true);
-            m.setTextColor(t.fgBright);
-            LinearLayout.LayoutParams ml = new LinearLayout.LayoutParams(-2, -2);
-            ml.topMargin = px(24);
-            pcPaneBody.addView(m, ml);
-            TextView h = line(act.getString(R.string.v210_pc_link_hint));
-            h.setTextColor(t.fg);
-            h.setSingleLine(false);
-            pcPaneBody.addView(h);
-            LinearLayout actions = hbox();
-            LinearLayout.LayoutParams al = new LinearLayout.LayoutParams(-2, -2);
-            al.topMargin = px(28);
-            al.bottomMargin = px(16);
-            TextView b = button(act.getString(R.string.v210_pc_pair), () -> host.pairPc());
-            actions.addView(b);
-            pcPaneBody.addView(actions, al);
-            if (keep) b.requestFocus();
-            return;
-        }
-        big = 1.35f;
-        LinearLayout r = hbox();
-        r.setGravity(Gravity.TOP);
-        r.setBaselineAligned(false);
-        pcPaneBody.addView(r, new LinearLayout.LayoutParams(-1, -2));
-        BoxView pc = widget(r, "omarchy · pc", 0), ai = widget(r, "ai credits · pc", 24), dep = widget(r, "deploys · pc", 24);
-        int winBg = Theme.withAlpha(t.bg, Math.min(0.98f, opacity(cfg) + noBlur()));
-        for (BoxView b : new BoxView[]{pc, ai, dep}) b.setColors(winBg, t.muted, t.accent, t.cyan);
-        LinearLayout pb = vbox(), ab = vbox(), db = vbox();
-        pc.addView(pb, new LinearLayout.LayoutParams(-1, -2));
-        ai.addView(ab, new LinearLayout.LayoutParams(-1, -2));
-        dep.addView(db, new LinearLayout.LayoutParams(-1, -2));
-        updatePc(pb, db, dep, true);
-        if (dep.getVisibility() != VISIBLE) {
-            dep.setVisibility(VISIBLE);
-            TextView v = line("—");
-            v.setTextColor(t.fg);
-            db.addView(v);
-        }
-        updateAi(ab);
-        ai.setOnClickListener(host::aiMenu);
-        big = 1f;
-        LinearLayout actions = hbox();
-        LinearLayout.LayoutParams al = new LinearLayout.LayoutParams(-2, -2);
-        al.topMargin = px(20);
-        TextView bAgents = button("> agents", () -> host.sys("agents"));
-        actions.addView(bAgents);
-        pcPaneBody.addView(actions, al);
-        if (keep) pc.requestFocus();
-    }
-
-    private TextView button(String label, Runnable r) {
-        TextView b = text("[ " + label + " ]", 26, true);
-        b.setFocusable(true);
-        b.setClickable(true);
-        b.setPadding(px(18), px(10), px(18), px(10));
-        b.setTextColor(t.fgBright);
-        b.setBackground(new Underline());
-        b.setOnClickListener(v -> r.run());
-        return b;
     }
 
     // ---- 5 · sistema: Android settings, themes, transparency, screensaver, info and the v2.10 options ----
