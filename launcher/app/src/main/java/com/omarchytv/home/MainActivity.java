@@ -154,7 +154,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         com.omarchytv.home.lights.LightsPresence.install(this, new com.omarchytv.home.lights.LightsPresence.Painter() {
             @Override
             public void paint(android.app.Activity a) {
-                AmbilightController.paintHub(a, a instanceof CinemarchyActivity);
+                AmbilightController.paintHub(a, false);
             }
 
             @Override
@@ -369,22 +369,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             @Override
             public List<HomeV29.Source> sources() {
                 return tvSources();
-            }
-
-            @Override
-            public boolean selectCompanion() {
-                if (companion == null || companion.getVisibility() != View.VISIBLE) return false;
-                companion.setArmed(true);   // the ring + "OK: chat"; OK opens the chat, any other key goes back
-                return true;
-            }
-
-            @Override
-            public void feedShown(boolean on) {   // PopcornClaw: the floating companion's corner is inside the agent's feed
-                if (companion == null || on == (companion.getVisibility() != View.VISIBLE)) return;
-                if (on) {
-                    companion.setVisibility(View.GONE);
-                    companion.stop();
-                } else companion.bind(LauncherConfig.get(MainActivity.this));
             }
 
             @Override
@@ -616,24 +600,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             case "hidden":
                 showMenu("hidden", null);
                 break;
-            case "cinemarchy":
-                open(new Intent(this, CinemarchyActivity.class));
-                break;
-            case "grok-bot":
-                showMenu("grok-bot", null);
-                break;
-            case "plugins":
-                showMenu("plugins", null);
-                break;
-            case "spacex-tv":
-                showSpacexMenu();
-                break;
-            case "grokbot-companion":
-                showGrokbotCompanionDialog();
-                break;
-            case "ask":
-                open(new Intent(this, AskActivity.class));
-                break;
             case "agents":
                 open(new Intent(this, AgentActivity.class));
                 break;
@@ -768,25 +734,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         for (Walker.Item it : items) seenNames.add(it.name.toLowerCase(java.util.Locale.ROOT));
         for (LauncherConfig.WebApp w : LauncherConfig.BUILTIN_AI_WEBAPPS) {
             final LauncherConfig.WebApp fw = w;
-            if ("grok-bot".equals(w.id)) {
-                if (!seenNames.contains(w.name.toLowerCase(java.util.Locale.ROOT))) {
-                    items.add(new Walker.Item(w.name, tApp, () -> AskActivity.open(this)));
-                }
-                items.add(new Walker.Item("Grok Web (grok.com)", tApp, () -> WebAppActivity.open(this, fw)));
-                continue;
-            }
             if (!seenNames.contains(w.name.toLowerCase(java.util.Locale.ROOT))) {
                 items.add(new Walker.Item(w.name, tApp, () -> WebAppActivity.open(this, fw)));
             }
         }
-        items.add(new Walker.Item("🎬 Cinemarchy (Media, Streaming, Live TV & Snippets)", str(R.string.cinemarchy_hub), () -> open(new Intent(this, CinemarchyActivity.class))));
         items.add(new Walker.Item("Aquarium Screensaver (Omarchy Cyber-TUI Ocean)", str(R.string.menu_screensaver), () -> {
             LauncherConfig.update(this, j -> screensaver(j).put("art", "aquarium").put("mode", "aquarium"));
             open(new Intent(this, ScreensaverPreviewActivity.class));
         }));
-        items.add(new Walker.Item("> grok bot", str(R.string.grok_bot_hub), () -> open(new Intent(this, AskActivity.class))));
-        items.add(new Walker.Item(str(R.string.ask_entry), str(R.string.grok_bot_hub), () -> open(new Intent(this, AskActivity.class))));
-        items.add(new Walker.Item(str(R.string.grok_bot_hub), str(R.string.v29_type_settings), () -> handler.post(() -> showMenu("grok-bot", null))));
         if (cfg.shortcutsOn) for (LauncherConfig.Shortcut x : cfg.shortcuts) items.add(new Walker.Item(x.label, str(R.string.v29_type_content), () -> onShortcutClick(x)));
         if (cfg.tvEnabled) items.add(new Walker.Item(str(R.string.tv_tile), str(R.string.v29_type_content), this::onTvClick));
         items.add(new Walker.Item("Wi-Fi: " + currentNetworkName(), str(R.string.v29_type_wifi), () -> open(new Intent(Settings.ACTION_WIFI_SETTINGS))));
@@ -833,9 +788,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 walkerVoice = true;
                 startVoiceSearch();
                 break;
-            case "ask":
-                AskActivity.open(this);
-                break;
             case "menu":
                 if (walker != null) walker.close();
                 showMenu(null, null);
@@ -845,11 +797,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 if (menu != null && menu.isShowing()) menu.dismiss();
                 startSaver();
                 break;
-            case "next-theme": {
-                String next = AskActivity.nextThemeName(this);
-                if (next != null) applyLive(null, null, AskActivity.themeEdit(next));
-                break;
-            }
             default:
                 break;
         }
@@ -893,14 +840,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                     adapter.reload();
                     if (home != null) home.bind(LauncherConfig.get(this), adapter);
                 }
-                break;
-            case "grokbot_companion":   // omarchy-link pushed the companion's current bot / a bubble line
-                onGrokbotCompanion();
-                break;
-            case "grokbot_answer":
-            case "grokbot_error":
-                keepCompanionReply(type, data);
-                onGrokbotReply(type, data);
                 break;
             case "ai_sources_ok":
                 if (data.optString("id").equals(pendingSourcesId)) pendingSourcesId = null;
@@ -965,14 +904,12 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         recreate();
     }
 
-    /** Config the views were built with; a newer JSON file (adb push, LAN companion) rebuilds the screen. */
+    /** Config the views were built with; a newer JSON file (adb push, omarchy-link) rebuilds the screen. */
     private LauncherConfig builtWith;
 
     @Override
     protected void onResume() {
         super.onResume();
-        bindCompanion();
-        OmarchyLink.sweepCasts(this);   // 24 h cleanup of cast uploads (no-op when nothing was ever cast)
         LauncherConfig cfg = LauncherConfig.get(this);
         if (builtWith != null && reopenPage == null && (cfg.randomTheme || cfg.randomWallpaper)) {
             LauncherConfig.update(this, j -> LauncherConfig.applyRandomRotation(j, new java.util.Random()));
@@ -986,16 +923,15 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         builtWith = cfg;
         resumed = true;
         // KEYCODE_ASSIST never reaches dispatchKeyEvent: the system starts the Assistant role holder instead. With
-        // OmarchyTV holding that role, the mic key lands here: the Grok Bot companion by voice ("voiceKey": "companion",
-        // the default) or Walker ("launcher"; pressed again while Walker is open it starts voice search).
+        // OmarchyTV holding that role, the mic key lands here and opens Walker ("launcher"; pressed again while
+        // Walker is open it starts voice search).
         String act = getIntent().getAction();
         if (Intent.ACTION_ASSIST.equals(act) || Intent.ACTION_VOICE_COMMAND.equals(act) || Intent.ACTION_SEARCH_LONG_PRESS.equals(act)) {
             // popcornclaw: the phone remote's ASSIST (carrying the audio binder) is captured silently by
             // VoiceAssistActivity and never reaches here; a binder-less ASSIST it hands back opens the voice UI.
             setIntent(new Intent(getIntent()).setAction(Intent.ACTION_MAIN));
             handler.post(() -> {
-                if (voiceToCompanion()) openCompanionChat(true);
-                else if (walker == null) openWalker();
+                if (walker == null) openWalker();
                 else {
                     walkerVoice = true;
                     startVoiceSearch();
@@ -1065,7 +1001,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     @Override
     protected void onPause() {
         super.onPause();
-        if (companion != null) { companion.setArmed(false); companion.stop(); }
         resumed = false;
         OmarchyLink.setHomeVisible(false);
         handler.removeCallbacks(idle);
@@ -1621,10 +1556,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             case "walker": return str(R.string.keys_action_walker);
             case "voice": return str(R.string.keys_action_voice);
             case "home": return str(R.string.keys_action_home);
-            case "ask": return str(R.string.keys_action_ask);
             case "menu": return str(R.string.keys_action_menu);
             case "screensaver": return str(R.string.keys_action_screensaver);
-            case "next-theme": return str(R.string.keys_action_next_theme);
             default: return id;
         }
     }
@@ -1764,43 +1697,19 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             case "tv": return tvPage();
             case "webapps": return webAppsPage();
             case "assistant": return assistantPage();
-            case "grok-bot": return grokBotPage();
             case "ambilight": return ambilightPage();
             case "lights": return lightsPage();
             case "wireguard": return wireguardPage();
-            case "plugins": return pluginsPage();
             case "remote-keys": return remoteKeysPage();
             case "remote-key": return remoteKeyPage();
             default: return null;
         }
     }
 
-    /** v2.13: Cinemarchy's optional official YouTube embed for @dhh37 (off = YouTube app). */
-    private boolean cinemarchyEmbedOn() {
-        org.json.JSONObject c = LauncherConfig.readJson(this).optJSONObject("cinemarchy");
-        return c == null || c.optBoolean("embedPlayer", true);   // on by default (works on Sony); an explicit false stays off
-    }
-
     private AsciiMenu.Page mainPage() {
         return new AsciiMenu.Page(str(R.string.menu_title))
                 .add(str(R.string.search_entry), "[mic]", r -> {
                     handler.post(this::startVoiceSearch);
-                    return false;
-                })
-                .add(str(R.string.cinemarchy_hub), "›", r -> {
-                    open(new Intent(this, CinemarchyActivity.class));
-                    return false;
-                })
-                .add("Cinemarchy · play @dhh37 inside (YouTube embed)", str(cinemarchyEmbedOn() ? R.string.on : R.string.off), r -> {
-                    boolean n = !cinemarchyEmbedOn();
-                    CinemarchyActivity.setEmbedPlayer(this, n);
-                    r.setValue(str(n ? R.string.on : R.string.off));
-                    return true;
-                })
-                .add(str(R.string.grok_bot_hub), "›", r -> push(grokBotPage()))
-                .add("Plugins (SpaceX TV · Grok Bot)", "›", r -> push(pluginsPage()))
-                .add(str(R.string.ask_entry), "›", r -> {
-                    open(new Intent(this, AskActivity.class));
                     return false;
                 })
                 .add(str(R.string.menu_launcher), "›", r -> push(launcherPage()))
@@ -1843,236 +1752,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     private static final String WG_RECV = WG_PKG + ".model.TunnelManager$IntentReceiver";
 
 
-    private AsciiMenu.Page pluginsPage() {
-        LauncherConfig cfg = LauncherConfig.get(this);
-        String on = str(R.string.on), off = str(R.string.off);
-        AsciiMenu.Page p = new AsciiMenu.Page("Plugins · v2.13 Sandbox");
-        p.hint("Declarative JSON plugins · MIT credited · zero ADB/shell access");
-        String lSx = "SpaceX TV (com.sighmon.spacex-tv)";
-        p.add(lSx, cfg.pluginSpacexTv ? on : off, r -> {
-            boolean n = !cfg.pluginSpacexTv;
-            applyLive("plugins", lSx, j -> {
-                org.json.JSONObject pl = j.optJSONObject("plugins");
-                if (pl == null) j.put("plugins", pl = new org.json.JSONObject());
-                pl.put("spacexTv", n);
-            });
-            return true;
-        });
-        p.add("Open SpaceX TV launches & streams", "🚀 ›", r -> {
-            handler.post(this::showSpacexMenu);
-            return false;
-        });
-        String lGb = "Grok Bot Companion (TV) · experimental (@tcballard, MIT)";
-        p.add(lGb, cfg.pluginGrokbot ? on : off, r -> {
-            boolean n = !cfg.pluginGrokbot;
-            applyLive("plugins", lGb, j -> {
-                org.json.JSONObject pl = j.optJSONObject("plugins");
-                if (pl == null) j.put("plugins", pl = new org.json.JSONObject());
-                pl.put("grokbot", n);
-            });
-            return true;
-        });
-        p.add("Open Grok Bot Companion (TV)", "[ ◉ ◉ ] ›", r -> {
-            handler.post(this::showGrokbotCompanionDialog);
-            return false;
-        });
-        return p;
-    }
-
-    private void showSpacexMenu() {
-        if (menu != null && menu.isShowing()) menu.dismiss();
-        menu = new AsciiMenu(this, 680);
-        AsciiMenu.Page p = new AsciiMenu.Page("SpaceX TV · com.sighmon.spacex-tv (@sighmon · MIT)");
-        p.hint("Upcoming launches, Starship flight tests & X broadcasts");
-        String[][] items = {
-            {"🚀 SpaceX launches · next-launch countdown", "https://www.spacex.com/launches/"},
-            {"🛰 SpaceX broadcasts on X", "https://x.com/SpaceX"},
-            {"🎬 Starship (spacex.com)", "https://www.spacex.com/vehicles/starship/"},
-            {"📺 Open Cinemarchy SpaceX / Sci-Fi Channel", "cinemarchy"}
-        };
-        for (String[] it : items) {
-            final String title = it[0], url = it[1];
-            p.add(title, "▶", r -> {
-                if ("cinemarchy".equals(url)) {
-                    open(new Intent(this, CinemarchyActivity.class));
-                } else {
-                    open(new Intent(this, WebAppActivity.class).putExtra("url", url).putExtra("name", "SpaceX TV"));
-                }
-                return false;
-            });
-        }
-        menu.showBelow(btnMenu, p);
-    }
-
-    /** Request id of the question sent to the PC's Grok Bot companion bridge, until its answer/error. */
-    private String pendingGrokbotId;
-
-    /** Stores the line shown in the tile's bubble (plugins.grokbotMessage, 240 chars like the Link route). */
-    private void setGrokbotBubble(String line) {
-        String v = line.length() > 240 ? line.substring(0, 239) + "…" : line;
-        LauncherConfig.update(this, j -> {
-            org.json.JSONObject pl = j.optJSONObject("plugins");
-            if (pl == null) j.put("plugins", pl = new org.json.JSONObject());
-            pl.put("grokbotMessage", v);
-        });
-        builtWith = LauncherConfig.get(this);
-        if (home != null) home.bind(builtWith, adapter);
-    }
-
-    private void onGrokbotCompanion() {
-        builtWith = LauncherConfig.get(this);
-        CompanionChatActivity.noteBubble(this, builtWith);
-        if (companion != null) companion.bind(builtWith);
-        if (home != null) home.bind(builtWith, adapter);
-    }
-
-    /**
-     * v2.14: an answer that lands while the companion chat is closed (asked from the chat, which was left before
-     * the PC replied) goes into that bot's history and lights the unread dot. Answers to the home dialog keep
-     * their own dialog (onGrokbotReply).
-     */
-    private void keepCompanionReply(String type, org.json.JSONObject d) {
-        if (!"grokbot_answer".equals(type) || CompanionChatActivity.visible) return;
-        if (pendingGrokbotId != null && pendingGrokbotId.equals(d.optString("id"))) return;
-        String mode = d.optString("mode");
-        String text = d.optString("text", "");
-        String body = "sent".equals(mode) ? "Sent ✓ The answer appears on the PC companion (its webhook replies there)."
-                : "ipc".equals(mode) || text.isEmpty() ? "" : text;
-        LauncherConfig cfg = LauncherConfig.get(this);
-        CompanionChatActivity.deliver(this, cfg, d.optString("bot", ""), body);
-        if (companion != null) companion.bind(cfg);
-    }
-
-    private void onGrokbotReply(String type, org.json.JSONObject d) {
-        if (pendingGrokbotId == null || !pendingGrokbotId.equals(d.optString("id"))) return;
-        pendingGrokbotId = null;
-        String bot = d.optString("bot", "Grok Bot");
-        String body;
-        if ("grokbot_answer".equals(type)) {
-            body = "ipc".equals(d.optString("mode")) || d.optString("text", "").isEmpty()
-                    ? "Sent to the companion on the PC. The reply is in its desktop bubble (no reply channel in IPC-only mode)."
-                    : d.optString("text", "");
-            if (!"ipc".equals(d.optString("mode"))) setGrokbotBubble(body);
-        } else {
-            String code = d.optString("error", "failed");
-            body = "not_connected".equals(code) ? "No PC connected over omarchy-link."
-                    : "busy".equals(code) ? "One question every 3 seconds."
-                    : d.optString("message", code);
-        }
-        if (!resumed) return;
-        new android.app.AlertDialog.Builder(this)
-                .setTitle(("grokbot_answer".equals(type) ? bot : "Grok Bot companion") + " · experimental")
-                .setMessage(body)
-                .setPositiveButton(android.R.string.ok, null)
-                .show();
-    }
-
-    private CompanionOverlay companion;
-
-    private static org.json.JSONObject companionPlugins(org.json.JSONObject j) throws org.json.JSONException {
-        org.json.JSONObject pl = j.optJSONObject("plugins");
-        if (pl == null) j.put("plugins", pl = new org.json.JSONObject());
-        return pl;
-    }
-
-    /** v2.13 floating companion: created once on the root, re-bound on resume and when the PC mirror changes. */
-    private void bindCompanion() {
-        if (root == null) return;
-        if (companion == null) {
-            companion = new CompanionOverlay(this);
-            companion.setOnClickListener(v -> openCompanionChat(false));
-            root.addView(companion);
-        }
-        companion.bind(LauncherConfig.get(this));
-    }
-
-    /** The voice key goes to the Grok Bot companion: chosen (the default) and the companion plugin is on. */
-    private boolean voiceToCompanion() {
-        LauncherConfig cfg = LauncherConfig.get(this);
-        return "companion".equals(cfg.voiceKey) && cfg.pluginGrokbot;
-    }
-
-    private void openCompanionChat(boolean voice) {
-        if (companion != null) companion.setArmed(false);
-        // v2.13.8 "Grok Bot diretto": with no PC companion linked and a webhook routine set, the TV asks Grok Bot
-        // itself (GrokbotDirectActivity). The PC companion chat is unchanged and still wins when the PC is linked.
-        if (!"ask".equals(LauncherConfig.get(this).companionAgent) && !OmarchyLink.hasPc() && GrokbotDirectActivity.enabled(this)) {
-            open(new Intent(this, GrokbotDirectActivity.class).putExtra("voice", voice));
-            return;
-        }
-        open(new Intent(this, CompanionChatActivity.class).putExtra("voice", voice));
-    }
-
-    /** Long-press Menu arms the companion (it never takes D-pad focus by itself); OK opens the chat. The Blue key
-     * opens it at once, for remotes without a Menu key (Sharp's Tools key never reaches apps). */
-    private boolean companionKey(KeyEvent e) {
-        if (companion == null || companion.getVisibility() != View.VISIBLE) return false;
-        int kc = e.getKeyCode();
-        if (CompanionPlacement.opensChat(kc, LauncherConfig.get(this).askKey)) {
-            if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) openCompanionChat(false);
-            return true;
-        }
-        if (kc == KeyEvent.KEYCODE_MENU) {
-            if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 1) {
-                companion.setArmed(!companion.isArmed());
-                swallowKeyUp = kc;
-            }
-            return e.getRepeatCount() > 0 || companion.isArmed();
-        }
-        if (!companion.isArmed()) return false;
-        if (e.getAction() != KeyEvent.ACTION_DOWN) return true;
-        if (kc == KeyEvent.KEYCODE_DPAD_CENTER || kc == KeyEvent.KEYCODE_ENTER || kc == KeyEvent.KEYCODE_NUMPAD_ENTER) {
-            swallowKeyUp = kc;
-            openCompanionChat(false);
-        } else if (kc == KeyEvent.KEYCODE_SEARCH || kc == KeyEvent.KEYCODE_VOICE_ASSIST) {
-            swallowKeyUp = kc;
-            openCompanionChat(true);
-        } else {
-            companion.setArmed(false);
-            swallowKeyUp = kc;
-        }
-        return true;
-    }
-
-    private void showGrokbotCompanionDialog() {
-        LauncherConfig cfg = LauncherConfig.get(this);
-        android.widget.EditText e = new android.widget.EditText(this);
-        e.setSingleLine(true);
-        // Bridge = omarchy-link pushed the companion's bot and a PC is connected: the question goes to the PC.
-        final boolean bridge = cfg.grokbotBotName != null && !cfg.grokbotBotName.isEmpty() && OmarchyLink.hasPc();
-        String who = bridge ? cfg.grokbotBotName : "Grok Bot";
-        e.setHint(bridge ? "Ask " + who + " on the PC companion…" : "Ask Grok Bot…");
-        String state = bridge ? "Mirroring " + who + " from @tcballard's Grok Bot Desktop Companion on the PC ("
-                + ("relay".equals(cfg.grokbotBotMode) ? "replies come back here" : "replies stay in the desktop bubble") + ")."
-                : "Not linked to the desktop companion: questions open the Ask screen. Install omarchy-link and "
-                + "@tcballard's companion on the PC to mirror the bot here.";
-        String msg = (cfg.grokbotMessage != null && !cfg.grokbotMessage.isEmpty() ? "Last: " + cfg.grokbotMessage + "\n\n" : "")
-                + state + "\n\nBuilt for @tcballard's Grok Bot Desktop Companion v0.1.0 (MIT)"
-                + (bridge && cfg.grokbotBotVersion != null && !cfg.grokbotBotVersion.isEmpty()
-                ? " · companion v" + cfg.grokbotBotVersion : "") + " · built for v0.1.0.";
-        new android.app.AlertDialog.Builder(this)
-                .setTitle("Grok Bot Companion (TV)")
-                .setMessage(msg)
-                .setView(e)
-                .setPositiveButton(bridge ? "Ask " + who : "Ask Grok Bot", (d, w) -> {
-                    String q = e.getText().toString().trim();
-                    if (q.isEmpty()) return;
-                    if (q.length() > 240) q = q.substring(0, 240);
-                    if (bridge) {
-                        pendingGrokbotId = java.util.UUID.randomUUID().toString();
-                        setGrokbotBubble("… " + q);
-                        OmarchyLink.grokbotAsk(pendingGrokbotId, q, null);
-                    } else {
-                        setGrokbotBubble(q);
-                        open(new Intent(this, AskActivity.class).putExtra("cmd", q));
-                    }
-                })
-                .setNeutralButton("Open Grok WebApp", (d, w) -> open(new Intent(this, WebAppActivity.class)
-                        .putExtra("url", "https://grok.com").putExtra("name", "Grok Bot")))
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
-    }
-
     private AsciiMenu.Page wireguardPage() {
         String tun = getSharedPreferences("omarchytv", MODE_PRIVATE).getString("wg_tunnel", "wg0");
         boolean installed = false;
@@ -2110,46 +1789,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                     String v = e.getText().toString().trim().replaceAll("[^a-zA-Z0-9_=+.-]", "");
                     if (!v.isEmpty() && v.length() <= 15) sp.edit().putString("wg_tunnel", v).apply();
                     showMenu("wireguard", null);
-                }).setNegativeButton(android.R.string.cancel, null).show();
-    }
-
-    /** Webhook URL or Sender key for Grok Bot diretto: typed on the TV, kept in its own prefs, the key never shown back. */
-    private void directDialog(boolean key) {
-        android.content.SharedPreferences sp = GrokbotDirectActivity.prefs(this);
-        android.widget.EditText e = new android.widget.EditText(this);
-        e.setSingleLine(true);
-        if (key) {
-            e.setHint("crsr_…");
-            e.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        } else {
-            e.setText(sp.getString("url", ""));
-            e.setHint("https://…");
-            e.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
-        }
-        new android.app.AlertDialog.Builder(this).setTitle(key ? "Grok Bot routine Sender key" : "Grok Bot routine webhook URL").setView(e)
-                .setPositiveButton(android.R.string.ok, (d, w) -> {
-                    String v = e.getText().toString().trim();
-                    if (v.isEmpty()) sp.edit().remove(key ? "key" : "url").apply();
-                    else if (key ? GrokbotDirect.validKey(v) : GrokbotDirect.validUrl(v)) sp.edit().putString(key ? "key" : "url", v).apply();
-                    else Toast.makeText(this, key ? "That does not look like a Sender key" : "The webhook URL must start with https://", Toast.LENGTH_SHORT).show();
-                    showMenu("grok-bot", null);
-                }).setNegativeButton(android.R.string.cancel, null).show();
-    }
-
-    /** xAI API key for the optional Grok voice: typed on the TV, kept in its own prefs, never shown back. */
-    private void xaiKeyDialog() {
-        android.content.SharedPreferences sp = GrokbotDirectActivity.prefs(this);
-        android.widget.EditText e = new android.widget.EditText(this);
-        e.setSingleLine(true);
-        e.setHint("xai-…");
-        e.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        new android.app.AlertDialog.Builder(this).setTitle("xAI API key").setView(e)
-                .setPositiveButton(android.R.string.ok, (d, w) -> {
-                    String v = e.getText().toString().trim();
-                    if (v.isEmpty()) sp.edit().remove("xai_key").apply();
-                    else if (GrokbotDirect.validKey(v)) sp.edit().putString("xai_key", v).apply();
-                    else Toast.makeText(this, "That does not look like an API key", Toast.LENGTH_SHORT).show();
-                    showMenu("grok-bot", null);
                 }).setNegativeButton(android.R.string.cancel, null).show();
     }
 
@@ -2192,7 +1831,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         LauncherConfig cfg = LauncherConfig.get(this);
         String[] langs = {"auto", "en", "it", "de"};
         String[] sizes = {"small", "medium", "large"};
-        String[] logos = {"omarchy-tv", "omarchy", "cinemarchy", "original"};
+        String[] logos = {"omarchy-tv", "omarchy", "original"};
         AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.menu_launcher));
         String lLang = str(R.string.set_language), lSize = str(R.string.set_ui_size), lLogo = str(R.string.set_logo),
                 lAcc = str(R.string.set_accent);
@@ -3052,7 +2691,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
 
     private AsciiMenu.Page screensaverPage() {
         LauncherConfig cfg = LauncherConfig.get(this);
-        String[] logos = {"aquarium", "aquarium-classic", "omarchy-tv", "omarchy", "cinemarchy", "original"};
+        String[] logos = {"aquarium", "aquarium-classic", "omarchy-tv", "omarchy", "original"};
         String[] sizes = {"small", "medium", "large"};
         String lLogo = str(R.string.set_logo), lSize = str(R.string.ss_size), lClock = str(R.string.ss_clock);
         AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.menu_screensaver));
@@ -3146,19 +2785,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 return true;              // the "pcs" event re-renders this page
             });
         }
-        // v2.10: Send to TV (cast) is off by default.
-        String lCast = str(R.string.v210_cast);
-        p.add(lCast, str(LauncherConfig.get(this).castEnabled ? R.string.on : R.string.off), r -> {
-            boolean n = !LauncherConfig.get(this).castEnabled;
-            builtWith = LauncherConfig.update(this, j -> {
-                org.json.JSONObject c = j.optJSONObject("cast");
-                if (c == null) j.put("cast", c = new org.json.JSONObject());
-                c.put("enabled", n);
-            });
-            CastRouter.reset();
-            r.setValue(str(n ? R.string.on : R.string.off));
-            return true;
-        });
         p.add(str(R.string.link_new_code), null, r -> {
             OmarchyLink.openPairing();
             refreshMenu("link");
@@ -3243,7 +2869,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         p.onLeave = () -> {
             if (!linkRefreshing) menuPage = null;
         };
-        p.add(str(R.string.grok_bot_hub), "›", r -> push(grokBotPage()));
         String lOff = str(R.string.ai_offline_row);
         p.add(lOff, str("hide".equals(cfg.aiOffline) ? R.string.ai_offline_hide : R.string.ai_offline_stale), r -> {
             String n = "hide".equals(cfg.aiOffline) ? "stale" : "hide";
@@ -3366,176 +2991,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         return str("slow".equals(s) ? R.string.speed_slow : "fast".equals(s) ? R.string.speed_fast : R.string.speed_normal);
     }
 
-    /**
-     * Grok Bot & AI hub: works like Omarchy on desktop — open Grok Bot (or Grok / ChatGPT / Claude / Hermes)
-     * directly in WebAppActivity (:web process with persistent cookies/DOM storage & D-pad cursor), or use
-     * paired PC "> ask" / "> agents" and the TV MCP server (:47800/mcp).
-     */
-    private AsciiMenu.Page grokBotPage() {
-        AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.grok_bot_hub));
-        LauncherConfig.WebApp grokBot = LauncherConfig.BUILTIN_AI_WEBAPPS[0];
-        LauncherConfig gc = LauncherConfig.get(this);
-        p.add("Chat with the Grok Bot companion", "OK ›", r -> {
-            handler.post(() -> openCompanionChat(false));
-            return false;
-        });
-        String lOv = "Floating companion on the home screen";
-        p.add(lOv, str(gc.companionOverlay ? R.string.on : R.string.off), r -> {
-            boolean n = !gc.companionOverlay;
-            applyLive("grok-bot", lOv, j -> companionPlugins(j).put("companionOverlay", n));
-            return true;
-        });
-        String lCorner = "Companion corner";
-        p.add(lCorner, gc.companionCorner, r -> {
-            String n = CompanionPlacement.next(gc.companionCorner);
-            applyLive("grok-bot", lCorner, j -> companionPlugins(j).put("companionCorner", n));
-            return true;
-        });
-        String lOff = "Companion offset (sideways · up/down, dp)";
-        p.add(lOff, gc.companionOffsetX + " · " + gc.companionOffsetY, r -> {
-            int[] steps = {0, 24, 48, 96, 160};
-            int i = 0;
-            while (i < steps.length && steps[i] != gc.companionOffsetX) i++;
-            int nx = steps[(i + 1) % steps.length];
-            applyLive("grok-bot", lOff, j -> companionPlugins(j).put("companionOffsetX", nx).put("companionOffsetY", nx / 2));
-            return true;
-        });
-        String lShape = "Companion shape (Tom Ballard's 14)";
-        p.add(lShape, gc.companionShape.isEmpty() ? "follow PC bot" : gc.companionShape, r -> {
-            // "" (follow the PC bot) → blob → cloud → … → pebble → "".
-            String n = gc.companionShape.isEmpty() ? GrokbotAvatar.NAMES_FIRST
-                    : GrokbotAvatar.index(gc.companionShape) == GrokbotAvatar.COUNT - 1 ? "" : GrokbotAvatar.next(gc.companionShape);
-            applyLive("grok-bot", lShape, j -> companionPlugins(j).put("companionShape", n));
-            return true;
-        });
-        String lColor = "Companion colour";
-        p.add(lColor, gc.companionColor.isEmpty() ? "follow PC bot" : gc.companionColor, r -> {
-            int i = GrokbotAvatar.colorIndex(gc.companionColor);
-            String n = i + 1 < GrokbotAvatar.COLOR_NAMES.length ? GrokbotAvatar.COLOR_NAMES[i + 1] : "";
-            applyLive("grok-bot", lColor, j -> companionPlugins(j).put("companionColor", n));
-            return true;
-        });
-        String lSize = "Companion size";
-        p.add(lSize, gc.companionSize, r -> {
-            String n = CompanionPlacement.nextSize(gc.companionSize);
-            applyLive("grok-bot", lSize, j -> companionPlugins(j).put("companionSize", n));
-            return true;
-        });
-        String lBadge = "Companion name badge";
-        p.add(lBadge, str(gc.companionBadge ? R.string.on : R.string.off), r -> {
-            boolean n = !gc.companionBadge;
-            applyLive("grok-bot", lBadge, j -> companionPlugins(j).put("companionBadge", n));
-            return true;
-        });
-        String lAnim = "Companion animation (bob, blink, look around, sleep, drift)";
-        p.add(lAnim, str(gc.companionAnim ? R.string.on : R.string.off), r -> {
-            boolean n = !gc.companionAnim;
-            applyLive("grok-bot", lAnim, j -> companionPlugins(j).put("companionAnim", n));
-            return true;
-        });
-        String lAgent = "Companion agent";
-        p.add(lAgent, "ask".equals(gc.companionAgent) ? "OmarchyTV Ask" : "Grok Bot (PC companion)", r -> {
-            String n = "ask".equals(gc.companionAgent) ? "grokbot" : "ask";
-            applyLive("grok-bot", lAgent, j -> companionPlugins(j).put("companionAgent", n));
-            return true;
-        });
-        // v2.13.8 "Grok Bot diretto (senza PC)": used when no PC companion is linked. URL and key stay on this TV only.
-        android.content.SharedPreferences gd = GrokbotDirectActivity.prefs(this);
-        p.add("Grok Bot diretto (senza PC)", gd.getBoolean("enabled", false) ? str(R.string.on) : str(R.string.off), r -> {
-            gd.edit().putBoolean("enabled", !gd.getBoolean("enabled", false)).apply();
-            handler.post(() -> showMenu("grok-bot", "Grok Bot diretto (senza PC)"));
-            return false;
-        });
-        p.add("  Webhook URL", gd.getString("url", "").isEmpty() ? "not set ›" : "set ✓ ›", r -> {
-            directDialog(false);
-            return false;
-        });
-        p.add("  Sender key", GrokbotDirect.mask(gd.getString("key", "")) + " ›", r -> {
-            directDialog(true);
-            return false;
-        });
-        p.add("  Leggi risposte ad alta voce", gd.getBoolean("speak", true) ? str(R.string.on) : str(R.string.off), r -> {
-            gd.edit().putBoolean("speak", !gd.getBoolean("speak", true)).apply();
-            handler.post(() -> showMenu("grok-bot", "  Leggi risposte ad alta voce"));
-            return false;
-        });
-        // Optional "Voce di Grok (xAI)": off by default (the system TTS stays the default); paid xAI API key.
-        p.add("  Voce di Grok (xAI)", gd.getBoolean("xai_on", false) ? str(R.string.on) : str(R.string.off), r -> {
-            gd.edit().putBoolean("xai_on", !gd.getBoolean("xai_on", false)).apply();
-            handler.post(() -> showMenu("grok-bot", "  Voce di Grok (xAI)"));
-            return false;
-        });
-        p.add("    xAI API key", GrokbotDirect.mask(gd.getString("xai_key", "")) + " ›", r -> {
-            xaiKeyDialog();
-            return false;
-        });
-        p.add("    Voce", GrokbotDirectActivity.xaiVoice(this) + " ›", r -> {
-            String[] list = gd.getString("xai_voices", GrokbotDirect.DEFAULT_VOICE).split(",");
-            new android.app.AlertDialog.Builder(this).setTitle("Grok voice (Test refreshes the list)").setItems(list, (d, w) -> {
-                if (GrokbotDirect.validVoice(list[w])) gd.edit().putString("xai_voice", list[w]).apply();
-                showMenu("grok-bot", "    Voce");
-            }).setNegativeButton(android.R.string.cancel, null).show();
-            return false;
-        });
-        p.add("    Test voce di Grok", "›", r -> {
-            open(new Intent(this, GrokbotDirectActivity.class).putExtra("xai_test", true));
-            return false;
-        });
-        p.add("  Test Grok Bot diretto", "›", r -> {
-            open(new Intent(this, GrokbotDirectActivity.class).putExtra("q", "Hi! Reply with one short sentence."));
-            return false;
-        });
-        p.hint("Blue key on the remote opens the companion chat (or long-press Menu, then OK).");
-        p.add("Grok Bot (Omarchy TUI)", "tui ›", r -> {
-            LauncherConfig.update(this, j -> LauncherConfig.ensureWebApp(j, grokBot, true));
-            builtWith = LauncherConfig.get(this);
-            reloadApps();
-            if (home != null) home.bind(builtWith, adapter);
-            AskActivity.open(this);
-            return false;
-        });
-        p.add(str(R.string.grok_bot_open), "grok.com ›", r -> {
-            LauncherConfig.update(this, j -> LauncherConfig.ensureWebApp(j, grokBot, true));
-            builtWith = LauncherConfig.get(this);
-            reloadApps();
-            if (home != null) home.bind(builtWith, adapter);
-            WebAppActivity.open(this, grokBot);
-            return false;
-        });
-        p.add("> agents", OmarchyLink.connected() ? "pc ›" : "›", r -> {
-            open(new Intent(this, AgentActivity.class));
-            return false;
-        });
-        for (int i = 1; i < LauncherConfig.BUILTIN_AI_WEBAPPS.length; i++) {
-            final LauncherConfig.WebApp w = LauncherConfig.BUILTIN_AI_WEBAPPS[i];
-            String host = android.net.Uri.parse(w.url).getHost();
-            p.add(w.name, (host == null ? "" : host) + " ›", r -> {
-                LauncherConfig.update(this, j -> LauncherConfig.ensureWebApp(j, w, false));
-                builtWith = LauncherConfig.get(this);
-                reloadApps();
-                if (home != null) home.bind(builtWith, adapter);
-                WebAppActivity.open(this, w);
-                return false;
-            });
-        }
-        p.add(str(R.string.grok_bot_pin_all), "+", r -> {
-            applyLive("grok-bot", str(R.string.grok_bot_pin_all), j -> {
-                for (int i = 0; i < LauncherConfig.BUILTIN_AI_WEBAPPS.length; i++) {
-                    LauncherConfig.ensureWebApp(j, LauncherConfig.BUILTIN_AI_WEBAPPS[i], i < 2);
-                }
-            });
-            return true;
-        });
-        String ip = tvAddress();
-        p.add(str(R.string.grok_bot_mcp), (ip != null ? ip : "127.0.0.1") + ":" + LINK_PORT + "/mcp", r -> true);
-        p.add(str(R.string.ask_settings), "›", r -> push(assistantPage()));
-        return p;
-    }
-
     private String logoLabel(String l) {
         if ("aquarium".equals(l)) return "Omarchy Aquarium (homage)";
         if ("aquarium-classic".equals(l)) return "Aquarium Classic";
-        if ("cinemarchy".equals(l)) return "CINEMARCHY";
         return str("omarchy".equals(l) ? R.string.logo_omarchy : "original".equals(l) ? R.string.logo_original : R.string.logo_omarchy_tv);
     }
 
@@ -3667,7 +3125,6 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
 
     /** v2.10: the screensaver is ScreensaverPreviewActivity in its own process (":saver"); true while it is shown. */
     private boolean saverShown;
-    private int swallowKeyUp = -1;
     private final Runnable idle = this::onIdle;
 
     private void resetIdle() {
@@ -3731,13 +3188,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent e) {
-        if (swallowKeyUp == e.getKeyCode() && e.getAction() == KeyEvent.ACTION_UP) {
-            swallowKeyUp = -1;
-            return true;
-        }
         resetIdle();
-        if (companion != null) companion.poke();   // any key wakes a sleeping companion
-        if (walker == null && movingPos < 0 && (menu == null || !menu.isShowing()) && companionKey(e)) return true;
         if (walker != null) {
             if (walker.onKey(e)) return true;
             return super.dispatchKeyEvent(e);
@@ -3746,12 +3197,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             int kc = e.getKeyCode();
             logKeyOnce(kc);
             if (home.movingApp >= 0) return home.onKey(e);
-            // Voice / search key: the Grok Bot companion by voice (v2.14 default), Walker, or the system assistant if chosen.
+            // Voice / search key: Walker ("launcher"), or the system assistant if chosen.
             if (kc == KeyEvent.KEYCODE_SEARCH || kc == KeyEvent.KEYCODE_VOICE_ASSIST || kc == KeyEvent.KEYCODE_ASSIST) {
-                if (voiceToCompanion()) {
-                    if (e.getAction() == KeyEvent.ACTION_UP) openCompanionChat(true);
-                    return true;
-                }
                 if ("launcher".equals(LauncherConfig.get(this).voiceKey)) {
                     if (e.getAction() == KeyEvent.ACTION_UP) openWalker();
                     return true;
@@ -4609,8 +4056,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     private AsciiMenu.Page assistantPage() {
         LauncherConfig cfg = LauncherConfig.get(this);
         AsciiMenu.Page p = new AsciiMenu.Page(str(R.string.ask_settings));
-        String lProv = str(R.string.ask_provider), lTts = str(R.string.ask_tts), lKey = str(R.string.voice_key),
-                lAskKey = str(R.string.ask_key);
+        String lProv = str(R.string.ask_provider), lTts = str(R.string.ask_tts), lKey = str(R.string.voice_key);
         String provName = "—";
         for (LauncherConfig.Provider pr : cfg.aiProviders) if (pr.id.equals(cfg.assistantProvider)) provName = pr.name;
         if ("—".equals(provName) && !cfg.aiProviders.isEmpty()) provName = cfg.aiProviders.get(0).name;
@@ -4627,19 +4073,10 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
             applyLive("assistant", lTts, j -> assistantJson(j).put("tts", n));
             return true;
         });
-        // The mic / Search key: the Grok Bot companion (default) → Walker's > search → Google Assistant.
-        p.add(lKey, str("companion".equals(cfg.voiceKey) ? R.string.voice_key_companion
-                : "launcher".equals(cfg.voiceKey) ? R.string.voice_key_launcher : R.string.voice_key_assistant), r -> {
-            String n = "companion".equals(cfg.voiceKey) ? "launcher" : "launcher".equals(cfg.voiceKey) ? "assistant" : "companion";
+        // The mic / Search key: Walker's > search ("launcher") → Google Assistant ("assistant").
+        p.add(lKey, str("launcher".equals(cfg.voiceKey) ? R.string.voice_key_launcher : R.string.voice_key_assistant), r -> {
+            String n = "launcher".equals(cfg.voiceKey) ? "assistant" : "launcher";
             applyLive("assistant", lKey, j -> j.put("voiceKey", n));
-            return true;
-        });
-        String[] keys = {"none", "red", "green", "yellow", "blue"};
-        p.add(lAskKey, cfg.askKey, r -> {
-            String n = keys[0];
-            for (int i = 0; i < keys.length; i++) if (keys[i].equals(cfg.askKey)) n = keys[(i + 1) % keys.length];
-            final String fn = n;
-            applyLive("assistant", lAskKey, j -> assistantJson(j).put("key", fn));
             return true;
         });
         return p;
@@ -4658,18 +4095,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         LauncherConfig cfg = LauncherConfig.get(this);
         // Only when the user chose it: otherwise the key falls through to the system (Google Assistant).
-        if (keyCode == KeyEvent.KEYCODE_SEARCH && voiceToCompanion() && movingPos < 0) {
-            openCompanionChat(true);
-            return true;
-        }
         if (keyCode == KeyEvent.KEYCODE_SEARCH && "launcher".equals(cfg.voiceKey) && movingPos < 0) {
             startVoiceSearch();
-            return true;
-        }
-        int ask = "red".equals(cfg.askKey) ? KeyEvent.KEYCODE_PROG_RED : "green".equals(cfg.askKey) ? KeyEvent.KEYCODE_PROG_GREEN
-                : "yellow".equals(cfg.askKey) ? KeyEvent.KEYCODE_PROG_YELLOW : "blue".equals(cfg.askKey) ? KeyEvent.KEYCODE_PROG_BLUE : -1;
-        if (keyCode == ask) {
-            open(new Intent(this, AskActivity.class));
             return true;
         }
         return super.onKeyDown(keyCode, event);

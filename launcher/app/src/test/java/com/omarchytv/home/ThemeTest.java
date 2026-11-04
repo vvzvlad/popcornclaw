@@ -56,15 +56,10 @@ public class ThemeTest {
     }
 
     @Test
-    public void cinemarchyWordmarkAndAquariumArtNormaliseCleanly() throws Exception {
-        assertEquals("cinemarchy", Art.normalise("cinemarchy"));
+    public void aquariumArtNormalisesCleanly() throws Exception {
         assertEquals("aquarium", Art.normalise("aquarium"));
-        assertTrue(Art.isPrefixAccent("cinemarchy"));
-        assertEquals(40, Art.split("cinemarchy"));
-        String logo = new String(Files.readAllBytes(Paths.get("src/main/res/raw/cinemarchy_logo.txt")), StandardCharsets.UTF_8);
-        String[] lines = logo.replace("\r", "").split("\n");
-        assertTrue(lines.length >= 10);
-        assertTrue(logo.contains("█") && logo.contains("▀") && logo.contains("▄"));
+        assertEquals("aquarium-classic", Art.normalise("aquarium-classic"));
+        assertEquals("omarchy-tv", Art.normalise("omarchy-tv"));
     }
 
     @Test

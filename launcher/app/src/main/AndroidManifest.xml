@@ -12,7 +12,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <!-- Only used by the optional weather pane (Open-Meteo), off by default. -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- v2.13.8: Grok Bot diretto listens with the in-app SpeechRecognizer (the remote mic). -->
+    <!-- VoiceSearchActivity listens with the in-app SpeechRecognizer (the remote mic). -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Lets "Uninstall" in the tile menu open the system uninstall dialog (the system always asks). -->
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
@@ -122,8 +122,8 @@
                 <category android:name="android.intent.category.HOME" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
-            <!-- v2.14: remotes and keyboards that send a voice command or a long Search press open the Grok Bot
-                 companion (voiceKey "companion", the default; Walker or Google Assistant when chosen). -->
+            <!-- Remotes and keyboards that send a voice command or a long Search press open Walker
+                 (voiceKey "launcher", the default; Google Assistant when chosen). -->
             <intent-filter>
                 <action android:name="android.intent.action.VOICE_COMMAND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -137,7 +137,7 @@
         <!-- PopcornClaw: holds the Assistant role and catches ACTION_ASSIST. The phone remote's ASSIST carries the
              decoded-audio binder: this activity captures it silently (translucent, own task, finishes in onCreate)
              so the playing video stays on screen instead of dropping to the launcher. A binder-less ASSIST
-             (KEYCODE_ASSIST from other remotes) is handed to MainActivity's companion/Walker voice path. -->
+             (KEYCODE_ASSIST from other remotes) is handed to MainActivity's Walker voice path. -->
         <activity
             android:name="xyz.vvzvlad.popcornclaw.VoiceAssistActivity"
             android:exported="true"
@@ -193,23 +193,6 @@
             android:process=":watchdog"
             android:exported="false" />
 
-        <!-- Cinemarchy media, streaming, live TV & snippets hub (Omarchy half-block wordmark + 4 TUI tabs). -->
-        <activity
-            android:name=".CinemarchyActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:screenOrientation="landscape"
-            android:theme="@style/Theme.TvHome" />
-
-        <!-- "> ask" voice assistant pane (answers come from the paired Omarchy Linux PC). -->
-        <activity
-            android:name=".AskActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:screenOrientation="landscape"
-            android:windowSoftInputMode="adjustResize|stateHidden"
-            android:theme="@style/Theme.TvHome" />
-
         <!-- "> agents" monitor (activity and answers come from the paired Omarchy Linux PC). -->
         <activity
             android:name=".AgentActivity"
@@ -217,55 +200,6 @@
             android:excludeFromRecents="true"
             android:screenOrientation="landscape"
             android:windowSoftInputMode="adjustResize|stateHidden"
-            android:theme="@style/Theme.TvHome" />
-
-        <!-- Send to TV (Omarchy Link cast): the player (Media3 ExoPlayer) and the image / text viewer.
-             Not exported: only the launcher's own LinkServer opens them, for a paired PC. -->
-        <activity
-            android:name=".CastPlayerActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:launchMode="singleTask"
-            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation|uiMode"
-            android:screenOrientation="landscape"
-            android:theme="@style/Theme.TvHome" />
-        <activity
-            android:name=".CastViewActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:launchMode="singleTask"
-            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation|uiMode"
-            android:screenOrientation="landscape"
-            android:theme="@style/Theme.TvHome" />
-
-        <!-- v2.13: Grok Bot Companion (TV) chat, opened from the floating companion. Not exported. -->
-        <activity
-            android:name=".CompanionChatActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation|uiMode"
-            android:screenOrientation="landscape"
-            android:windowSoftInputMode="adjustResize|stateHidden"
-            android:theme="@style/Theme.TvHome" />
-
-        <!-- v2.13.8: "Grok Bot diretto (senza PC)" chat: the user's own webhook routine, replies via ntfy.sh. Not exported. -->
-        <activity
-            android:name=".GrokbotDirectActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation|uiMode"
-            android:screenOrientation="landscape"
-            android:windowSoftInputMode="adjustResize|stateHidden"
-            android:theme="@style/Theme.TvHome" />
-
-        <!-- v2.13: "Play inside Cinemarchy" (official YouTube IFrame embed, off by default). Not exported. -->
-        <activity
-            android:name=".YoutubeEmbedActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|navigation|uiMode"
-            android:screenOrientation="landscape"
-            android:hardwareAccelerated="true"
             android:theme="@style/Theme.TvHome" />
 
         <!-- v2.10: the screensaver window (idle on home + preview) runs in its own process. -->

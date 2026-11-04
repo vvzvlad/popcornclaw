@@ -30,7 +30,7 @@ public class LightsLeaveTest {
     @Test
     public void launcherHandOverKeepsTheCountAboveZero() {
         int n = LightsLeave.count(0, true);      // Home started
-        n = LightsLeave.count(n, true);          // Cinemarchy started before Home stops
+        n = LightsLeave.count(n, true);          // a player started before Home stops
         n = LightsLeave.count(n, false);         // Home stopped
         assertEquals(1, n);
         assertEquals(0, LightsLeave.count(LightsLeave.count(n, false), false));   // never negative

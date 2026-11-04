@@ -149,7 +149,6 @@ final class TteSaver {
         LauncherConfig cfg = LauncherConfig.get(c);
         String t = cfg.screensaverText;
         if (t != null && !t.trim().isEmpty()) return t;
-        if ("cinemarchy".equals(cfg.screensaverArt)) return Art.load(c, "cinemarchy");
         if ("omarchy".equals(cfg.screensaverArt)) return Art.load(c, "omarchy");
         if ("original".equals(cfg.screensaverArt)) return Art.load(c, "original");
         try (InputStream in = c.getAssets().open("saver/screensaver-tv.txt")) {

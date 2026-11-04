@@ -11,9 +11,9 @@ import java.util.function.Predicate;
 import org.junit.Test;
 
 public class BarFocusTest {
-    // Same order as the top bar: menu, 5 workspace slots, SpaceX TV, then the right-hand icons.
+    // Same order as the top bar: menu, 5 workspace slots, then the right-hand icons.
     private static final List<String> BAR = Arrays.asList(
-            "menu", "ws1", "ws2", "ws3", "ws4", "ws5", "spacex", "cinemarchy", "wifi", "bt", "vol", "input", "screen");
+            "menu", "ws1", "ws2", "ws3", "ws4", "ws5", "wifi", "bt", "vol", "input", "screen");
 
     private static Predicate<String> hidden(String... gone) {
         Set<String> g = new HashSet<>(Arrays.asList(gone));
@@ -27,23 +27,16 @@ public class BarFocusTest {
 
     @Test
     public void rightFromTheLastVisibleWorkspaceReachesTheIcons() {
-        // 4 workspaces (home, apps, pc, system), SpaceX TV off: "4" → Cinemarchy, not stuck on "4".
-        assertEquals("cinemarchy", step("ws4", true, hidden("ws5", "spacex")));
-    }
-
-    @Test
-    public void rightFromTheLastVisibleWorkspaceReachesSpacexWhenItIsOn() {
-        assertEquals("spacex", step("ws4", true, hidden("ws5")));
-        assertEquals("cinemarchy", step("spacex", true, hidden("ws5")));
-        assertEquals("ws4", step("spacex", false, hidden("ws5")));
+        // 4 workspaces (home, apps, pc, system), ws5 hidden: "4" → the first icon, not stuck on "4".
+        assertEquals("wifi", step("ws4", true, hidden("ws5")));
     }
 
     @Test
     public void hiddenSlotsAreSkippedBothWays() {
-        Predicate<String> u = hidden("ws2", "ws3", "ws5", "spacex");
+        Predicate<String> u = hidden("ws2", "ws3", "ws5");
         assertEquals("ws4", step("ws1", true, u));
         assertEquals("ws1", step("ws4", false, u));
-        assertEquals("ws4", step("cinemarchy", false, u));
+        assertEquals("ws4", step("wifi", false, u));
     }
 
     @Test
@@ -51,7 +44,7 @@ public class BarFocusTest {
         Predicate<String> u = s -> true;
         assertEquals("ws1", step("menu", true, u));
         assertEquals("ws5", step("ws4", true, u));
-        assertEquals("spacex", step("ws5", true, u));
+        assertEquals("wifi", step("ws5", true, u));
         assertEquals("vol", step("input", false, u));
     }
 
@@ -66,7 +59,7 @@ public class BarFocusTest {
 
     @Test
     public void wrapGoesToTheOppositeEnd() {
-        Predicate<String> u = hidden("ws5", "spacex");
+        Predicate<String> u = hidden("ws5");
         assertEquals("menu", BAR.get(BarFocus.wrap(BAR, "screen", true, u)));
         assertEquals("screen", BAR.get(BarFocus.wrap(BAR, "menu", false, u)));
         // the first/last usable item is found past hidden slots
@@ -93,21 +86,5 @@ public class BarFocusTest {
     @Test
     public void unknownCurrentStays() {
         assertEquals(-1, BarFocus.next(BAR, "clock", true, s -> true));
-    }
-
-    @Test
-    public void rightOnTheLastIconGoesToTheCompanionOnlyThere() {
-        org.junit.Assert.assertTrue(BarFocus.pastEnd(BAR, "screen", true, hidden()));
-        org.junit.Assert.assertTrue(BarFocus.pastEnd(BAR, "input", true, hidden("screen")));
-        org.junit.Assert.assertFalse(BarFocus.pastEnd(BAR, "input", true, hidden()));
-        org.junit.Assert.assertFalse(BarFocus.pastEnd(BAR, "screen", false, hidden()));
-        org.junit.Assert.assertFalse(BarFocus.pastEnd(BAR, "elsewhere", true, hidden()));
-    }
-
-    @Test
-    public void spacexSitsBetweenTheWorkspacesAndCinemarchy() {
-        assertEquals("spacex", step("ws5", true, hidden()));
-        assertEquals("cinemarchy", step("spacex", true, hidden()));
-        assertEquals("spacex", step("cinemarchy", false, hidden()));
     }
 }

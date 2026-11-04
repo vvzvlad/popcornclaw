@@ -17,7 +17,7 @@ import java.util.List;
 /**
  * Launcher settings, read from an optional local JSON file that overrides res/values/config.xml.
  * File: <external files dir>/omarchytv.json, i.e. /sdcard/Android/data/com.omarchytv.home/files/omarchytv.json
- * (writable over adb without root; a future LAN companion such as "Omarchy Link" writes the same file).
+ * (writable over adb without root; the omarchy-link bridge writes the same file).
  * The home screen re-reads it on every resume when its modification time changed. Schema: see PLUGINS.md.
  */
 final class LauncherConfig {
@@ -57,7 +57,7 @@ final class LauncherConfig {
     static final String[] KEY_PRESSES = {"single", "double", "triple", "long"};
     static final int LONG_PRESS = 3;
     /** OmarchyTV actions a key can run (see MainActivity.runKeyAction). */
-    static final String[] KEY_ACTIONS = {"walker", "voice", "home", "ask", "menu", "screensaver", "next-theme",
+    static final String[] KEY_ACTIONS = {"walker", "voice", "home", "menu", "screensaver",
             "workspace-1", "workspace-2", "workspace-3", "workspace-4", "workspace-5"};
 
     /** Maps a key name without the KEYCODE_ prefix to an Android keycode; 0 or less = unknown. */
@@ -130,10 +130,8 @@ final class LauncherConfig {
         }
     }
 
-    /** Built-in AI & Grok Bot WebApps (like Omarchy desktop webapps, zero API cost, persistent login in :web). */
+    /** Built-in AI WebApps (like Omarchy desktop webapps, zero API cost, persistent login in :web). */
     static final WebApp[] BUILTIN_AI_WEBAPPS = new WebApp[]{
-            new WebApp("grok-bot", "Grok Bot", "https://grok.com", "G", "desktop"),
-            new WebApp("grok", "Grok (X)", "https://x.com/i/grok", "X", "desktop"),
             new WebApp("chatgpt", "ChatGPT", "https://chatgpt.com", "C", "desktop"),
             new WebApp("claude", "Claude", "https://claude.ai", "A", "desktop"),
             new WebApp("hermes", "Hermes", "https://hermes.nousresearch.com", "H", "desktop"),
@@ -195,7 +193,7 @@ final class LauncherConfig {
 
     /** "> ask" assistant: providers announced by the PC (link.aiProviders), chosen provider, TTS, optional colour key. */
     final List<Provider> aiProviders;
-    final String assistantProvider, askKey;
+    final String assistantProvider;
     final boolean assistantTts;
 
     static final class Provider {
@@ -399,29 +397,12 @@ final class LauncherConfig {
     /** v2.13: play animated MP4 intro (e.g. cumulus, last-horizon) before settling on still wallpaper. */
     final boolean wallpaperIntro;
     /** v2.14 "Always-animated wallpaper" (default false): loop the theme's animated wallpaper while Home is on screen
-     *  instead of playing it once and settling on the still. Video, Cinemarchy and the screensaver pause it (onPause). */
+     *  instead of playing it once and settling on the still. Video and the screensaver pause it (onPause). */
     final boolean wallpaperLoop;
     /** v2.13: rotate among animated themes on Home resume/boot (default false in popcornclaw; locked false on manual pick). */
     final boolean randomTheme;
     /** v2.13: rotate among animated wallpapers/intros on Home resume/boot (default false in popcornclaw; locked false on manual pick). */
     final boolean randomWallpaper;
-    /** v2.13 Plugins Engine: SpaceX TV (com.sighmon.spacex-tv) & Grok Bot Companion (io.github.tcballard.grokbot-desktop). */
-    final boolean pluginSpacexTv;
-    final boolean pluginGrokbot;
-    final String grokbotMessage;
-    /** Experimental: the bot @tcballard's Grok Bot Desktop Companion shows on the PC, pushed by omarchy-link
-     *  ("" = not mirrored). Shape/colour names from his bots.json; fill 0 = use the theme accent. */
-    final String grokbotBotName, grokbotBotShape, grokbotBotMode, grokbotBotVersion;
-    final int grokbotBotFill;
-    /** v2.13 floating Grok Bot companion on the home screen: on/off, corner, extra offset (dp). */
-    final boolean companionOverlay;
-    final String companionCorner;
-    final int companionOffsetX, companionOffsetY;
-    /** v2.14 companion look, as on webOS/Tizen: shape / colour ("" follows the PC bot; else one of Tom Ballard's
-     *  14 shapes / 11 colours), size (small, medium, large), name badge, animation (bob, blink, look around,
-     *  sleep), and agent ("grokbot" = the PC companion when linked, "ask" = OmarchyTV's Ask). */
-    final String companionShape, companionColor, companionSize, companionAgent;
-    final boolean companionBadge, companionAnim;
     static final String[] ANIMATED_THEMES = {"last-horizon", "cumulus"};
     static final String[][] ANIMATED_INTROS = {
             {"last-horizon", "0", "wallpapers/last-horizon/01-eyes-wide.webp"},
@@ -487,8 +468,6 @@ final class LauncherConfig {
     final boolean wWeather, wPc, wAi, wDeploys, wTerm;
     /** v2.10 "Disponi riquadri": panel id -> {cellX, cellY} offset on a 12x8 screen grid (empty = default layout). */
     final java.util.Map<String, int[]> panelPos;
-    /** v2.10: Send to TV (cast) is off until switched on (omarchytv.json "cast": {"enabled": true}). */
-    final boolean castEnabled;
     /** Screensaver: also offer it as the TV's system screensaver (DreamService components enabled). */
     final boolean screensaverSystem;
     /** Home prompt "<user>@<host>:~$" (omarchytv.json "prompt": {"user", "host"}), sanitised by {@link #promptPart}. */
@@ -601,7 +580,6 @@ final class LauncherConfig {
         List<WebApp> web = new ArrayList<>();
         JSONArray wa2 = j != null ? j.optJSONArray("webapps") : null;
         if (wa2 == null) {
-            web.add(new WebApp("grok-bot", "Grok Bot", "https://grok.com", "G", "desktop"));
             web.add(new WebApp("x", "X", "https://x.com", "", "mobile"));
         } else {
             java.util.Set<String> ids = new java.util.HashSet<>();
@@ -629,11 +607,9 @@ final class LauncherConfig {
         JSONObject as = j != null ? j.optJSONObject("assistant") : null;
         assistantProvider = as != null ? as.optString("provider", "") : "";
         assistantTts = as != null && as.optBoolean("tts", false);
-        askKey = as != null ? as.optString("key", "none") : "none";
-        // v2.14: the voice key opens the Grok Bot companion by default; "launcher" (Walker, the v2.10 default) and
-        // "assistant" (Google Assistant) stay selectable.
-        String vk = j != null ? j.optString("voiceKey", "companion") : "companion";
-        voiceKey = "assistant".equals(vk) || "launcher".equals(vk) ? vk : "companion";
+        // The voice key opens Walker ("launcher", the default); "assistant" (Google Assistant) stays selectable.
+        String vk = j != null ? j.optString("voiceKey", "launcher") : "launcher";
+        voiceKey = "assistant".equals(vk) ? vk : "launcher";
         keys = Collections.unmodifiableMap(keyBindings(j != null ? j.optJSONObject("keys") : null,
                 n -> android.view.KeyEvent.keyCodeFromString("KEYCODE_" + n)));
         JSONObject tv = j != null ? j.optJSONObject("tv") : null;
@@ -660,35 +636,6 @@ final class LauncherConfig {
         // popcornclaw: the popcorn theme stays put unless rotation is switched on.
         randomTheme = j != null && j.optBoolean("random_theme", j.optBoolean("randomTheme", false));
         randomWallpaper = j != null && j.optBoolean("random_wallpaper", j.optBoolean("randomWallpaper", false));
-        JSONObject plObj = j != null ? j.optJSONObject("plugins") : null;
-        pluginSpacexTv = plObj == null || plObj.optBoolean("spacexTv", true);
-        pluginGrokbot = plObj == null || plObj.optBoolean("grokbot", true);
-        grokbotMessage = plObj != null ? plObj.optString("grokbotMessage", "") : "";
-        JSONObject gbBot = plObj != null ? plObj.optJSONObject("grokbotBot") : null;
-        grokbotBotName = gbBot != null ? gbBot.optString("shortName", gbBot.optString("name", "")) : "";
-        grokbotBotShape = gbBot != null ? gbBot.optString("shape", "bean") : "bean";
-        grokbotBotMode = gbBot != null ? gbBot.optString("mode", "offline") : "offline";
-        grokbotBotVersion = gbBot != null && !gbBot.isNull("version") ? gbBot.optString("version", "") : "";
-        int gbFill = 0;
-        try {
-            String fs = gbBot != null ? gbBot.optString("fill", "") : "";
-            if (fs.matches("#[0-9A-Fa-f]{6}")) gbFill = 0xFF000000 | Integer.parseInt(fs.substring(1), 16);
-        } catch (NumberFormatException ignored) {
-        }
-        grokbotBotFill = gbFill;
-        companionOverlay = pluginGrokbot && (plObj == null || plObj.optBoolean("companionOverlay", true));
-        companionCorner = CompanionPlacement.corner(plObj != null ? plObj.optString("companionCorner", "bottom-right") : "bottom-right");
-        companionOffsetX = CompanionPlacement.offset(plObj != null ? plObj.optInt("companionOffsetX", 0) : 0);
-        companionOffsetY = CompanionPlacement.offset(plObj != null ? plObj.optInt("companionOffsetY", 0) : 0);
-        String cShape = plObj != null ? plObj.optString("companionShape", "").trim() : "";
-        companionShape = GrokbotAvatar.known(cShape) ? GrokbotAvatar.resolve(cShape) : "";
-        String cColor = plObj != null ? plObj.optString("companionColor", "").trim() : "";
-        int cColorIdx = GrokbotAvatar.colorIndex(cColor);
-        companionColor = cColorIdx >= 0 ? GrokbotAvatar.COLOR_NAMES[cColorIdx] : "";
-        companionSize = CompanionPlacement.size(plObj != null ? plObj.optString("companionSize", "medium") : "medium");
-        companionBadge = plObj == null || plObj.optBoolean("companionBadge", true);
-        companionAnim = plObj == null || plObj.optBoolean("companionAnim", true);
-        companionAgent = plObj != null && "ask".equals(plObj.optString("companionAgent", "grokbot")) ? "ask" : "grokbot";
         antiBurnIn = j == null || j.optBoolean("anti_burn_in", j.optBoolean("antiBurnIn", true));
         String ambMode = j != null ? j.optString("ambilight_mode", j.optString("ambilightMode", "off")).trim() : "off";
         if (!"theme".equals(ambMode) && !"hybrid".equals(ambMode) && !"video".equals(ambMode) && !"cinema".equals(ambMode)) ambMode = "off";
@@ -755,8 +702,6 @@ final class LauncherConfig {
             if (a != null && a.length() == 2) ppos.put(k, new int[]{a.optInt(0), a.optInt(1)});
         }
         panelPos = Collections.unmodifiableMap(ppos);
-        JSONObject cst = j != null ? j.optJSONObject("cast") : null;
-        castEnabled = cst != null && cst.optBoolean("enabled", false);
         JSONObject pr = j != null ? j.optJSONObject("prompt") : null;
         promptUser = promptPart(pr != null ? pr.optString("user", "") : "", "user");
         promptHost = promptPart(pr != null ? pr.optString("host", "") : "", "popcornclaw");
