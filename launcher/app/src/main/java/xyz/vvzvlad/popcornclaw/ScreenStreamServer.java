@@ -297,8 +297,9 @@ public final class ScreenStreamServer {
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             frameBmp.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, bos);
             return bos.toByteArray();
-        } catch (RuntimeException e) {
-            // Never let a capture error (e.g. OOM on the big Bitmap) kill the capture thread and freeze the stream.
+        } catch (RuntimeException | OutOfMemoryError e) {
+            // Never let a capture error kill the capture thread and freeze the stream -- including an
+            // OutOfMemoryError on the big frame byte[]/Bitmap, which is an Error, not a RuntimeException.
             Log.w(TAG, "capture failed", e);
             return null;
         }
@@ -417,9 +418,11 @@ public final class ScreenStreamServer {
         private volatile Process proc;
         private OutputStream in;
         private InputStream out;
-        // Deadline (epoch ms) of the read in progress, 0 when idle; the watchdog kills the shell past it so a
-        // stuck read (e.g. a screencap that never finishes) cannot hang a thread forever.
-        private volatile long opDeadline;
+        // The read in progress and its monotonic deadline (System.nanoTime); the watchdog kills the shell past it
+        // so a stuck read (e.g. a screencap that never finishes) cannot hang a thread forever. nanoTime, not the
+        // wall clock, so an NTP step cannot fire the watchdog early or delay it.
+        private volatile boolean opActive;
+        private volatile long opDeadlineNanos;
 
         private boolean ensure() {
             if (proc != null && proc.isAlive()) return true;
@@ -440,8 +443,7 @@ public final class ScreenStreamServer {
                 Thread wd = new Thread(() -> {
                     while (started.isAlive()) {
                         try { Thread.sleep(500); } catch (InterruptedException e) { return; }
-                        long d = opDeadline;
-                        if (d != 0 && System.currentTimeMillis() > d) {
+                        if (opActive && System.nanoTime() - opDeadlineNanos > 0) {
                             Log.w(TAG, "root shell read timed out; killing the shell");
                             started.destroy();
                             return;
@@ -467,7 +469,8 @@ public final class ScreenStreamServer {
 
         /** Runs a text command and returns its stdout up to the marker; null if the shell could not run it. */
         synchronized String exec(String cmd) {
-            opDeadline = System.currentTimeMillis() + OP_TIMEOUT_MS;
+            opDeadlineNanos = System.nanoTime() + OP_TIMEOUT_MS * 1_000_000L;
+            opActive = true;
             try {
                 if (!ensure()) return null;
                 in.write((cmd + "\necho " + MARK + "$?\n").getBytes(StandardCharsets.UTF_8));
@@ -484,13 +487,14 @@ public final class ScreenStreamServer {
                 kill();
                 return null;
             } finally {
-                opDeadline = 0;
+                opActive = false;
             }
         }
 
         /** One raw screencap frame straight from stdout into {@link #frameBuf}; returns {width,height} or null. */
         synchronized int[] screencap() {
-            opDeadline = System.currentTimeMillis() + OP_TIMEOUT_MS;
+            opDeadlineNanos = System.nanoTime() + OP_TIMEOUT_MS * 1_000_000L;
+            opActive = true;
             try {
                 if (!ensure()) return null;
                 in.write("screencap\n".getBytes(StandardCharsets.UTF_8));
@@ -514,7 +518,7 @@ public final class ScreenStreamServer {
                 kill();
                 return null;
             } finally {
-                opDeadline = 0;
+                opActive = false;
             }
         }
 
