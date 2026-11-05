@@ -63,7 +63,9 @@ public final class ScreenStreamServer {
     private byte[] latestFrame;
     private long frameSeq;
 
-    // The device's real screen size ("wm size"), queried once and cached; may stay null until su answers.
+    // The device's real screen size, taken from the captured frame (screencap is the full screen, 1:1 with the
+    // display, so the frame's pixels are the device's) and cached; `wm size` is only a fallback used if an input
+    // event arrives before the first frame was captured.
     private volatile int[] deviceSize;
 
     public void start() {
@@ -253,6 +255,8 @@ public final class ScreenStreamServer {
             Log.w(TAG, "screencap produced no decodable frame");
             return null;
         }
+        // The captured frame is the full screen; its size is the device size used to map input coordinates.
+        if (deviceSize == null) deviceSize = new int[]{bmp.getWidth(), bmp.getHeight()};
         try {
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             bmp.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, bos);
