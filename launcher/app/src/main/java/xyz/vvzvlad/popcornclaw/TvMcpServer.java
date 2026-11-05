@@ -17,7 +17,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -124,11 +123,10 @@ public final class TvMcpServer {
             + "OpenSubtitles — число загрузок, SDH — для слабослышащих. Это только список найденного: скачать "
             + "и включить такие субтитры пока нельзя.";
 
-    // --- track constants (src/tv.py, lines 95-97) ---------------------------------------------------------
-    // The subtitle-kind machinery (NOT_FULL/FULL/SDH markers and kinds, subtitleKind, isNotFull, containsAny)
-    // moved to TvFormat so the search probe can share it; only these player-only constants stay here.
-    private static final String[] BITMAP_SUBTITLES = {"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"};
-    private static final String[] GENERIC_NAMES = {"SoundHandler", "VideoHandler", "SubtitleHandler", "TextHandler"};
+    // --- track machinery (src/tv.py) ----------------------------------------------------------------------
+    // The subtitle-kind machinery and the track/describe formatters (describe*, selected, trackName, bitmap,
+    // clock, describeVideo, BITMAP_SUBTITLES/GENERIC_NAMES, ...) now live in TvFormat so the player here and
+    // play's _apply in Tv share one copy; the player calls TvFormat.* for all of them.
 
     // --- tv_mcp settings ----------------------------------------------------------------------------------
     /** The box file that carries the Jackett and TorrServer endpoints; read lazily on the first search/files. */
@@ -370,6 +368,7 @@ public final class TvMcpServer {
             case "prepare":
                 return toolPrepare(args);
             case "play":
+                return toolPlay(args);
             case "find_subtitles":
                 throw new ToolError(NOT_IMPLEMENTED);
             default:
@@ -393,6 +392,13 @@ public final class TvMcpServer {
         // id required (integer); season/episode/file optional, null when absent (Python int | None).
         return tv().prepare(args.optInt("id", 0), optInt(args, "season"), optInt(args, "episode"),
                 optInt(args, "file"));
+    }
+
+    private String toolPlay(JSONObject args) throws ToolError {
+        // id required (integer); season/episode/file optional ints; subtitles/audio optional strings, null when
+        // absent or blank (Python int | None / str | None).
+        return tv().play(args.optInt("id", 0), optInt(args, "season"), optInt(args, "episode"),
+                optArg(args, "subtitles"), optArg(args, "audio"), optInt(args, "file"));
     }
 
     /**
@@ -505,7 +511,7 @@ public final class TvMcpServer {
                         return subtext(ipc);
                     case "pause":
                         ipc.command("cycle", "pause");
-                        return truthy(ipc.get("pause")) ? "Пауза" : "Играет";
+                        return TvFormat.truthy(ipc.get("pause")) ? "Пауза" : "Играет";
                     case "stop":
                         // No follower in this chunk; just send stop. The languages would stay chosen once a
                         // later chunk adds the follower.
@@ -529,26 +535,26 @@ public final class TvMcpServer {
 
     /** Port of Tv._status: the playing item, position, tracks and video resolution. */
     private static String status(MpvIpc ipc) throws MpvIpc.MpvError {
-        String paused = truthy(ipc.get("pause")) ? ", пауза" : "";
+        String paused = TvFormat.truthy(ipc.get("pause")) ? ", пауза" : "";
         Object fps = ipc.get("container-fps");
-        if (!truthy(fps)) fps = ipc.get("estimated-vf-fps");
-        String video = describeVideo(asObject(ipc.get("video-params")), fps);
-        JSONArray tracks = asArray(ipc.get("track-list"));
-        List<JSONObject> subs = tracksOfType(tracks, "sub");
-        List<JSONObject> voices = tracksOfType(tracks, "audio");
-        JSONObject sid = selected(tracks, "sub", 0);
-        JSONObject top = selected(tracks, "sub", 1);
-        JSONObject aid = selected(tracks, "audio", 0);
+        if (!TvFormat.truthy(fps)) fps = ipc.get("estimated-vf-fps");
+        String video = TvFormat.describeVideo(TvFormat.asObject(ipc.get("video-params")), fps);
+        JSONArray tracks = TvFormat.asArray(ipc.get("track-list"));
+        List<JSONObject> subs = TvFormat.tracksOfType(tracks, "sub");
+        List<JSONObject> voices = TvFormat.tracksOfType(tracks, "audio");
+        JSONObject sid = TvFormat.selected(tracks, "sub", 0);
+        JSONObject top = TvFormat.selected(tracks, "sub", 1);
+        JSONObject aid = TvFormat.selected(tracks, "audio", 0);
         List<String> lines = new ArrayList<>();
         lines.add("Играет: " + String.valueOf(ipc.get("media-title")) + paused + ", "
-                + clock(ipc.get("time-pos")) + " из " + clock(ipc.get("duration")) + video);
-        lines.add(sid != null ? describeEnabled(sid) : "Сабы: выкл");
-        if (top != null) lines.add("Сабы сверху: " + describeFull(top));
+                + TvFormat.clock(ipc.get("time-pos")) + " из " + TvFormat.clock(ipc.get("duration")) + video);
+        lines.add(sid != null ? TvFormat.describeEnabled(sid) : "Сабы: выкл");
+        if (top != null) lines.add("Сабы сверху: " + TvFormat.describeFull(top));
         String subLine = joinSubtitles(subs);
         lines.add("Дорожки сабов: " + (subLine.isEmpty() ? "нет" : subLine));
-        lines.add(aid != null ? "Звук: " + describeAudio(aid) : "Звук: выкл");
-        lines.add("Дорожки звука: " + describeAudios(voices));
-        return join(lines);
+        lines.add(aid != null ? "Звук: " + TvFormat.describeAudio(aid) : "Звук: выкл");
+        lines.add("Дорожки звука: " + TvFormat.describeAudios(voices));
+        return TvFormat.join(lines);
     }
 
     /** Port of Tv._subtext: the subtitle text on screen now. */
@@ -585,7 +591,7 @@ public final class TvMcpServer {
         target = Math.max(0, target);
         int targetInt = (int) target;
         ipc.command("seek", targetInt, "absolute");
-        return "Перемотано: " + clock(targetInt) + " из " + clock(total);
+        return "Перемотано: " + TvFormat.clock(targetInt) + " из " + TvFormat.clock(total);
     }
 
     private static void stop(MpvIpc ipc) {
@@ -596,163 +602,17 @@ public final class TvMcpServer {
         }
     }
 
-    // --- formatters / helpers (ported from tv.py) ---------------------------------------------------------
+    // --- player-only helpers (the track/describe formatters now live in TvFormat) --------------------------
 
-    /** Port of describe_video: "; видео W×H<, FPS fps>", "" when mpv has decoded no frame yet. */
-    private static String describeVideo(JSONObject params, Object fps) {
-        if (params == null) return "";
-        int w = params.optInt("w", 0);
-        int h = params.optInt("h", 0);
-        if (w == 0 || h == 0) return "";
-        String rate = truthy(fps) ? ", " + stripFps(((Number) fps).doubleValue()) + " fps" : "";
-        return "; видео " + w + "×" + h + rate;
-    }
-
-    /** fps with its trailing zeros stripped (Python f'{fps:.3f}'.rstrip('0').rstrip('.')). */
-    private static String stripFps(double fps) {
-        String s = String.format(Locale.ROOT, "%.3f", fps);
-        int end = s.length();
-        while (end > 0 && s.charAt(end - 1) == '0') end--;
-        if (end > 0 && s.charAt(end - 1) == '.') end--;
-        return s.substring(0, end);
-    }
-
-    /** Port of clock: "h:MM:SS", "?" for a missing value. */
-    private static String clock(Object seconds) {
-        if (seconds == null) return "?";
-        long s = (long) ((Number) seconds).doubleValue();
-        return (s / 3600) + ":" + String.format(Locale.ROOT, "%02d", (s % 3600) / 60)
-                + ":" + String.format(Locale.ROOT, "%02d", s % 60);
-    }
-
-    /** Port of selected(tracks, kind, order): the track mpv shows in slot `order` (sub 0 = sid, 1 = secondary). */
-    private static JSONObject selected(JSONArray tracks, String kind, int order) {
-        if (tracks == null) return null;
-        for (int i = 0; i < tracks.length(); i++) {
-            JSONObject t = tracks.optJSONObject(i);
-            if (t == null) continue;
-            if (kind.equals(t.optString("type")) && t.optBoolean("selected", false)
-                    && t.optInt("main-selection", 0) == order) {
-                return t;
-            }
-        }
-        return null;
-    }
-
-    /** Port of describe_subtitle. */
-    private static String describeSubtitle(JSONObject track) {
-        String name = trackName(track);
-        String nameStr = name != null ? " «" + name + "»" : "";
-        String kind = trackKind(track);
-        String marks = (TvFormat.isNotFull(kind) ? " (" + kind + ")" : "") + (bitmap(track) ? " (картинка)" : "");
-        return "#" + track.optInt("id") + " " + lang(track) + nameStr + marks;
-    }
-
+    /** The subtitle tracks joined with ", ", or "" when none — the Python _status inline join whose `or 'нет'`
+     *  the caller applies, distinct from TvFormat.describeSubtitles' "никаких" fallback. */
     private static String joinSubtitles(List<JSONObject> subs) {
         StringBuilder sb = new StringBuilder();
         for (JSONObject t : subs) {
             if (sb.length() > 0) sb.append(", ");
-            sb.append(describeSubtitle(t));
+            sb.append(TvFormat.describeSubtitle(t));
         }
         return sb.toString();
-    }
-
-    /** Port of describe_full: a subtitle track, saying whether it is full. */
-    private static String describeFull(JSONObject track) {
-        return describeSubtitle(track) + (TvFormat.isNotFull(trackKind(track)) ? "" : " (полные)");
-    }
-
-    /** Port of describe_enabled. */
-    private static String describeEnabled(JSONObject track) {
-        return "Сабы включены: " + describeFull(track);
-    }
-
-    /** Port of describe_audio. */
-    private static String describeAudio(JSONObject track) {
-        String name = trackName(track);
-        String nameStr = name != null ? " «" + name + "»" : "";
-        int ch = track.optInt("demux-channel-count", 0);
-        String channels = ch != 0 ? " " + ch + "ch" : "";
-        return "#" + track.optInt("id") + " " + lang(track) + " " + track.optString("codec") + channels + nameStr;
-    }
-
-    /** Port of describe_audios. */
-    private static String describeAudios(List<JSONObject> tracks) {
-        if (tracks.isEmpty()) return "никаких";
-        StringBuilder sb = new StringBuilder();
-        for (JSONObject t : tracks) {
-            if (sb.length() > 0) sb.append(", ");
-            sb.append(describeAudio(t));
-        }
-        return sb.toString();
-    }
-
-    /** Port of track_name: the title, else the container's name, unless that is a muxer's generic one. */
-    private static String trackName(JSONObject track) {
-        String name = optStr(track, "title");
-        JSONObject metadata = track.optJSONObject("metadata");
-        if (name == null && metadata != null) name = optStr(metadata, "name");
-        if (name == null && metadata != null) name = optStr(metadata, "handler_name");
-        if (name != null) {
-            for (String generic : GENERIC_NAMES) {
-                if (generic.equals(name)) return null;
-            }
-        }
-        return name;
-    }
-
-    /** Port of track_kind: subtitle_kind of an mpv subtitle track. */
-    private static String trackKind(JSONObject track) {
-        return TvFormat.subtitleKind(trackName(track), track.optBoolean("forced", false),
-                track.optBoolean("commentary", false), track.optBoolean("hearing-impaired", false));
-    }
-
-    /** Port of bitmap: a picture subtitle track. */
-    private static boolean bitmap(JSONObject track) {
-        String codec = track.optString("codec");
-        for (String c : BITMAP_SUBTITLES) {
-            if (c.equals(codec)) return true;
-        }
-        return false;
-    }
-
-    /** `track.get("lang") or "?"`. */
-    private static String lang(JSONObject track) {
-        String v = track.optString("lang", "");
-        return v.isEmpty() ? "?" : v;
-    }
-
-    /** A JSON string value, or null when absent, JSON null or empty (so Python's truthy `or` chains match). */
-    private static String optStr(JSONObject o, String key) {
-        String v = o.optString(key, "");
-        return v.isEmpty() ? null : v;
-    }
-
-    private static JSONArray asArray(Object o) {
-        return o instanceof JSONArray ? (JSONArray) o : null;
-    }
-
-    private static JSONObject asObject(Object o) {
-        return o instanceof JSONObject ? (JSONObject) o : null;
-    }
-
-    private static List<JSONObject> tracksOfType(JSONArray tracks, String type) {
-        List<JSONObject> out = new ArrayList<>();
-        if (tracks == null) return out;
-        for (int i = 0; i < tracks.length(); i++) {
-            JSONObject t = tracks.optJSONObject(i);
-            if (t != null && type.equals(t.optString("type"))) out.add(t);
-        }
-        return out;
-    }
-
-    /** Python truthiness of an mpv property value: null/0/""/false are falsy. */
-    private static boolean truthy(Object v) {
-        if (v == null || v == JSONObject.NULL) return false;
-        if (v instanceof Boolean) return (Boolean) v;
-        if (v instanceof Number) return ((Number) v).doubleValue() != 0;
-        if (v instanceof String) return !((String) v).isEmpty();
-        return true;
     }
 
     /** The string value stripped of leading/trailing whitespace, or "" when absent (Python
@@ -771,15 +631,6 @@ public final class TvMcpServer {
      *  (U+00A0 etc.) that Character.isWhitespace() alone excludes. */
     private static boolean isWhitespace(char c) {
         return Character.isWhitespace(c) || Character.isSpaceChar(c);
-    }
-
-    private static String join(List<String> lines) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < lines.size(); i++) {
-            if (i > 0) sb.append('\n');
-            sb.append(lines.get(i));
-        }
-        return sb.toString();
     }
 
     // --- small helpers -------------------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 package xyz.vvzvlad.popcornclaw;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
@@ -111,6 +112,20 @@ final class TvFormat {
     private static final String FULL = "полные";
     private static final String PLAIN = "";
     private static final String SDH = "SDH";
+    // Among the full/plain/SDH kinds a subtitle slot prefers the full one, then the plain one, then SDH
+    // (Python SUBTITLE_RANK = {FULL: 0, PLAIN: 1, SDH: 2}); a never-full kind is not ranked (null here).
+    // Picture subtitles: mpv renders them where the picture puts them, so only text tracks go on top.
+    static final String[] BITMAP_SUBTITLES = {"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"};
+    // Track names mp4 muxers write when nobody named the track.
+    static final String[] GENERIC_NAMES = {"SoundHandler", "VideoHandler", "SubtitleHandler", "TextHandler"};
+
+    /** The rank of a subtitle kind for a slot's pick (FULL &lt; PLAIN &lt; SDH), or null for a never-full kind. */
+    static Integer subtitleRank(String kind) {
+        if (FULL.equals(kind)) return 0;
+        if (PLAIN.equals(kind)) return 1;
+        if (SDH.equals(kind)) return 2;
+        return null;
+    }
 
     /** Port of subtitle_kind. */
     static String subtitleKind(String title, boolean forced, boolean commentary, boolean hearing) {
@@ -520,7 +535,296 @@ final class TvFormat {
         return String.format(Locale.ROOT, "%.0f", value);
     }
 
+    // --- mpv track formatters (src/tv.py, lines 152-163, 386-417, 452-456, 478-492) ---------------------
+    // Moved here from TvMcpServer so the player (status/subtext) and play's _apply (Tv) share one copy.
+
+    /** Port of track_name: the title, else the container's name, unless that is a muxer's generic one. */
+    static String trackName(JSONObject track) {
+        String name = optStr(track, "title");
+        JSONObject metadata = track.optJSONObject("metadata");
+        if (name == null && metadata != null) name = optStr(metadata, "name");
+        if (name == null && metadata != null) name = optStr(metadata, "handler_name");
+        if (name != null) {
+            for (String generic : GENERIC_NAMES) {
+                if (generic.equals(name)) return null;
+            }
+        }
+        return name;
+    }
+
+    /** Port of track_kind: subtitle_kind of an mpv subtitle track. */
+    static String trackKind(JSONObject track) {
+        return subtitleKind(trackName(track), track.optBoolean("forced", false),
+                track.optBoolean("commentary", false), track.optBoolean("hearing-impaired", false));
+    }
+
+    /** Port of bitmap: a picture subtitle track. */
+    static boolean bitmap(JSONObject track) {
+        String codec = track.optString("codec");
+        for (String c : BITMAP_SUBTITLES) {
+            if (c.equals(codec)) return true;
+        }
+        return false;
+    }
+
+    /** `track.get("lang") or "?"`. */
+    static String lang(JSONObject track) {
+        String v = track.optString("lang", "");
+        return v.isEmpty() ? "?" : v;
+    }
+
+    /** Port of describe_subtitle. */
+    static String describeSubtitle(JSONObject track) {
+        String name = trackName(track);
+        String nameStr = name != null ? " «" + name + "»" : "";
+        String kind = trackKind(track);
+        String marks = (isNotFull(kind) ? " (" + kind + ")" : "") + (bitmap(track) ? " (картинка)" : "");
+        return "#" + track.optInt("id") + " " + lang(track) + nameStr + marks;
+    }
+
+    /** Port of describe_subtitles: the tracks joined with ", ", or "никаких" when none. */
+    static String describeSubtitles(List<JSONObject> tracks) {
+        if (tracks.isEmpty()) return "никаких";
+        StringBuilder sb = new StringBuilder();
+        for (JSONObject t : tracks) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(describeSubtitle(t));
+        }
+        return sb.toString();
+    }
+
+    /** Port of describe_full: a subtitle track, saying whether it is full. */
+    static String describeFull(JSONObject track) {
+        return describeSubtitle(track) + (isNotFull(trackKind(track)) ? "" : " (полные)");
+    }
+
+    /** Port of describe_enabled. */
+    static String describeEnabled(JSONObject track) {
+        return "Сабы включены: " + describeFull(track);
+    }
+
+    /** Port of describe_audio. */
+    static String describeAudio(JSONObject track) {
+        String name = trackName(track);
+        String nameStr = name != null ? " «" + name + "»" : "";
+        int ch = track.optInt("demux-channel-count", 0);
+        String channels = ch != 0 ? " " + ch + "ch" : "";
+        return "#" + track.optInt("id") + " " + lang(track) + " " + track.optString("codec") + channels + nameStr;
+    }
+
+    /** Port of describe_audios. */
+    static String describeAudios(List<JSONObject> tracks) {
+        if (tracks.isEmpty()) return "никаких";
+        StringBuilder sb = new StringBuilder();
+        for (JSONObject t : tracks) {
+            if (sb.length() > 0) sb.append(", ");
+            sb.append(describeAudio(t));
+        }
+        return sb.toString();
+    }
+
+    /** Port of selected(tracks, kind, order): the track mpv shows in slot `order` (sub 0 = sid, 1 = secondary). */
+    static JSONObject selected(JSONArray tracks, String kind, int order) {
+        if (tracks == null) return null;
+        for (int i = 0; i < tracks.length(); i++) {
+            JSONObject t = tracks.optJSONObject(i);
+            if (t == null) continue;
+            if (kind.equals(t.optString("type")) && t.optBoolean("selected", false)
+                    && t.optInt("main-selection", 0) == order) {
+                return t;
+            }
+        }
+        return null;
+    }
+
+    /** Port of describe_video: "; видео W×H<, FPS fps>", "" when mpv has decoded no frame yet. */
+    static String describeVideo(JSONObject params, Object fps) {
+        if (params == null) return "";
+        int w = params.optInt("w", 0);
+        int h = params.optInt("h", 0);
+        if (w == 0 || h == 0) return "";
+        String rate = truthy(fps) ? ", " + stripFps(((Number) fps).doubleValue()) + " fps" : "";
+        return "; видео " + w + "×" + h + rate;
+    }
+
+    /** fps with its trailing zeros stripped (Python f'{fps:.3f}'.rstrip('0').rstrip('.')). */
+    static String stripFps(double fps) {
+        String s = String.format(Locale.ROOT, "%.3f", fps);
+        int end = s.length();
+        while (end > 0 && s.charAt(end - 1) == '0') end--;
+        if (end > 0 && s.charAt(end - 1) == '.') end--;
+        return s.substring(0, end);
+    }
+
+    /** Port of clock: "h:MM:SS", "?" for a missing value. */
+    static String clock(Object seconds) {
+        if (seconds == null) return "?";
+        long s = (long) ((Number) seconds).doubleValue();
+        return (s / 3600) + ":" + String.format(Locale.ROOT, "%02d", (s % 3600) / 60)
+                + ":" + String.format(Locale.ROOT, "%02d", s % 60);
+    }
+
+    // --- track selection for play._apply (src/tv.py, lines 420-449) -------------------------------------
+
+    /** Port of full_track. */
+    static boolean fullTrack(JSONObject track, String lang) {
+        return track != null && sameLanguage(optStr(track, "lang"), lang) && !isNotFull(trackKind(track));
+    }
+
+    /** Port of no_full_subtitles. */
+    static String noFullSubtitles(List<JSONObject> subs, String lang) {
+        boolean any = false;
+        for (JSONObject t : subs) {
+            if (sameLanguage(optStr(t, "lang"), lang)) { any = true; break; }
+        }
+        String what = any ? "Полных сабов" : "Сабов";
+        return what + " " + lang + " нет; есть: " + describeSubtitles(subs);
+    }
+
+    /** Port of pick_subtitle: the track a subtitle slot shows for `lang` (`textOnly` for the top one). */
+    static JSONObject pickSubtitle(List<JSONObject> tracks, String lang, JSONObject current, boolean textOnly) {
+        List<JSONObject> mine = new ArrayList<>();
+        for (JSONObject t : tracks) {
+            if (sameLanguage(optStr(t, "lang"), lang) && !(textOnly && bitmap(t))) mine.add(t);
+        }
+        List<JSONObject> ranked = new ArrayList<>();
+        for (JSONObject t : mine) {
+            if (subtitleRank(trackKind(t)) != null) ranked.add(t);
+        }
+        // Stable sort by rank: ties keep the track-list order, as Python's sorted() does.
+        Collections.sort(ranked, (a, b) -> Integer.compare(subtitleRank(trackKind(a)), subtitleRank(trackKind(b))));
+        if (!ranked.isEmpty()) {
+            int best = subtitleRank(trackKind(ranked.get(0)));
+            if (current != null && ranked.contains(current) && subtitleRank(trackKind(current)) == best) {
+                return current;
+            }
+            return ranked.get(0);
+        }
+        return (current != null && mine.contains(current)) ? current : null;
+    }
+
+    /** Port of pick_audio: `current` when it is in `lang`, else the first track in it, else null. */
+    static JSONObject pickAudio(List<JSONObject> tracks, String lang, JSONObject current) {
+        if (current != null && sameLanguage(optStr(current, "lang"), lang)) return current;
+        for (JSONObject track : tracks) {
+            if (sameLanguage(optStr(track, "lang"), lang)) return track;
+        }
+        return null;
+    }
+
+    // --- playlist helpers (src/tv.py, lines 228-239) ----------------------------------------------------
+
+    /** Port of m3u_entries: the entry URLs of an m3u playlist, in order, skipping blank and #-comment lines. */
+    static List<String> m3uEntries(String text) {
+        List<String> out = new ArrayList<>();
+        for (String line : splitLines(text)) {
+            String stripped = strip(line);
+            if (!stripped.isEmpty() && !line.startsWith("#")) out.add(stripped);
+        }
+        return out;
+    }
+
+    /** Port of playlist_position: position of a TorrServer file in its torrent's playlist (index=&lt;file id&gt;). */
+    static int playlistPosition(List<String> urls, int fileId) throws ToolError {
+        String want = String.valueOf(fileId);
+        for (int position = 0; position < urls.size(); position++) {
+            List<String> index = queryValues(urls.get(position), "index");
+            if (index.size() == 1 && index.get(0).equals(want)) return position;
+        }
+        throw new ToolError("Файла " + fileId + " нет в плейлисте TorrServer");
+    }
+
+    // --- track container helpers (shared by TvMcpServer.status and Tv._apply) ----------------------------
+
+    static JSONArray asArray(Object o) {
+        return o instanceof JSONArray ? (JSONArray) o : null;
+    }
+
+    static JSONObject asObject(Object o) {
+        return o instanceof JSONObject ? (JSONObject) o : null;
+    }
+
+    static List<JSONObject> tracksOfType(JSONArray tracks, String type) {
+        List<JSONObject> out = new ArrayList<>();
+        if (tracks == null) return out;
+        for (int i = 0; i < tracks.length(); i++) {
+            JSONObject t = tracks.optJSONObject(i);
+            if (t != null && type.equals(t.optString("type"))) out.add(t);
+        }
+        return out;
+    }
+
+    /** Python truthiness of an mpv property value: null/0/""/false are falsy. */
+    static boolean truthy(Object v) {
+        if (v == null || v == JSONObject.NULL) return false;
+        if (v instanceof Boolean) return (Boolean) v;
+        if (v instanceof Number) return ((Number) v).doubleValue() != 0;
+        if (v instanceof String) return !((String) v).isEmpty();
+        return true;
+    }
+
+    static String join(List<String> lines) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < lines.size(); i++) {
+            if (i > 0) sb.append('\n');
+            sb.append(lines.get(i));
+        }
+        return sb.toString();
+    }
+
     // --- internal helpers -------------------------------------------------------------------------------
+
+    /** Python str.splitlines() for the line breaks an m3u uses (\n, \r, \r\n). */
+    private static List<String> splitLines(String text) {
+        List<String> out = new ArrayList<>();
+        int n = text.length(), start = 0;
+        for (int i = 0; i < n; i++) {
+            char c = text.charAt(i);
+            if (c == '\n' || c == '\r') {
+                out.add(text.substring(start, i));
+                if (c == '\r' && i + 1 < n && text.charAt(i + 1) == '\n') i++;
+                start = i + 1;
+            }
+        }
+        if (start < n) out.add(text.substring(start));
+        return out;
+    }
+
+    /** Python str.strip(): trims ASCII and Unicode whitespace (including space separators like U+00A0). */
+    private static String strip(String s) {
+        if (s == null) return "";
+        int start = 0, end = s.length();
+        while (start < end && isWhitespace(s.charAt(start))) start++;
+        while (end > start && isWhitespace(s.charAt(end - 1))) end--;
+        return s.substring(start, end);
+    }
+
+    private static boolean isWhitespace(char c) {
+        return Character.isWhitespace(c) || Character.isSpaceChar(c);
+    }
+
+    /**
+     * The decoded values of query parameter `key` in `url`, in order (mirrors parse_qs(urlsplit(url).query)
+     * [key]); blank values and pairs without '=' are dropped, as parse_qs does by default.
+     */
+    private static List<String> queryValues(String url, String key) {
+        List<String> out = new ArrayList<>();
+        if (url == null) return out;
+        String s = url;
+        int hash = s.indexOf('#');
+        if (hash >= 0) s = s.substring(0, hash);
+        int qm = s.indexOf('?');
+        if (qm < 0) return out;
+        for (String pair : s.substring(qm + 1).split("&")) {
+            if (pair.isEmpty()) continue;
+            int eq = pair.indexOf('=');
+            if (eq < 0) continue;            // no '=' -> blank value, dropped by parse_qs
+            String v = pair.substring(eq + 1);
+            if (v.isEmpty()) continue;        // keep_blank_values=False
+            if (urlDecode(pair.substring(0, eq)).equals(key)) out.add(urlDecode(v));
+        }
+        return out;
+    }
 
     /** `(s.get("tags") or {}).get("language")`: the stream's tag language, or null when absent/empty. */
     private static String tagLanguage(JSONObject stream) {

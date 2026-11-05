@@ -7,12 +7,15 @@ import org.json.JSONException;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.Proxy;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -24,9 +27,11 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Pattern;
 
 import okhttp3.Call;
 import okhttp3.HttpUrl;
@@ -62,6 +67,20 @@ final class Tv {
     private static final String PLAYING = "сейчас играет";
     private static final String PROBED_ELSEWHERE = "проверяется другим поиском";
 
+    // mpv-android on the box (src/tv.py 45, 51, 56, 61, 65): the activity to start, the REORDER_TO_FRONT intent
+    // flag that brings it to the front without reloading, and the play timeouts (seconds).
+    private static final String MPV_ACTIVITY = "is.xyz.mpv/.MPVActivity";
+    private static final String REORDER_TO_FRONT = "0x00020000";
+    private static final int MPV_START_TIMEOUT = 30;
+    private static final int PLAYER_TIMEOUT = 120;
+    private static final int MPV_STOP_TIMEOUT = 10;
+    // Seconds one `am start` (su) run may take (Python ADB_TIMEOUT = 20).
+    private static final long AM_TIMEOUT_MS = 20_000L;
+    // _apply's default: both kinds (Python kinds=("subtitles", "audio")).
+    private static final String[] DEFAULT_KINDS = {"subtitles", "audio"};
+    // shlex.quote's set of shell-safe characters; anything else forces single-quoting.
+    private static final Pattern SHLEX_SAFE = Pattern.compile("[A-Za-z0-9_@%+=:,./-]+");
+
     private static final MediaType JSON_MEDIA = MediaType.parse("application/json");
     private static final MediaType BITTORRENT_MEDIA = MediaType.parse("application/x-bittorrent");
 
@@ -85,6 +104,19 @@ final class Tv {
     // Fans out the source downloads and the probes; shared across calls, so a probe runs concurrently with
     // any other request in flight (files, another search).
     private final ExecutorService executor = Executors.newCachedThreadPool();
+
+    // The release the last play loaded into mpv (src/tv.py __init__, 627-631): every tracker topic and info
+    // hash its plays have had, the entry URLs of its playlist, the subtitle languages (bottom, then top) and
+    // the audio language chosen for that release. A play of any of those topics or hashes is the same release
+    // and keeps the chosen languages. Guarded by releaseLock because chunk 3c's follower thread will read
+    // these from another thread; play writes them and _apply reads them on the same call for now. (The
+    // follower field itself is not added here — it belongs to the next chunk.)
+    private final Object releaseLock = new Object();
+    private final Set<String> relTopics = new HashSet<>();
+    private final Set<String> relHashes = new HashSet<>();
+    private List<String> relPlaylist = new ArrayList<>();
+    private List<String> relSubs = new ArrayList<>();
+    private String relAudio;
 
     Tv(String jackettUrl, String jackettApiKey, String torrserverUrl) {
         this.jackettUrl = rstripSlash(jackettUrl);
@@ -257,6 +289,371 @@ final class Tv {
     private static void cancelCall(AtomicReference<Call> ref) {
         Call call = ref.get();
         if (call != null) call.cancel();
+    }
+
+    // --- play (ported from tv.py play/_start/_front/_wait_playing/_apply/_switch/_am_start) -------------
+
+    /**
+     * Port of Tv.play (the tool): start mpv on the box with the release's playlist, wait for playback and set
+     * the chosen subtitle/audio languages on the played item. The follower that keeps those languages across
+     * later playlist items is a separate chunk, so the final {@code self._follow(...)} of the Python play is
+     * intentionally omitted here.
+     */
+    String play(int resultId, Integer season, Integer episode, String subtitles, String audio, Integer file)
+            throws ToolError {
+        List<String> subsArg = TvFormat.languages(subtitles);
+        LoadResult loaded = load(resultId, season, episode, file);
+        JSONObject result = loaded.result;
+        String torrentHash = loaded.hash;
+        JSONObject picked = loaded.file;
+        String playlistUrl = torrserverUrl + "/playlist/" + torrentHash + ".m3u?hash=" + torrentHash;
+        // The same entries mpv gets: TorrServer builds them from the host it was asked on.
+        byte[] body = request("TorrServer", new Request.Builder().url(playlistUrl).get().build());
+        List<String> entries = TvFormat.m3uEntries(new String(body, StandardCharsets.UTF_8));
+        int position = TvFormat.playlistPosition(entries, picked.optInt("id"));
+        // Before anything changes, so a play that fails here leaves what plays and the chosen languages alone.
+        MpvIpc ipc = mpv();
+        boolean running = ipc != null;
+        try {
+            if (!running) ipc = start(playlistUrl);
+            try {
+                if (running) front();
+                // mpv is taken over from here on. Another episode of the same release keeps the languages
+                // chosen for it; another release clears each one this play does not give.
+                String releaseTopic = TvFormat.topic(result);
+                synchronized (releaseLock) {
+                    boolean same = relHashes.contains(torrentHash) || relTopics.contains(releaseTopic);
+                    List<String> subsChoice = !subsArg.isEmpty() ? subsArg
+                            : (same ? new ArrayList<>(relSubs) : new ArrayList<String>());
+                    String audioChoice = audio != null ? audio : (same ? relAudio : null);
+                    if (!same) {
+                        relTopics.clear();
+                        relHashes.clear();
+                    }
+                    relHashes.add(torrentHash);
+                    if (releaseTopic != null) relTopics.add(releaseTopic);
+                    relPlaylist = new ArrayList<>(entries);
+                    relSubs = subsChoice;
+                    relAudio = audioChoice;
+                }
+                Log.i(TAG, "play " + torrentHash + " file " + picked.optString("path")
+                        + " at playlist position " + position);
+                Object reply = ipc.command("loadfile", playlistUrl, "replace", -1, "playlist-start=" + position);
+                // Paused mpv stays paused for the next file; mpv-android pauses when sent to the background.
+                ipc.set("pause", false);
+                int since = reply instanceof JSONObject ? ((JSONObject) reply).optInt("playlist_entry_id", 0) : 0;
+                waitPlaying(ipc, torrentHash, position, since, true);
+                save(torrentHash);
+                List<String> lines = new ArrayList<>();
+                lines.add("Играет: " + TvFormat.basename(picked.optString("path")));
+                lines.addAll(apply(ipc));
+                return join(lines);
+            } finally {
+                if (ipc != null) ipc.close();
+            }
+        } catch (MpvIpc.MpvError e) {
+            throw new ToolError(e.getMessage());
+        }
+    }
+
+    /**
+     * Port of Tv._apply: put the chosen languages on the playing item, switching only the slots that do not
+     * already show the right track, and return a line for each of `kinds` (default both). A kind without a
+     * chosen language is left as it is and its line says what is on. Reads the release-state choice under
+     * releaseLock, as the follower thread will too.
+     */
+    private List<String> apply(MpvIpc ipc, String... kinds) throws MpvIpc.MpvError {
+        if (kinds.length == 0) kinds = DEFAULT_KINDS;
+        boolean wantSubs = false;
+        boolean wantAudio = false;
+        for (String k : kinds) {
+            if ("subtitles".equals(k)) wantSubs = true;
+            else if ("audio".equals(k)) wantAudio = true;
+        }
+        List<String> subsChoice;
+        String audioChoice;
+        synchronized (releaseLock) {
+            subsChoice = new ArrayList<>(relSubs);
+            audioChoice = relAudio;
+        }
+        JSONArray tracks = TvFormat.asArray(ipc.get("track-list"));
+        List<JSONObject> subs = TvFormat.tracksOfType(tracks, "sub");
+        List<JSONObject> voices = TvFormat.tracksOfType(tracks, "audio");
+        JSONObject curSid = TvFormat.selected(tracks, "sub", 0);
+        JSONObject curSecondary = TvFormat.selected(tracks, "sub", 1);
+        JSONObject curAid = TvFormat.selected(tracks, "audio", 0);
+        Map<String, JSONObject> current = new HashMap<>();
+        current.put("sid", curSid);
+        current.put("secondary-sid", curSecondary);
+        current.put("aid", curAid);
+        Map<String, JSONObject> wanted = new HashMap<>();
+        List<String> lines = new ArrayList<>();
+        if (wantSubs && !subsChoice.isEmpty()) {
+            String bottom = subsChoice.get(0);
+            JSONObject wantedSid = TvFormat.pickSubtitle(subs, bottom, curSid, false);
+            wanted.put("sid", wantedSid);
+            String top = subsChoice.size() > 1 ? subsChoice.get(1) : null;
+            JSONObject wantedSecondary = top != null ? TvFormat.pickSubtitle(subs, top, curSecondary, true) : null;
+            wanted.put("secondary-sid", wantedSecondary);
+            JSONObject track = wantedSid;
+            if (TvFormat.fullTrack(track, bottom)) {
+                lines.add(TvFormat.describeEnabled(track));
+            } else if (track != null) {
+                lines.add("Полных сабов " + bottom + " нет; включены: " + TvFormat.describeSubtitle(track));
+            } else {
+                lines.add(TvFormat.noFullSubtitles(subs, bottom));
+            }
+            if (top != null) {
+                track = wantedSecondary;
+                if (track != null) {
+                    lines.add("Сабы сверху: " + TvFormat.describeFull(track));
+                } else {
+                    lines.add("Текстовых сабов " + top + " для верха нет; есть: " + TvFormat.describeSubtitles(subs));
+                }
+            }
+        } else if (wantSubs) {
+            lines.add(curSid != null ? TvFormat.describeEnabled(curSid) : "Сабы: выкл");
+            if (curSecondary != null) {
+                lines.add("Сабы сверху: " + TvFormat.describeFull(curSecondary));
+            }
+        }
+        if (wantAudio && audioChoice != null) {
+            JSONObject track = TvFormat.pickAudio(voices, audioChoice, curAid);
+            if (track != null) wanted.put("aid", track);
+            lines.add(track != null ? "Звук: " + TvFormat.describeAudio(track)
+                    : "Звука " + audioChoice + " нет; есть: " + TvFormat.describeAudios(voices));
+        } else if (wantAudio) {
+            lines.add(curAid != null ? "Звук: " + TvFormat.describeAudio(curAid) : "Звук: выкл");
+        }
+        switchTracks(ipc, current, wanted);
+        return lines;
+    }
+
+    /**
+     * Port of Tv._switch: set each slot of `wanted` (sid, secondary-sid, aid; null means off) that `current`
+     * does not already show. The top slot lets go of its track before the bottom one takes any, so mpv does
+     * not ignore a switch to a track the other subtitle slot shows.
+     */
+    private static void switchTracks(MpvIpc ipc, Map<String, JSONObject> current, Map<String, JSONObject> wanted)
+            throws MpvIpc.MpvError {
+        String[] slots = {"sid", "secondary-sid", "aid"};
+        List<String> changed = new ArrayList<>();
+        for (String slot : slots) {
+            if (wanted.containsKey(slot) && !sameId(trackId(wanted.get(slot)), trackId(current.get(slot)))) {
+                changed.add(slot);
+            }
+        }
+        Map<String, JSONObject> cur = new HashMap<>(current);
+        if (changed.contains("secondary-sid") && cur.get("secondary-sid") != null) {
+            ipc.set("secondary-sid", Boolean.FALSE);
+            cur.put("secondary-sid", null);
+        }
+        for (String slot : changed) {
+            if (!sameId(trackId(wanted.get(slot)), trackId(cur.get(slot)))) {
+                JSONObject w = wanted.get(slot);
+                ipc.set(slot, w != null ? (Object) w.optInt("id") : (Object) Boolean.FALSE);
+            }
+        }
+    }
+
+    /** `(track or {}).get("id")`: the track's id, or null when the track is null or has none. */
+    private static Integer trackId(JSONObject t) {
+        if (t == null || !t.has("id")) return null;
+        return t.optInt("id");
+    }
+
+    private static boolean sameId(Integer a, Integer b) {
+        return a == null ? b == null : a.equals(b);
+    }
+
+    // --- mpv on the box (src/tv.py 1083-1213) ----------------------------------------------------------
+
+    /** Port of Tv._mpv: a connection to mpv's IPC, or null when mpv is not running (no adb bridge here). */
+    private MpvIpc mpv() {
+        return MpvIpc.open();
+    }
+
+    /** Port of Tv._start: start mpv-android with `playlistUrl` and wait until it has loaded it. */
+    private MpvIpc start(String playlistUrl) throws ToolError, MpvIpc.MpvError {
+        amStart("-a", "android.intent.action.VIEW", "-t", "video/any", "-d", shellQuote(playlistUrl));
+        long deadline = System.nanoTime() + MPV_START_TIMEOUT * 1_000_000_000L;
+        MpvIpc ipc = null;
+        try {
+            while (true) {
+                if (ipc == null) ipc = MpvIpc.open();
+                if (ipc != null && TvFormat.truthy(ipc.get("playlist-count"))) return ipc;
+                if (System.nanoTime() - deadline >= 0) {
+                    throw new ToolError("mpv не запустился за " + MPV_START_TIMEOUT + " с");
+                }
+                sleep(TvFormat.POLL_INTERVAL);
+            }
+        } catch (ToolError | MpvIpc.MpvError | RuntimeException e) {
+            if (ipc != null) ipc.close();
+            throw e;
+        }
+    }
+
+    /** Port of Tv._front: bring the running mpv to the front without reloading what it plays. */
+    private void front() throws ToolError {
+        amStart("-f", REORDER_TO_FRONT);
+    }
+
+    /**
+     * Port of Tv._am_start: {@code am start -n <activity> <args>} as root through su; am reports a failure as
+     * an "Error" line yet exits 0, so the combined output is scanned for one. The playlist URL that `start`
+     * passes is already shell-quoted.
+     */
+    private void amStart(String... args) throws ToolError {
+        StringBuilder cmd = new StringBuilder("am start -n ").append(MPV_ACTIVITY);
+        for (String a : args) cmd.append(' ').append(a);
+        String output = su(cmd.toString(), AM_TIMEOUT_MS);
+        for (String line : output.split("\n")) {
+            // "adb:" for parity with the Python _am_start text and the su() messages in this file (the model
+            // sees these strings; keep them 1:1 even though this port runs am through su, not adb).
+            if (line.startsWith("Error")) throw new ToolError("adb: " + line);
+        }
+    }
+
+    /**
+     * Runs one shell command as root through {@code su --mount-master -c <script>} and returns its combined
+     * stdout, trimmed; a watchdog destroys the process past the deadline. ToolError when su cannot start,
+     * times out or exits non-zero. The app runs on the box, so `am` runs locally as root, replacing the
+     * Python side's adb bridge (parity with AgentService/ControlServer).
+     */
+    private String su(String script, long timeoutMs) throws ToolError {
+        Process proc = null;
+        try {
+            proc = new ProcessBuilder("su", "--mount-master", "-c", script).redirectErrorStream(true).start();
+            proc.getOutputStream().close();
+            final Process p = proc;
+            final long deadline = System.nanoTime() + timeoutMs * 1_000_000L;
+            final AtomicBoolean killed = new AtomicBoolean(false);
+            Thread wd = new Thread(() -> {
+                while (p.isAlive()) {
+                    if (System.nanoTime() - deadline > 0) {
+                        killed.set(true);
+                        p.destroy();
+                        return;
+                    }
+                    try {
+                        Thread.sleep(100);
+                    } catch (InterruptedException e) {
+                        return;
+                    }
+                }
+            }, "pcx-tv-su");
+            wd.setDaemon(true);
+            wd.start();
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            try (InputStream in = proc.getInputStream()) {
+                byte[] buf = new byte[4096];
+                int n;
+                while ((n = in.read(buf)) != -1) bos.write(buf, 0, n);
+            }
+            int code = proc.waitFor();
+            wd.interrupt();
+            if (killed.get()) throw new ToolError("adb не ответил за " + (timeoutMs / 1000) + " с");
+            String output = new String(bos.toByteArray(), StandardCharsets.UTF_8).trim();
+            if (code != 0) {
+                throw new ToolError("adb: " + (output.isEmpty() ? "код выхода " + code : lastLine(output)));
+            }
+            return output;
+        } catch (IOException e) {
+            if (proc != null) proc.destroy();
+            throw new ToolError("adb не запустился: " + e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            if (proc != null) proc.destroy();
+            throw new ToolError("adb: прервано");
+        }
+    }
+
+    private static String lastLine(String s) {
+        int i = s.lastIndexOf('\n');
+        return i < 0 ? s : s.substring(i + 1);
+    }
+
+    /** shlex.quote: return {@code s} unchanged when it is all shell-safe chars, else single-quote it. */
+    private static String shellQuote(String s) {
+        if (s.isEmpty()) return "''";
+        if (SHLEX_SAFE.matcher(s).matches()) return s;
+        return "'" + s.replace("'", "'\"'\"'") + "'";
+    }
+
+    /**
+     * Port of Tv._wait_playing: return once mpv plays `position` of its playlist (at that position with
+     * time-pos advancing between two polls and, with `peer`, the torrent having an active peer). mpv failed
+     * to open the item on an end-file error for an entry id &ge; `since`; a stream that never delivers ends the
+     * wait at PLAYER_TIMEOUT; with `peer`, no active peer DEAD_TIMEOUT s after the start means the swarm is
+     * gone. Either way mpv is stopped and a ToolError raised.
+     */
+    private void waitPlaying(MpvIpc ipc, String torrentHash, int position, int since, boolean peer)
+            throws ToolError, MpvIpc.MpvError {
+        long started = System.nanoTime();
+        boolean peers = !peer;
+        Double last = null;  // time-pos at `position` on the previous poll
+        while (true) {
+            double elapsed = (System.nanoTime() - started) / 1e9;
+            if (!peers) {
+                Object got = torrents(obj("action", "get", "hash", torrentHash));
+                JSONObject t = got instanceof JSONObject ? (JSONObject) got : new JSONObject();
+                peers = t.optInt("active_peers", 0) != 0;
+            }
+            for (JSONObject e : ipc.drain()) {
+                if ("end-file".equals(e.optString("event")) && "error".equals(e.optString("reason"))
+                        && e.optInt("playlist_entry_id", since) >= since) {
+                    Log.i(TAG, torrentHash + ": mpv failed to open entry " + e.optInt("playlist_entry_id")
+                            + ": " + e.optString("file_error"));
+                    abortOpen(ipc, torrentHash, "mpv не смог открыть серию");
+                }
+            }
+            Object atObj = ipc.get("playlist-pos");
+            Object nowObj = ipc.get("time-pos");
+            boolean atPos = atObj instanceof Number && ((Number) atObj).intValue() == position;
+            if (atPos && nowObj != null) {
+                double now = ((Number) nowObj).doubleValue();
+                if (last != null && now > last && peers) return;
+                last = now;
+            } else {
+                last = null;
+            }
+            if (!peers && elapsed >= TvFormat.DEAD_TIMEOUT) {
+                stop(ipc);
+                throw new ToolError(DEAD);
+            }
+            if (elapsed >= PLAYER_TIMEOUT) {
+                abortOpen(ipc, torrentHash, "mpv не включил серию за " + PLAYER_TIMEOUT + " с");
+            }
+            sleep(TvFormat.POLL_INTERVAL);
+        }
+    }
+
+    /** Port of Tv._stop: stop mpv and wait until it is gone (idle=once closes the activity and the IPC socket). */
+    private static void stop(MpvIpc ipc) throws MpvIpc.MpvError {
+        try {
+            ipc.command("stop");
+        } catch (MpvIpc.IpcClosed ignored) {
+            // mpv may close before the reply.
+        }
+        if (!ipc.waitClosed(MPV_STOP_TIMEOUT * 1000L)) {
+            Log.w(TAG, "mpv still answers " + MPV_STOP_TIMEOUT + " s after stop");
+        }
+    }
+
+    /** Port of Tv._abort_open: stop mpv and raise `why` with how the torrent is doing in TorrServer. */
+    private void abortOpen(MpvIpc ipc, String torrentHash, String why) throws ToolError, MpvIpc.MpvError {
+        stop(ipc);
+        JSONObject torrent;
+        try {
+            Object got = torrents(obj("action", "get", "hash", torrentHash));
+            torrent = got instanceof JSONObject ? (JSONObject) got : new JSONObject();
+        } catch (ToolError e) {
+            torrent = new JSONObject();
+        }
+        int peers = torrent.optInt("active_peers", 0);
+        double speed = torrent.optDouble("download_speed", 0);
+        throw new ToolError(why + ": пиров " + peers + ", раздача качается "
+                + TvFormat.fmt0(speed / 1024.0) + " КБ/с");
     }
 
     // --- TorrServer / Jackett --------------------------------------------------------------------------

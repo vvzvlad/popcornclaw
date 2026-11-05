@@ -163,6 +163,20 @@ public final class MpvIpc {
         return out;
     }
 
+    /**
+     * Whether mpv closed the connection within {@code timeoutMs} (the Python {@code Ipc.wait_closed}): the reader
+     * thread ends when mpv shuts the socket, so this waits for it to die. Used by {@code Tv._stop} after sending
+     * {@code stop}, which makes mpv-android close its activity and the IPC socket with it.
+     */
+    public boolean waitClosed(long timeoutMs) {
+        try {
+            reader.join(timeoutMs);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return !reader.isAlive();
+    }
+
     /** Stops the reader thread and closes the socket; waiters blocked on a reply wake with a closed error. */
     public void close() {
         closed = true;
