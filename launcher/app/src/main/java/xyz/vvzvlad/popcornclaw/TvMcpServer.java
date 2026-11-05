@@ -140,6 +140,10 @@ public final class TvMcpServer {
     // server starts and player works without that file. tvLock guards the one-time build across conn threads.
     private Tv tv;
     private final Object tvLock = new Object();
+    // The subtitle search, built on the first find_subtitles from TV_SETTINGS_PATH; null until then, so the
+    // server starts and the other tools work without the two API keys. subtitlesLock guards the build.
+    private Subtitles subtitles;
+    private final Object subtitlesLock = new Object();
 
     public void start() {
         if (running) return;
@@ -370,7 +374,7 @@ public final class TvMcpServer {
             case "play":
                 return toolPlay(args);
             case "find_subtitles":
-                throw new ToolError(NOT_IMPLEMENTED);
+                return toolFindSubtitles(args);
             default:
                 throw new ToolError("unknown tool: " + name);
         }
@@ -428,6 +432,43 @@ public final class TvMcpServer {
             }
             tv = new Tv(jackettUrl, jackettApiKey, torrserverUrl);
             return tv;
+        }
+    }
+
+    // --- find_subtitles (ported from subtitles.py via Subtitles) -------------------------------------------
+
+    private String toolFindSubtitles(JSONObject args) throws ToolError {
+        // query and language required (strings); season/episode optional ints, null when absent (Python int | None).
+        return subtitles().find(args.optString("query", ""), args.optString("language", ""),
+                optInt(args, "season"), optInt(args, "episode"));
+    }
+
+    /**
+     * The {@link Subtitles} instance, built on first use from TV_SETTINGS_PATH. ToolError when the file is
+     * missing, unparseable or lacks either API key, so the server still starts and the other tools work without
+     * the two subtitle keys (parity with {@link #tv()}).
+     */
+    private Subtitles subtitles() throws ToolError {
+        synchronized (subtitlesLock) {
+            if (subtitles != null) return subtitles;
+            String opensubtitlesApiKey = null;
+            String subdlApiKey = null;
+            String text = readFileRoot(TV_SETTINGS_PATH);
+            if (text != null) {
+                try {
+                    JSONObject o = new JSONObject(text);
+                    opensubtitlesApiKey = o.optString("opensubtitles_api_key", "");
+                    subdlApiKey = o.optString("subdl_api_key", "");
+                } catch (JSONException ignored) {
+                    // Unparseable: handled as "not configured" below.
+                }
+            }
+            if (isBlank(opensubtitlesApiKey) || isBlank(subdlApiKey)) {
+                throw new ToolError("tv_mcp не настроен: нет " + TV_SETTINGS_PATH
+                        + " или в нём нет opensubtitles_api_key/subdl_api_key");
+            }
+            subtitles = new Subtitles(opensubtitlesApiKey, subdlApiKey);
+            return subtitles;
         }
     }
 
