@@ -1,7 +1,6 @@
 package xyz.vvzvlad.popcornclaw;
 
 import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.util.Log;
 
 import org.json.JSONException;
@@ -14,6 +13,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.regex.Matcher;
@@ -42,11 +42,14 @@ public final class ScreenStreamServer {
     /** The gateway already owns 18790; this is the owner-facing web page. Bound on all interfaces. */
     public static final int PORT = 8080;
 
-    private static final String FRAME_PATH = "/data/local/tmp/pcx_frame.png";
     private static final String BOUNDARY = "pcxframe";
-    // ~5 fps target: capture itself takes a chunk of this, so the real rate is a little lower. Setup only.
-    private static final long FRAME_DELAY_MS = 150;
+    // The capture itself (screencap) paces the loop; this is only a small floor so an error path cannot spin hot.
+    private static final long FRAME_DELAY_MS = 15;
     private static final int JPEG_QUALITY = 60;
+    // screencap's raw header on API 28: uint32 width, height, format, colorspace (little-endian), then RGBA pixels.
+    private static final int SCREENCAP_HEADER = 16;
+    // Marks the end of a text command's output on the persistent root shell.
+    private static final String MARK = "__PCXDONE__";
 
     private volatile boolean running;
     // Assigned on the accept thread, read by stop() on the caller's thread: volatile for the handoff.
@@ -68,6 +71,13 @@ public final class ScreenStreamServer {
     // event arrives before the first frame was captured.
     private volatile int[] deviceSize;
 
+    // One persistent root shell instead of a `su` per frame: SuperSU grants once (a single toast, not one per
+    // frame) and the per-call su spawn is gone. Capture and input are serialized through it.
+    private final RootShell root = new RootShell();
+    // Reused across frames (the capture loop is single-threaded): the raw RGBA buffer and the Bitmap it fills.
+    private byte[] frameBuf;
+    private Bitmap frameBmp;
+
     public void start() {
         if (running) return;
         running = true;
@@ -82,6 +92,7 @@ public final class ScreenStreamServer {
             if (serverSocket != null) serverSocket.close();
         } catch (IOException ignored) {
         }
+        root.close();
         synchronized (frameLock) {
             frameLock.notifyAll();
         }
@@ -239,31 +250,29 @@ public final class ScreenStreamServer {
                 break;
             }
         }
-        // Last client gone (or shutting down): drop the temp frame.
-        runSu("rm -f " + FRAME_PATH);
+        // Last client gone (or shutting down): free the reused capture buffers.
+        if (frameBmp != null) { frameBmp.recycle(); frameBmp = null; }
+        frameBuf = null;
     }
 
     /**
-     * Grabs the screen as root into one temp PNG (made readable by this app's uid), decodes it and re-encodes
-     * to JPEG. The file is written through {@code su} and read directly to avoid the CRLF mangling a piped
-     * screencap stdout would do to a PNG.
+     * Grabs one frame: raw {@code screencap} straight from the persistent root shell's stdout (no temp file, no
+     * PNG encode), copied into a reused ARGB_8888 Bitmap and re-encoded to JPEG. The captured surface is the full
+     * screen, 1:1 with the display, so its pixels are the device's and its size maps input coordinates.
      */
     private byte[] captureJpeg() {
-        if (!runSu("screencap " + FRAME_PATH + " && chmod 666 " + FRAME_PATH)) return null;
-        Bitmap bmp = BitmapFactory.decodeFile(FRAME_PATH);
-        if (bmp == null) {
-            Log.w(TAG, "screencap produced no decodable frame");
-            return null;
+        int[] dim = root.screencap();
+        if (dim == null) return null;
+        int w = dim[0], h = dim[1];
+        if (deviceSize == null) deviceSize = new int[]{w, h};
+        if (frameBmp == null || frameBmp.getWidth() != w || frameBmp.getHeight() != h) {
+            if (frameBmp != null) frameBmp.recycle();
+            frameBmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         }
-        // The captured frame is the full screen; its size is the device size used to map input coordinates.
-        if (deviceSize == null) deviceSize = new int[]{bmp.getWidth(), bmp.getHeight()};
-        try {
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            bmp.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, bos);
-            return bos.toByteArray();
-        } finally {
-            bmp.recycle();
-        }
+        frameBmp.copyPixelsFromBuffer(ByteBuffer.wrap(frameBuf, 0, w * h * 4));
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        frameBmp.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, bos);
+        return bos.toByteArray();
     }
 
     // --- input injection -----------------------------------------------------------------------------------
@@ -344,43 +353,124 @@ public final class ScreenStreamServer {
         return s;
     }
 
-    // --- su helpers (same shell-out as AgentService) -------------------------------------------------------
+    // --- root shell ----------------------------------------------------------------------------------------
 
     private boolean runSu(String cmd) {
-        try {
-            Process p = new ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start();
-            p.getOutputStream().close();
-            try (InputStream is = p.getInputStream()) {
-                byte[] buf = new byte[256];
-                while (is.read(buf) != -1) { /* drain so su never blocks on a full pipe */ }
-            }
-            return p.waitFor() == 0;
-        } catch (IOException e) {
-            Log.w(TAG, "su failed: " + cmd, e);
-            return false;
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return false;
-        }
+        return root.exec(cmd) != null;
     }
 
     private String runSuOut(String cmd) {
-        try {
-            Process p = new ProcessBuilder("su", "-c", cmd).redirectErrorStream(true).start();
-            p.getOutputStream().close();
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            try (InputStream is = p.getInputStream()) {
-                byte[] buf = new byte[1024];
-                for (int n; (n = is.read(buf)) != -1; ) bos.write(buf, 0, n);
+        String out = root.exec(cmd);
+        return out == null ? "" : out;
+    }
+
+    private static int le32(byte[] b, int off) {
+        return (b[off] & 0xff) | (b[off + 1] & 0xff) << 8 | (b[off + 2] & 0xff) << 16 | (b[off + 3] & 0xff) << 24;
+    }
+
+    private static boolean readFull(InputStream in, byte[] buf, int len) throws IOException {
+        int off = 0;
+        while (off < len) {
+            int n = in.read(buf, off, len - off);
+            if (n < 0) return false;
+            off += n;
+        }
+        return true;
+    }
+
+    /**
+     * A single long-lived {@code su} shell. Starting it is the one SuperSU grant (one toast); every capture and
+     * input command then runs through its stdin/stdout, so there is no per-frame su spawn and no per-frame toast.
+     * All access is serialized -- the capture loop and the input handlers run one command at a time.
+     */
+    private final class RootShell {
+        private Process proc;
+        private OutputStream in;
+        private InputStream out;
+
+        private boolean ensure() {
+            if (proc != null && proc.isAlive()) return true;
+            try {
+                // stdin is a pipe, not a tty, so the shell runs non-interactively and prints no prompt.
+                proc = new ProcessBuilder("su").redirectErrorStream(false).start();
+                in = proc.getOutputStream();
+                out = proc.getInputStream();
+                final InputStream err = proc.getErrorStream();
+                Thread t = new Thread(() -> {
+                    byte[] b = new byte[256];
+                    try { while (err.read(b) != -1) { /* drain stderr */ } } catch (IOException ignored) { }
+                }, "pcx-root-err");
+                t.setDaemon(true);
+                t.start();
+                // Swallow any shell/su startup banner so the stream starts at a clean command boundary.
+                in.write(("echo " + MARK + "0\n").getBytes(StandardCharsets.UTF_8));
+                in.flush();
+                for (String line; (line = readLine(out)) != null; ) {
+                    if (line.startsWith(MARK)) return true;
+                }
+                kill();
+                return false;
+            } catch (IOException e) {
+                Log.e(TAG, "cannot start root shell", e);
+                kill();
+                return false;
             }
-            p.waitFor();
-            return bos.toString("UTF-8");
-        } catch (IOException e) {
-            Log.w(TAG, "su (reading output) failed: " + cmd, e);
-            return "";
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return "";
+        }
+
+        /** Runs a text command and returns its stdout up to the marker; null if the shell could not run it. */
+        synchronized String exec(String cmd) {
+            if (!ensure()) return null;
+            try {
+                in.write((cmd + "\necho " + MARK + "$?\n").getBytes(StandardCharsets.UTF_8));
+                in.flush();
+                StringBuilder body = new StringBuilder();
+                for (String line; (line = readLine(out)) != null; ) {
+                    if (line.startsWith(MARK)) return body.toString();
+                    body.append(line).append('\n');
+                }
+                kill();
+                return null;
+            } catch (IOException e) {
+                Log.w(TAG, "root exec failed: " + cmd, e);
+                kill();
+                return null;
+            }
+        }
+
+        /** One raw screencap frame straight from stdout into {@link #frameBuf}; returns {width,height} or null. */
+        synchronized int[] screencap() {
+            if (!ensure()) return null;
+            try {
+                in.write("screencap\n".getBytes(StandardCharsets.UTF_8));
+                in.flush();
+                byte[] hdr = new byte[SCREENCAP_HEADER];
+                if (!readFull(out, hdr, SCREENCAP_HEADER)) { kill(); return null; }
+                int w = le32(hdr, 0), h = le32(hdr, 4);
+                if (w <= 0 || h <= 0 || w > 8192 || h > 8192) {
+                    Log.w(TAG, "implausible screencap size " + w + "x" + h);
+                    kill();
+                    return null;
+                }
+                int px = w * h * 4;
+                if (frameBuf == null || frameBuf.length != px) frameBuf = new byte[px];
+                if (!readFull(out, frameBuf, px)) { kill(); return null; }
+                return new int[]{w, h};
+            } catch (IOException e) {
+                Log.w(TAG, "root screencap failed", e);
+                kill();
+                return null;
+            }
+        }
+
+        synchronized void close() {
+            kill();
+        }
+
+        private void kill() {
+            if (proc != null) proc.destroy();
+            proc = null;
+            in = null;
+            out = null;
         }
     }
 
