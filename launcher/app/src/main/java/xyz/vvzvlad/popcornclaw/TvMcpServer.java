@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -26,10 +27,9 @@ import java.util.concurrent.TimeUnit;
  * with their verbatim Russian descriptions -- over JSON-RPC 2.0 on a bound {@link ServerSocket}, shaped exactly
  * like {@link ControlServer}: an accept loop, one thread per connection and raw HTTP parsing.
  *
- * <p>This is the first chunk of the port: only {@code player} with action {@code status}, {@code subtext},
- * {@code pause}, {@code stop} or {@code seek} works, by talking to mpv locally through {@link MpvIpc} (an
- * Android LocalSocket to mpv's abstract IPC, replacing the Python side's adb bridge). Every other tool, and
- * {@code player}'s other actions, answer that they are not ported yet.
+ * <p>All six tools are ported. mpv is driven locally through {@link MpvIpc} (an Android LocalSocket to mpv's
+ * abstract IPC, replacing the Python side's adb bridge); TorrServer and Jackett are still reached over the
+ * network. Backend endpoints and keys come from {@code tv_mcp.json} on the box, not the gateway's config.
  *
  * <p>Routes:
  * <ul>
@@ -45,8 +45,6 @@ public final class TvMcpServer {
     public static final int PORT = 8082;
 
     private static final String MCP_PROTOCOL = "2025-06-18";
-    /** Answer for the tools and actions not ported in this chunk. */
-    private static final String NOT_IMPLEMENTED = "ещё не реализовано (tv_mcp переписывается на Java)";
 
     // --- verbatim tool descriptions (src/server.py) --------------------------------------------------------
     // Copied byte for byte from the Python server, including the spaces that joined its adjacent string
@@ -526,10 +524,6 @@ public final class TvMcpServer {
     private String toolPlayer(JSONObject args) throws ToolError {
         String action = args.optString("action", "");
         if (action.isEmpty()) throw new ToolError("action is required");
-        // Actions whose backends are not ported in this chunk (track selection, episode switching).
-        if ("subtitles".equals(action) || "audio".equals(action) || "episode".equals(action)) {
-            throw new ToolError(NOT_IMPLEMENTED);
-        }
         MpvIpc ipc = MpvIpc.open();
         try {
             Object playingPath = null;
@@ -545,28 +539,28 @@ public final class TvMcpServer {
                 throw new ToolError("Ничего не играет");
             }
             try {
-                switch (action) {
-                    case "status":
-                        return status(ipc);
-                    case "subtext":
-                        return subtext(ipc);
-                    case "pause":
-                        ipc.command("cycle", "pause");
-                        return TvFormat.truthy(ipc.get("pause")) ? "Пауза" : "Играет";
-                    case "stop":
-                        // The languages stay chosen: a play of this release's next episode puts them on again
-                        // (Python player stop: _unfollow then _stop).
-                        unfollow();
-                        stop(ipc);
-                        return "Остановлено";
-                    case "seek": {
-                        String value = args.optString("value", "");
-                        if (value.isEmpty()) throw new ToolError("Для " + action + " нужен value");
-                        return seek(ipc, value.trim());
-                    }
-                    default:
-                        throw new ToolError(NOT_IMPLEMENTED);
+                if ("status".equals(action)) return status(ipc);
+                if ("subtext".equals(action)) return subtext(ipc);
+                if ("pause".equals(action)) {
+                    ipc.command("cycle", "pause");
+                    return TvFormat.truthy(ipc.get("pause")) ? "Пауза" : "Играет";
                 }
+                if ("stop".equals(action)) {
+                    // The languages stay chosen: a play of this release's next episode puts them on again
+                    // (Python player stop: _unfollow then _stop).
+                    unfollow();
+                    stop(ipc);
+                    return "Остановлено";
+                }
+                String value = args.optString("value", "");
+                if (value.isEmpty()) throw new ToolError("Для " + action + " нужен value");
+                value = value.trim();
+                if ("seek".equals(action)) return seek(ipc, value);
+                if ("episode".equals(action)) return tv().episode(ipc, value.toLowerCase(Locale.ROOT));
+                // Before the command sets its own kind, so the follower has the playlist and the other kind.
+                tv().adopt(ipc);
+                if ("audio".equals(action)) return tv().selectAudio(ipc, value);
+                return tv().selectSubtitles(ipc, value.toLowerCase(Locale.ROOT));
             } catch (MpvIpc.MpvError e) {
                 throw new ToolError(e.getMessage());
             }

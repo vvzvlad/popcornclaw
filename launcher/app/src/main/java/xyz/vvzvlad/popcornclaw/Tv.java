@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -478,6 +479,186 @@ final class Tv {
 
     private static boolean sameId(Integer a, Integer b) {
         return a == null ? b == null : a.equals(b);
+    }
+
+    // --- player track selection (src/tv.py 1322-1412) --------------------------------------------------
+
+    /**
+     * Port of Tv._episode: play another item of mpv's playlist — {@code next}, {@code prev} or an episode number
+     * of the playing item's season — started and checked as play does. No search id is needed, which the
+     * assistant may no longer have.
+     */
+    String episode(MpvIpc ipc, String value) throws ToolError, MpvIpc.MpvError {
+        List<JSONObject> playlist = toList(TvFormat.asArray(ipc.get("playlist")));
+        Object posObj = ipc.get("playlist-pos");
+        Integer position = posObj instanceof Number ? ((Number) posObj).intValue() : null;
+        if (position == null || !(position >= 0 && position < playlist.size())) {
+            throw new ToolError("Сейчас играет не плейлист раздачи — серию включает play");
+        }
+        // Read before the switch, from the item that plays.
+        adopt(ipc, playlist);
+        List<String> labels = new ArrayList<>();
+        for (JSONObject entry : playlist) labels.add(TvFormat.entryLabel(entry));
+        int target = TvFormat.episodePosition(labels, position, value);
+        JSONObject targetEntry = playlist.get(target);
+        // TorrServer's playlist entries carry the torrent's hash in `link` (server/web/api/m3u.go).
+        String filename = optStr(targetEntry, "filename");
+        List<String> links = TvFormat.queryValues(filename == null ? "" : filename, "link");
+        String torrentHash = links.isEmpty() ? "" : links.get(0);
+        unfollow();
+        front();
+        ipc.command("playlist-play-index", target);
+        ipc.set("pause", false);
+        waitPlaying(ipc, torrentHash, target, targetEntry.optInt("id", 0), false);
+        save(torrentHash);
+        List<String> lines = new ArrayList<>();
+        lines.add("Играет: " + labels.get(target));
+        lines.addAll(apply(ipc));
+        Object path = ipc.get("path");
+        follow(path == null ? null : path.toString());
+        return join(lines);
+    }
+
+    /**
+     * Port of Tv._select_subtitles: {@code off}, a track number (put at the bottom, the top turned off) or one
+     * or two languages. A language choice whose bottom language has no full track here changes nothing.
+     */
+    String selectSubtitles(MpvIpc ipc, String value) throws ToolError, MpvIpc.MpvError {
+        JSONArray tracks = TvFormat.asArray(ipc.get("track-list"));
+        List<JSONObject> subs = TvFormat.tracksOfType(tracks, "sub");
+        if ("off".equals(value)) {
+            Map<String, JSONObject> current = new HashMap<>();
+            current.put("sid", TvFormat.selected(tracks, "sub", 0));
+            current.put("secondary-sid", TvFormat.selected(tracks, "sub", 1));
+            Map<String, JSONObject> wanted = new HashMap<>();
+            wanted.put("sid", null);
+            wanted.put("secondary-sid", null);
+            switchTracks(ipc, current, wanted);
+            synchronized (releaseLock) {
+                relSubs = new ArrayList<>();
+            }
+            // Goes on only for a chosen audio language.
+            Object path = ipc.get("path");
+            follow(path == null ? null : path.toString());
+            return "Сабы: выкл";
+        }
+        if (isDigits(value)) {
+            int want = Integer.parseInt(value);
+            JSONObject track = null;
+            for (JSONObject t : subs) {
+                if (t.optInt("id") == want) { track = t; break; }
+            }
+            if (track == null) {
+                throw new ToolError("Нет дорожки сабов #" + value + "; есть: " + TvFormat.describeSubtitles(subs));
+            }
+            Map<String, JSONObject> current = new HashMap<>();
+            current.put("sid", TvFormat.selected(tracks, "sub", 0));
+            current.put("secondary-sid", TvFormat.selected(tracks, "sub", 1));
+            Map<String, JSONObject> wanted = new HashMap<>();
+            wanted.put("sid", track);
+            wanted.put("secondary-sid", null);
+            switchTracks(ipc, current, wanted);
+            // A full track chooses its language; any other kind clears the choice.
+            List<String> choice = new ArrayList<>();
+            if (TvFormat.fullTrack(track, optStr(track, "lang"))) choice.add(track.optString("lang"));
+            synchronized (releaseLock) {
+                relSubs = choice;
+            }
+            Object path = ipc.get("path");
+            follow(path == null ? null : path.toString());
+            return TvFormat.describeEnabled(track);
+        }
+        List<String> langs = TvFormat.languages(value);
+        boolean anyFull = false;
+        for (JSONObject t : subs) {
+            if (TvFormat.fullTrack(t, langs.get(0))) { anyFull = true; break; }
+        }
+        if (!anyFull) return TvFormat.noFullSubtitles(subs, langs.get(0));
+        synchronized (releaseLock) {
+            relSubs = new ArrayList<>(langs);
+        }
+        List<String> lines = apply(ipc, "subtitles");
+        Object path = ipc.get("path");
+        follow(path == null ? null : path.toString());
+        return join(lines);
+    }
+
+    /**
+     * Port of Tv._select_audio: put on the audio track {@code value} names — its number, a language code of up
+     * to three letters, else part of its name. The track chooses its language; one without a language clears it.
+     */
+    String selectAudio(MpvIpc ipc, String value) throws MpvIpc.MpvError {
+        List<JSONObject> voices = TvFormat.tracksOfType(TvFormat.asArray(ipc.get("track-list")), "audio");
+        List<JSONObject> matches = new ArrayList<>();
+        if (isDigits(value)) {
+            int want = Integer.parseInt(value);
+            for (JSONObject t : voices) {
+                if (t.optInt("id") == want) matches.add(t);
+            }
+        } else {
+            for (JSONObject t : voices) {
+                if (value.length() <= 3 && TvFormat.sameLanguage(optStr(t, "lang"), value)) matches.add(t);
+            }
+            if (matches.isEmpty()) {
+                String needle = value.toLowerCase(Locale.ROOT);
+                for (JSONObject t : voices) {
+                    String name = TvFormat.trackName(t);
+                    if ((name == null ? "" : name).toLowerCase(Locale.ROOT).contains(needle)) matches.add(t);
+                }
+            }
+        }
+        if (matches.isEmpty()) {
+            return "Нет звуковой дорожки «" + value + "»; есть: " + TvFormat.describeAudios(voices);
+        }
+        JSONObject track = matches.get(0);
+        ipc.set("aid", track.optInt("id"));
+        String lang = optStr(track, "lang");
+        synchronized (releaseLock) {
+            relAudio = lang;
+        }
+        Object path = ipc.get("path");
+        follow(path == null ? null : path.toString());
+        return "Звук: " + TvFormat.describeAudio(track);
+    }
+
+    /**
+     * Port of Tv._adopt: when mpv's playlist is not the one the last play loaded (a restarted service knows
+     * none), make it the one followed and take the choice from what mpv shows — the bottom subtitle track's
+     * language when it is full, with the top one's when that is full too, and the audio track's language.
+     */
+    void adopt(MpvIpc ipc) throws MpvIpc.MpvError {
+        adopt(ipc, toList(TvFormat.asArray(ipc.get("playlist"))));
+    }
+
+    void adopt(MpvIpc ipc, List<JSONObject> playlist) throws MpvIpc.MpvError {
+        List<String> urls = new ArrayList<>();
+        for (JSONObject entry : playlist) {
+            urls.add(entry.has("filename") && !entry.isNull("filename") ? entry.optString("filename") : null);
+        }
+        boolean same;
+        synchronized (releaseLock) {
+            same = urls.equals(relPlaylist);
+        }
+        if (same) return;
+        JSONArray tracks = TvFormat.asArray(ipc.get("track-list"));
+        JSONObject bottom = TvFormat.selected(tracks, "sub", 0);
+        JSONObject top = TvFormat.selected(tracks, "sub", 1);
+        List<String> newSubs = new ArrayList<>();
+        if (TvFormat.fullTrack(bottom, bottom == null ? null : optStr(bottom, "lang"))) {
+            newSubs.add(bottom.optString("lang"));
+            if (TvFormat.fullTrack(top, top == null ? null : optStr(top, "lang"))) {
+                newSubs.add(top.optString("lang"));
+            }
+        }
+        JSONObject audioTrack = TvFormat.selected(tracks, "audio", 0);
+        String newAudio = audioTrack == null ? null : optStr(audioTrack, "lang");
+        synchronized (releaseLock) {
+            relSubs = newSubs;
+            relAudio = newAudio;
+            relPlaylist = urls;
+        }
+        Log.i(TAG, "adopted mpv's playlist of " + urls.size() + " items: subtitles " + newSubs
+                + ", audio " + newAudio);
     }
 
     // --- Follower (src/tv.py 1414-1485) ----------------------------------------------------------------
@@ -1179,6 +1360,15 @@ final class Tv {
             return m != null ? m : t.toString();
         }
         return String.valueOf(t);
+    }
+
+    /** Python str.isdigit(): a non-empty string of digit characters. */
+    private static boolean isDigits(String s) {
+        if (s.isEmpty()) return false;
+        for (int i = 0; i < s.length(); i++) {
+            if (!Character.isDigit(s.charAt(i))) return false;
+        }
+        return true;
     }
 
     private static void sleep(int seconds) {

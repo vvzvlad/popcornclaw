@@ -734,6 +734,58 @@ final class TvFormat {
         throw new ToolError("Файла " + fileId + " нет в плейлисте TorrServer");
     }
 
+    /** Port of entry_label: an mpv playlist item by name — its #EXTINF title, the file name, else the URL name. */
+    static String entryLabel(JSONObject entry) {
+        String title = optStr(entry, "title");
+        if (title != null) return title;
+        String filename = optStr(entry, "filename");
+        return urlPathBasename(filename == null ? "" : filename);
+    }
+
+    /**
+     * Port of episode_position: the playlist position {@code player episode} opens — the next or previous video
+     * item, or the video item of episode {@code value} in the playing item's season (season 1 for an E01-style
+     * name). Only video items count: a torrent's playlist also lists its external audio tracks, whose names
+     * carry the episode too.
+     */
+    static int episodePosition(List<String> labels, int position, String value) throws ToolError {
+        List<Integer> videos = new ArrayList<>();
+        for (int i = 0; i < labels.size(); i++) {
+            String label = labels.get(i);
+            if (endsWithAny((label == null ? "" : label).toLowerCase(Locale.ROOT), VIDEO_EXTENSIONS)) videos.add(i);
+        }
+        Integer target = null;
+        if ("next".equals(value)) {
+            for (int i : videos) {
+                if (i > position) { target = i; break; }
+            }
+        } else if ("prev".equals(value)) {
+            for (int k = videos.size() - 1; k >= 0; k--) {
+                if (videos.get(k) < position) { target = videos.get(k); break; }
+            }
+        } else if (isDigits(value)) {
+            Episode current = position < labels.size()
+                    ? parseEpisode(labels.get(position) == null ? "" : labels.get(position)) : null;
+            int season = (current != null && current.season != null) ? current.season : 1;
+            int wanted = Integer.parseInt(value);
+            for (int i : videos) {
+                Episode found = parseEpisode(labels.get(i));
+                if (found != null && found.episode == wanted
+                        && (found.season == null || found.season == season)) {
+                    target = i;
+                    break;
+                }
+            }
+        } else {
+            throw new ToolError("Для episode нужен value: номер серии, «next» или «prev», а не «" + value + "»");
+        }
+        if (target == null) {
+            throw new ToolError("Такой серии в плейлисте нет; в нём " + videos.size() + " видеофайлов. "
+                    + "Серию по файлу включает play с file, номера файлов — в files");
+        }
+        return target;
+    }
+
     // --- track container helpers (shared by TvMcpServer.status and Tv._apply) ----------------------------
 
     static JSONArray asArray(Object o) {
@@ -807,7 +859,7 @@ final class TvFormat {
      * The decoded values of query parameter `key` in `url`, in order (mirrors parse_qs(urlsplit(url).query)
      * [key]); blank values and pairs without '=' are dropped, as parse_qs does by default.
      */
-    private static List<String> queryValues(String url, String key) {
+    static List<String> queryValues(String url, String key) {
         List<String> out = new ArrayList<>();
         if (url == null) return out;
         String s = url;
@@ -940,6 +992,15 @@ final class TvFormat {
             sb.append(HEX[(x >> 4) & 0xF]).append(HEX[x & 0xF]);
         }
         return sb.toString();
+    }
+
+    /** Python str.isdigit(): a non-empty string of digit characters. */
+    private static boolean isDigits(String s) {
+        if (s.isEmpty()) return false;
+        for (int i = 0; i < s.length(); i++) {
+            if (!Character.isDigit(s.charAt(i))) return false;
+        }
+        return true;
     }
 
     private static boolean endsWithAny(String s, String[] suffixes) {
