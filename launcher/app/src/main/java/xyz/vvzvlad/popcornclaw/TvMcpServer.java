@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.TimeUnit;
 
 /**
  * The box's own tv_mcp: the Java port of the Python tv_mcp MCP server (src/server.py, src/tv.py), run in the
@@ -123,28 +124,24 @@ public final class TvMcpServer {
             + "OpenSubtitles — число загрузок, SDH — для слабослышащих. Это только список найденного: скачать "
             + "и включить такие субтитры пока нельзя.";
 
-    // --- track-kind constants (src/tv.py, lines 85-97) ----------------------------------------------------
-    // NOT_FULL: subtitle kinds that are never full subtitles, by markers in the (lowercased) title; the keys
-    // are the kind names describe_subtitle prints, and their iteration order (надписи, песни, комментарии)
-    // decides ties.
-    private static final String[] NOT_FULL_SIGNS = {"forc", "forsed", "форс", "надпис", "sign"};
-    private static final String[] NOT_FULL_SONGS = {"песн", "song", "lyric", "текст"};
-    private static final String[] NOT_FULL_COMMENTARY = {"коммент", "comment"};
-    private static final String KIND_SIGNS = "надписи";
-    private static final String KIND_SONGS = "песни";
-    private static final String KIND_COMMENTARY = "комментарии";
-    private static final String[] FULL_MARKERS = {"full", "полн"};
-    private static final String[] SDH_MARKERS = {"sdh", "слабослыш", "hearing"};
-    private static final String FULL = "полные";
-    private static final String PLAIN = "";
-    private static final String SDH = "SDH";
+    // --- track constants (src/tv.py, lines 95-97) ---------------------------------------------------------
+    // The subtitle-kind machinery (NOT_FULL/FULL/SDH markers and kinds, subtitleKind, isNotFull, containsAny)
+    // moved to TvFormat so the search probe can share it; only these player-only constants stay here.
     private static final String[] BITMAP_SUBTITLES = {"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub"};
     private static final String[] GENERIC_NAMES = {"SoundHandler", "VideoHandler", "SubtitleHandler", "TextHandler"};
+
+    // --- tv_mcp settings ----------------------------------------------------------------------------------
+    /** The box file that carries the Jackett and TorrServer endpoints; read lazily on the first search/files. */
+    private static final String TV_SETTINGS_PATH = "/data/local/popcornclaw/tv_mcp.json";
 
     private volatile boolean running;
     // Assigned on the accept thread, read by stop() on the caller's thread: volatile for the handoff.
     private volatile ServerSocket serverSocket;
     private Thread acceptThread;
+    // The search/files logic, built on the first search/files from TV_SETTINGS_PATH; null until then, so the
+    // server starts and player works without that file. tvLock guards the one-time build across conn threads.
+    private Tv tv;
+    private final Object tvLock = new Object();
 
     public void start() {
         if (running) return;
@@ -367,13 +364,100 @@ public final class TvMcpServer {
             case "player":
                 return toolPlayer(args);
             case "search":
+                return toolSearch(args);
             case "files":
+                return toolFiles(args);
             case "prepare":
             case "play":
             case "find_subtitles":
                 throw new ToolError(NOT_IMPLEMENTED);
             default:
                 throw new ToolError("unknown tool: " + name);
+        }
+    }
+
+    // --- search / files (ported from tv.py search/files via Tv) --------------------------------------------
+
+    private String toolSearch(JSONObject args) throws ToolError {
+        // query required (string); subtitles/audio optional, null when absent or blank (Python str | None).
+        return tv().search(args.optString("query", ""), optArg(args, "subtitles"), optArg(args, "audio"));
+    }
+
+    private String toolFiles(JSONObject args) throws ToolError {
+        // id required (integer).
+        return tv().files(args.optInt("id", 0));
+    }
+
+    /**
+     * The {@link Tv} instance, built on first use from TV_SETTINGS_PATH. ToolError when the file is missing,
+     * unparseable or lacks any of the three endpoints, so the server still starts and player works without it.
+     */
+    private Tv tv() throws ToolError {
+        synchronized (tvLock) {
+            if (tv != null) return tv;
+            String jackettUrl = null;
+            String torrserverUrl = null;
+            String jackettApiKey = null;
+            String text = readFileRoot(TV_SETTINGS_PATH);
+            if (text != null) {
+                try {
+                    JSONObject o = new JSONObject(text);
+                    jackettUrl = o.optString("jackett_url", "");
+                    torrserverUrl = o.optString("torrserver_url", "");
+                    jackettApiKey = o.optString("jackett_api_key", "");
+                } catch (JSONException ignored) {
+                    // Unparseable: handled as "not configured" below.
+                }
+            }
+            if (isBlank(jackettUrl) || isBlank(torrserverUrl) || isBlank(jackettApiKey)) {
+                throw new ToolError("tv_mcp не настроен: нет " + TV_SETTINGS_PATH
+                        + " или в нём нет jackett_url/torrserver_url/jackett_api_key");
+            }
+            tv = new Tv(jackettUrl, jackettApiKey, torrserverUrl);
+            return tv;
+        }
+    }
+
+    /** A tool argument as a string, null when absent, JSON null or empty (Python's str | None). */
+    private static String optArg(JSONObject args, String key) {
+        if (args.isNull(key)) return null;
+        String v = args.optString(key, "");
+        return v.isEmpty() ? null : v;
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.trim().isEmpty();
+    }
+
+    /**
+     * The whole file read as root through {@code su}, or null when it cannot be read (no root grant, missing
+     * file, a read error or a timeout). The config files are root-owned, mode 600 (the Jackett key is a secret);
+     * this app runs as its own uid and cannot open them directly, so it reads them as root -- the same way
+     * {@link ControlServer} reads config.json/.security.yml.
+     */
+    private static String readFileRoot(String path) {
+        Process p = null;
+        try {
+            // --mount-master: the same global mount namespace the gateway runs in (parity with AgentService).
+            p = new ProcessBuilder("su", "--mount-master", "-c", "cat " + path).redirectErrorStream(true).start();
+            p.getOutputStream().close();
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            try (InputStream in = p.getInputStream()) {
+                byte[] buf = new byte[4096];
+                int n;
+                while ((n = in.read(buf)) != -1) bos.write(buf, 0, n);
+            }
+            if (!p.waitFor(8, TimeUnit.SECONDS)) {
+                p.destroy();
+                return null;
+            }
+            // Non-zero exit = missing file or no root grant; the merged stdout then holds cat's error, not JSON.
+            return p.exitValue() == 0 ? new String(bos.toByteArray(), StandardCharsets.UTF_8) : null;
+        } catch (IOException e) {
+            return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
         }
     }
 
@@ -547,7 +631,7 @@ public final class TvMcpServer {
         String name = trackName(track);
         String nameStr = name != null ? " «" + name + "»" : "";
         String kind = trackKind(track);
-        String marks = (isNotFull(kind) ? " (" + kind + ")" : "") + (bitmap(track) ? " (картинка)" : "");
+        String marks = (TvFormat.isNotFull(kind) ? " (" + kind + ")" : "") + (bitmap(track) ? " (картинка)" : "");
         return "#" + track.optInt("id") + " " + lang(track) + nameStr + marks;
     }
 
@@ -562,7 +646,7 @@ public final class TvMcpServer {
 
     /** Port of describe_full: a subtitle track, saying whether it is full. */
     private static String describeFull(JSONObject track) {
-        return describeSubtitle(track) + (isNotFull(trackKind(track)) ? "" : " (полные)");
+        return describeSubtitle(track) + (TvFormat.isNotFull(trackKind(track)) ? "" : " (полные)");
     }
 
     /** Port of describe_enabled. */
@@ -606,25 +690,8 @@ public final class TvMcpServer {
 
     /** Port of track_kind: subtitle_kind of an mpv subtitle track. */
     private static String trackKind(JSONObject track) {
-        return subtitleKind(trackName(track), track.optBoolean("forced", false),
+        return TvFormat.subtitleKind(trackName(track), track.optBoolean("forced", false),
                 track.optBoolean("commentary", false), track.optBoolean("hearing-impaired", false));
-    }
-
-    /** Port of subtitle_kind. */
-    private static String subtitleKind(String title, boolean forced, boolean commentary, boolean hearing) {
-        String t = (title == null ? "" : title).toLowerCase(Locale.ROOT);
-        if (containsAny(t, NOT_FULL_SIGNS)) return KIND_SIGNS;
-        if (containsAny(t, NOT_FULL_SONGS)) return KIND_SONGS;
-        if (containsAny(t, NOT_FULL_COMMENTARY)) return KIND_COMMENTARY;
-        if (forced) return KIND_SIGNS;
-        if (commentary) return KIND_COMMENTARY;
-        if (hearing || containsAny(t, SDH_MARKERS)) return SDH;
-        return containsAny(t, FULL_MARKERS) ? FULL : PLAIN;
-    }
-
-    /** Whether `kind` is one of the NOT_FULL kinds (Python `kind in NOT_FULL`, the dict keys). */
-    private static boolean isNotFull(String kind) {
-        return KIND_SIGNS.equals(kind) || KIND_SONGS.equals(kind) || KIND_COMMENTARY.equals(kind);
     }
 
     /** Port of bitmap: a picture subtitle track. */
@@ -640,13 +707,6 @@ public final class TvMcpServer {
     private static String lang(JSONObject track) {
         String v = track.optString("lang", "");
         return v.isEmpty() ? "?" : v;
-    }
-
-    private static boolean containsAny(String haystack, String[] markers) {
-        for (String marker : markers) {
-            if (haystack.contains(marker)) return true;
-        }
-        return false;
     }
 
     /** A JSON string value, or null when absent, JSON null or empty (so Python's truthy `or` chains match). */
@@ -707,13 +767,6 @@ public final class TvMcpServer {
             sb.append(lines.get(i));
         }
         return sb.toString();
-    }
-
-    /** A tool-level failure: surfaced as an MCP result with isError=true, never a JSON-RPC error. */
-    private static final class ToolError extends Exception {
-        ToolError(String m) {
-            super(m);
-        }
     }
 
     // --- small helpers -------------------------------------------------------------------------------------
