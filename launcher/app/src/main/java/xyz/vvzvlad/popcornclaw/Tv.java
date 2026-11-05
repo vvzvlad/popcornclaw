@@ -25,8 +25,10 @@ import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 
+import okhttp3.Call;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.MultipartBody;
@@ -167,6 +169,96 @@ final class Tv {
         return TvFormat.describeFiles(fr.files);
     }
 
+    /**
+     * Port of Tv.prepare (the tool): load the episode into TorrServer as play would, start TorrServer's preload
+     * of it and tell whether the release keeps up; the box is not touched. Ready once the download speed
+     * averaged over the last SPEED_WINDOW s is SPEED_MARGIN times the episode's rate, or once the preload is
+     * over (preloaded_bytes reaches min(preload_size, the file's length), counted only when the first poll's
+     * fill was below that target), or once TorrServer answered the preload request (unless the torrent was
+     * already running a preload as prepare started). Not ready, a ToolError with the numbers, after
+     * PREPARE_TIMEOUT s or without an active peer DEAD_TIMEOUT s after the preload started.
+     */
+    String prepare(int resultId, Integer season, Integer episode, Integer file) throws ToolError {
+        LoadResult loaded = load(resultId, season, episode, file);
+        String torrentHash = loaded.hash;
+        JSONObject picked = loaded.file;
+        long fileLength = picked.optLong("length", 0);
+        int fileId = picked.optInt("id");
+        Log.i(TAG, "prepare " + torrentHash + " file " + picked.optString("path"));
+        // Read before the preload starts: once it has, the state is this preload's own.
+        JSONObject listed = list().get(torrentHash);
+        boolean busy = listed != null && listed.optInt("stat", 0) == TvFormat.TORRENT_PRELOAD;
+        // Neither is awaited: the preload answers once it is over, and /ffp once TorrServer's ffprobe has read
+        // the file, which on a slow swarm outlasts PREPARE_TIMEOUT.
+        // The live OkHttp calls, so finally can abort them: Future.cancel(true) only interrupts the worker
+        // thread, and OkHttp's blocking socket read (Okio) ignores interrupts, so a stuck preload/ffprobe would
+        // hold its thread and socket until TorrServer answers (the preload client has no timeout). Call.cancel()
+        // aborts the in-flight request at once, matching the Python asyncio cancel.
+        AtomicReference<Call> preloadCall = new AtomicReference<>();
+        AtomicReference<Call> probeCall = new AtomicReference<>();
+        Future<Boolean> preload = executor.submit(() -> preload(torrentHash, fileId, preloadCall));
+        Future<JSONObject> probe = executor.submit(() -> ffprobe(torrentHash, fileId, probeCall));
+        try {
+            long started = System.nanoTime();
+            List<double[]> speeds = new ArrayList<>();  // {elapsed s, download_speed} of each poll
+            boolean peered = false;
+            Double firstFill = null;
+            while (true) {
+                Object got = torrents(obj("action", "get", "hash", torrentHash));
+                JSONObject torrent = got instanceof JSONObject ? (JSONObject) got : new JSONObject();
+                double elapsed = (System.nanoTime() - started) / 1e9;
+                // TorrServer's download_speed is the rate over its last second.
+                List<double[]> kept = new ArrayList<>();
+                for (double[] ts : speeds) if (elapsed - ts[0] < TvFormat.SPEED_WINDOW) kept.add(ts);
+                kept.add(new double[]{elapsed, torrent.optDouble("download_speed", 0)});
+                speeds = kept;
+                double sum = 0;
+                for (double[] ts : speeds) sum += ts[1];
+                double speed = sum / speeds.size();
+                Double rate = null;
+                if (probe.isDone()) {
+                    Object pr = settle(probe);
+                    rate = TvFormat.neededRate(pr instanceof JSONObject ? (JSONObject) pr : null, fileLength);
+                }
+                peered = peered || torrent.optInt("active_peers", 0) != 0;
+                long preloaded = torrent.optLong("preloaded_bytes", 0);
+                if (firstFill == null) firstFill = (double) preloaded;
+                long target = Math.min(torrent.optLong("preload_size", 0), fileLength);
+                // Named only while the fill is this episode's: see the docstring.
+                String cached = firstFill < target
+                        ? TvFormat.fmt0(preloaded / TvFormat.MIB) + " из " + TvFormat.fmt0(target / TvFormat.MIB) + " МБ"
+                        : null;
+                if ((target != 0 && firstFill < target && target <= preloaded)
+                        || (rate != null && rate != 0.0 && elapsed >= TvFormat.SPEED_WINDOW
+                                && speed >= TvFormat.SPEED_MARGIN * rate)) {
+                    return "Готово к запуску: " + TvFormat.basename(picked.optString("path")) + " — "
+                            + TvFormat.describeSpeed(speed, rate) + (cached != null ? "; в кэше " + cached : "");
+                }
+                if (!busy && preload.isDone() && Boolean.TRUE.equals(settle(preload))) {
+                    return "Готово к запуску: " + TvFormat.basename(picked.optString("path"))
+                            + " — прелоад серии в кэше TorrServer";
+                }
+                if ((!peered && elapsed >= TvFormat.DEAD_TIMEOUT) || elapsed >= TvFormat.PREPARE_TIMEOUT) {
+                    throw new ToolError("Раздача не успеет: пиров " + torrent.optInt("active_peers", 0) + ", "
+                            + TvFormat.describeSpeed(speed, rate) + (cached != null ? "; скачано " + cached : "")
+                            + " — выбери другую");
+                }
+                sleep(TvFormat.POLL_INTERVAL);
+            }
+        } finally {
+            cancelCall(preloadCall);
+            cancelCall(probeCall);
+            preload.cancel(true);
+            probe.cancel(true);
+        }
+    }
+
+    /** Abort an in-flight OkHttp call published to a holder, if any; Call.cancel() unblocks its socket read. */
+    private static void cancelCall(AtomicReference<Call> ref) {
+        Call call = ref.get();
+        if (call != null) call.cancel();
+    }
+
     // --- TorrServer / Jackett --------------------------------------------------------------------------
 
     /**
@@ -174,7 +266,19 @@ final class Tv {
      * ones, and never carry the URL (Jackett's URL carries the API key).
      */
     private byte[] request(String service, Request req) throws ToolError {
-        try (Response response = client.newCall(req).execute()) {
+        return request(client, service, req);
+    }
+
+    /** As {@link #request(String, Request)}, but on a given client (the preload uses a no-timeout one). */
+    private byte[] request(OkHttpClient c, String service, Request req) throws ToolError {
+        return request(c, service, req, null);
+    }
+
+    /** As above, publishing the live {@link Call} to {@code callOut} (when non-null) so a canceller can abort it. */
+    private byte[] request(OkHttpClient c, String service, Request req, AtomicReference<Call> callOut) throws ToolError {
+        Call call = c.newCall(req);
+        if (callOut != null) callOut.set(call);
+        try (Response response = call.execute()) {
             if (!response.isSuccessful()) {
                 throw new ToolError(service + " ответил HTTP " + response.code());
             }
@@ -271,16 +375,64 @@ final class Tv {
      * longer FFPROBE_TIMEOUT read timeout for this one call.
      */
     private JSONObject ffprobe(String torrentHash, int fileId) {
+        return ffprobe(torrentHash, fileId, null);
+    }
+
+    /** As above, publishing the live {@link Call} to {@code callOut} (when non-null) so prepare can abort it. */
+    private JSONObject ffprobe(String torrentHash, int fileId, AtomicReference<Call> callOut) {
         OkHttpClient probeClient = client.newBuilder()
                 .readTimeout(TvFormat.FFPROBE_TIMEOUT, TimeUnit.SECONDS).build();
         Request req = new Request.Builder()
                 .url(torrserverUrl + "/ffp/" + torrentHash + "/" + fileId).get().build();
-        try (Response response = probeClient.newCall(req).execute()) {
+        Call call = probeClient.newCall(req);
+        if (callOut != null) callOut.set(call);
+        try (Response response = call.execute()) {
             if (!response.isSuccessful()) return null;
             ResponseBody body = response.body();
             return body == null ? null : new JSONObject(body.string());
         } catch (IOException | JSONException e) {
             return null;
+        }
+    }
+
+    /**
+     * Port of Tv._preload: have TorrServer preload one file of a torrent into its cache; true once TorrServer
+     * has answered. Run as a task and cancelled when prepare is done, so it carries no timeout (Python
+     * timeout=None): the preload takes no request context and goes on inside TorrServer's /stream handler.
+     */
+    private boolean preload(String torrentHash, int fileId, AtomicReference<Call> callOut) {
+        HttpUrl url = HttpUrl.parse(torrserverUrl + "/stream").newBuilder()
+                .addQueryParameter("link", torrentHash)
+                .addQueryParameter("index", String.valueOf(fileId))
+                .addQueryParameter("preload", "")
+                .build();
+        // No timeout: the task lives no longer than prepare, which cancels it (through callOut).
+        OkHttpClient preloadClient = client.newBuilder()
+                .readTimeout(0, TimeUnit.MILLISECONDS)
+                .callTimeout(0, TimeUnit.MILLISECONDS)
+                .build();
+        try {
+            request(preloadClient, "TorrServer", new Request.Builder().url(url).get().build(), callOut);
+            return true;
+        } catch (ToolError exc) {
+            Log.w(TAG, "preload " + torrentHash + ": " + exc.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Port of Tv._save: save a torrent the player has started to TorrServer's database (/stream with `save`
+     * and neither `index` nor `play`). A failure is logged and fails nothing.
+     */
+    private void save(String torrentHash) {
+        HttpUrl url = HttpUrl.parse(torrserverUrl + "/stream").newBuilder()
+                .addQueryParameter("link", torrentHash)
+                .addQueryParameter("save", "")
+                .build();
+        try {
+            request("TorrServer", new Request.Builder().url(url).get().build());
+        } catch (ToolError exc) {
+            Log.w(TAG, "save " + torrentHash + ": " + exc.getMessage());
         }
     }
 
@@ -312,6 +464,12 @@ final class Tv {
         files = waitFiles(torrentHash, files);
         if (files.isEmpty()) throw new ToolError(DEAD);
         return new FilesResult(result, torrentHash, files);
+    }
+
+    /** Port of Tv._load: resolveFiles, plus the file `file` or the one of the episode asked for (pick_file). */
+    private LoadResult load(int resultId, Integer season, Integer episode, Integer file) throws ToolError {
+        FilesResult fr = resolveFiles(resultId);
+        return new LoadResult(fr.result, fr.hash, TvFormat.pickFile(fr.files, season, episode, file));
     }
 
     /** Port of Tv._probe: probe one hash for the languages asked for; (found, note). */
@@ -600,6 +758,19 @@ final class Tv {
             this.result = result;
             this.hash = hash;
             this.files = files;
+        }
+    }
+
+    /** The Python _load return: (result, info hash, picked file). */
+    private static final class LoadResult {
+        final JSONObject result;
+        final String hash;
+        final JSONObject file;
+
+        LoadResult(JSONObject result, String hash, JSONObject file) {
+            this.result = result;
+            this.hash = hash;
+            this.file = file;
         }
     }
 }

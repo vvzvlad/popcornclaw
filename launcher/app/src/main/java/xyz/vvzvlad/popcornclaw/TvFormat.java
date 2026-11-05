@@ -9,10 +9,12 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.TreeSet;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -44,14 +46,21 @@ final class TvFormat {
     static final int PROBE_CONCURRENCY = 3;
     static final int TITLE_LIMIT = 140;
     // Seconds after `add` returns until a torrent without a file list counts as dead (a magnet gets the
-    // list from peers).
+    // list from peers), and seconds after prepare starts the preload until one without an active peer does.
     static final int DEAD_TIMEOUT = 30;
+    // prepare: seconds it waits for the release to prove it keeps up, the seconds its download speed is
+    // averaged over, and how many times the episode's bitrate that speed must reach.
+    static final int PREPARE_TIMEOUT = 90;
+    static final int SPEED_WINDOW = 10;
+    static final double SPEED_MARGIN = 1.5;
     static final int REQUEST_TIMEOUT = 60;
     // Longer than TorrServer's own limit on one ffprobe run, 5 min in MatriX.133t, so TorrServer answers
     // /ffp before this side would give up.
     static final int FFPROBE_TIMEOUT = 330;
     static final int POLL_INTERVAL = 1;
-    // TorrServer's state of a torrent something is reading (server/torr/state/state.go).
+    // TorrServer's states of a torrent running a preload and of one something is reading
+    // (server/torr/state/state.go).
+    static final int TORRENT_PRELOAD = 2;
     static final int TORRENT_WORKING = 3;
 
     static final String[] VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".ts", ".m2ts",
@@ -74,8 +83,18 @@ final class TvFormat {
     static final Pattern BTIH_HEX = Pattern.compile("[0-9a-f]{40}", Pattern.CASE_INSENSITIVE);
     static final Pattern BTIH_BASE32 = Pattern.compile("[a-z2-7]{32}", Pattern.CASE_INSENSITIVE);
 
-    // Divisor for human sizes, exactly as the Python 2**30.
+    // src/tv.py lines 99-103: S01E02 / 1x02 season+episode patterns, then the E01-style episode-only one.
+    static final Pattern[] SEASON_EPISODE = {
+            Pattern.compile("s(\\d{1,2})[ ._-]?e(\\d{1,3})(?!\\d)", Pattern.CASE_INSENSITIVE),  // S01E02, S01.E02
+            Pattern.compile("(?<!\\d)(\\d{1,2})x(\\d{2,3})(?!\\d)", Pattern.CASE_INSENSITIVE),   // 1x02, not 1920x1080
+    };
+    static final Pattern EPISODE_ONLY =
+            Pattern.compile("(?<![a-z\\d])(?:e|ep|episode)[ ._-]?(\\d{1,3})(?!\\d)", Pattern.CASE_INSENSITIVE);
+
+    // Divisors for human sizes, exactly as the Python 2**30, 2**20 and 2**10.
     private static final double GIB = 1L << 30;
+    static final double MIB = 1L << 20;
+    private static final double KIB = 1L << 10;
 
     // --- subtitle-kind machinery (src/tv.py, lines 85-97, 135-149) --------------------------------------
     // NOT_FULL: subtitle kinds that are never full subtitles, by markers in the (lowercased) title; the keys
@@ -163,6 +182,37 @@ final class TvFormat {
         return subtitleKind(title, forced, comment, hearing);
     }
 
+    // --- episode parsing (src/tv.py, lines 173-180) -----------------------------------------------------
+
+    /** The Python parse_episode return: (season, episode); season is null for an E01-style name. */
+    static final class Episode {
+        final Integer season;
+        final int episode;
+
+        Episode(Integer season, int episode) {
+            this.season = season;
+            this.episode = episode;
+        }
+    }
+
+    /** Port of parse_episode: (season, episode) from a file name; season is null for an E01-style name. */
+    static Episode parseEpisode(String name) {
+        for (Pattern pattern : SEASON_EPISODE) {
+            Matcher m = pattern.matcher(name);
+            if (m.find()) {
+                return new Episode(Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)));
+            }
+        }
+        Matcher m = EPISODE_ONLY.matcher(name);
+        return m.find() ? new Episode(null, Integer.parseInt(m.group(1))) : null;
+    }
+
+    /** posixpath.basename: the substring after the last "/" (the whole string when there is none). */
+    static String basename(String path) {
+        int i = path.lastIndexOf('/');
+        return i < 0 ? path : path.substring(i + 1);
+    }
+
     // --- video files (src/tv.py, lines 183-196) ---------------------------------------------------------
 
     /** Port of video_files. */
@@ -197,6 +247,56 @@ final class TvFormat {
                     .append(gib(f.optLong("length", 0) / GIB)).append(" ГБ");
         }
         return sb.toString();
+    }
+
+    /** Port of pick_file (src/tv.py, lines 199-225): the file `file`, else the one of the episode asked for. */
+    static JSONObject pickFile(List<JSONObject> files, Integer season, Integer episode, Integer file) throws ToolError {
+        List<JSONObject> videos = videoFiles(files);
+        if (videos.isEmpty()) throw new ToolError("В раздаче нет видеофайлов");
+        if (file != null) {
+            for (JSONObject f : videos) {
+                if (f.optInt("id") == file) return f;
+            }
+            throw new ToolError("Видеофайла " + file + " в раздаче нет; номера файлов — в files");
+        }
+        if (season == null && episode == null) return videos.get(0);
+        int seasonNum = season == null ? 1 : season;
+        LinkedHashMap<Integer, List<Integer>> found = new LinkedHashMap<>();
+        for (JSONObject video : videos) {
+            Episode parsed = parseEpisode(basename(video.optString("path", "")));
+            if (parsed == null) continue;
+            boolean seasonOk = parsed.season == null || parsed.season == seasonNum;
+            boolean episodeOk = episode == null || episode == parsed.episode;
+            if (seasonOk && episodeOk) return video;
+            List<Integer> list = found.get(parsed.season);
+            if (list == null) {
+                list = new ArrayList<>();
+                found.put(parsed.season, list);
+            }
+            list.add(parsed.episode);
+        }
+        String wanted = String.format(Locale.ROOT, "S%02d", seasonNum)
+                + (episode == null ? "" : String.format(Locale.ROOT, "E%02d", episode));
+        List<Map.Entry<Integer, List<Integer>>> entries = new ArrayList<>(found.entrySet());
+        // sorted(..., key=lambda kv: (kv[0] is None, kv[0] or 0)): None season last, then by season value.
+        Collections.sort(entries, (a, b) -> {
+            int an = a.getKey() == null ? 1 : 0;
+            int bn = b.getKey() == null ? 1 : 0;
+            if (an != bn) return Integer.compare(an, bn);
+            int av = a.getKey() == null ? 0 : a.getKey();
+            int bv = b.getKey() == null ? 0 : b.getKey();
+            return Integer.compare(av, bv);
+        });
+        StringBuilder have = new StringBuilder();
+        for (Map.Entry<Integer, List<Integer>> e : entries) {
+            String label = e.getKey() == null ? "без сезона" : String.format(Locale.ROOT, "S%02d", e.getKey());
+            if (have.length() > 0) have.append(", ");
+            have.append(label).append(": ").append(Collections.min(e.getValue()))
+                    .append("–").append(Collections.max(e.getValue()));
+        }
+        String haveStr = have.length() > 0 ? have.toString() : "только файлы без номеров";
+        throw new ToolError("Серии " + wanted + " в раздаче нет; есть " + haveStr
+                + ". Список файлов с номерами — files, нужный файл — параметром file");
     }
 
     // --- result lines (src/tv.py, lines 271-294) --------------------------------------------------------
@@ -376,6 +476,48 @@ final class TvFormat {
         String titlePart = titles.isEmpty() ? "" : " (" + joinComma(titles) + ")";
         String neverPart = never > 0 ? ", надписи: " + never : "";
         return new Note(true, "сабы " + lang + ": " + full + titlePart + neverPart);
+    }
+
+    // --- prepare helpers (src/tv.py, lines 459-475) -----------------------------------------------------
+
+    /**
+     * Port of needed_rate: bytes per second a file plays at, from TorrServer's /ffp answer: ffprobe's format
+     * bit_rate over 8, else the file's length over its duration; null when ffprobe gave neither.
+     */
+    static Double neededRate(JSONObject probe, long length) {
+        JSONObject fmt = probe == null ? null : probe.optJSONObject("format");
+        if (fmt == null) fmt = new JSONObject();
+        // float(fmt["bit_rate"]) / 8
+        if (fmt.has("bit_rate") && !fmt.isNull("bit_rate")) {
+            try {
+                return Double.parseDouble(fmt.get("bit_rate").toString()) / 8;
+            } catch (NumberFormatException | org.json.JSONException ignored) {
+                // Falls through to duration, as the Python `except ...: pass`.
+            }
+        }
+        // length / float(fmt["duration"])
+        if (fmt.has("duration") && !fmt.isNull("duration")) {
+            try {
+                double duration = Double.parseDouble(fmt.get("duration").toString());
+                return duration == 0 ? null : length / duration;  // ZeroDivisionError -> None
+            } catch (NumberFormatException | org.json.JSONException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    /** Port of describe_speed. */
+    static String describeSpeed(double speed, Double rate) {
+        String need = (rate != null && rate != 0.0)
+                ? "серии нужно около " + fmt0(rate / KIB) + " КБ/с"
+                : "сколько нужно серии, не узнал";
+        return "качается " + fmt0(speed / KIB) + " КБ/с, " + need;
+    }
+
+    /** A rounded whole number, matching the Python {@code f"{x:.0f}"}. */
+    static String fmt0(double value) {
+        return String.format(Locale.ROOT, "%.0f", value);
     }
 
     // --- internal helpers -------------------------------------------------------------------------------

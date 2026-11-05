@@ -368,6 +368,7 @@ public final class TvMcpServer {
             case "files":
                 return toolFiles(args);
             case "prepare":
+                return toolPrepare(args);
             case "play":
             case "find_subtitles":
                 throw new ToolError(NOT_IMPLEMENTED);
@@ -386,6 +387,12 @@ public final class TvMcpServer {
     private String toolFiles(JSONObject args) throws ToolError {
         // id required (integer).
         return tv().files(args.optInt("id", 0));
+    }
+
+    private String toolPrepare(JSONObject args) throws ToolError {
+        // id required (integer); season/episode/file optional, null when absent (Python int | None).
+        return tv().prepare(args.optInt("id", 0), optInt(args, "season"), optInt(args, "episode"),
+                optInt(args, "file"));
     }
 
     /**
@@ -423,6 +430,12 @@ public final class TvMcpServer {
         if (args.isNull(key)) return null;
         String v = args.optString(key, "");
         return v.isEmpty() ? null : v;
+    }
+
+    /** A tool argument as an Integer, null when absent or JSON null (Python's int | None). */
+    private static Integer optInt(JSONObject args, String key) {
+        if (!args.has(key) || args.isNull(key)) return null;
+        return args.optInt(key);
     }
 
     private static boolean isBlank(String s) {
