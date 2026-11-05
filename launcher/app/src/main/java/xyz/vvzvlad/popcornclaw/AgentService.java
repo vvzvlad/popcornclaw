@@ -42,6 +42,7 @@ public final class AgentService extends Service {
     private CommandPopup popup;
     private ScreenStreamServer screen;
     private ControlServer control;
+    private TvMcpServer tvmcp;
     // Both touched on the worker thread only.
     private int failures;
     // Set so the very first start is never held back by the one-minute gap.
@@ -75,6 +76,9 @@ public final class AgentService extends Service {
         // The owner-facing control MCP + settings form over the LAN.
         control = new ControlServer();
         control.start();
+        // The ported tv_mcp (search/files/prepare/play/player/find_subtitles) over the LAN.
+        tvmcp = new TvMcpServer();
+        tvmcp.start();
         // The TV's half of the dialog with no screen open: the gateway has somewhere to send it.
         PicoLink.connect();
         // SPIKE: keep the voice helpers warm for the phone remote's ~15 s window.
@@ -194,6 +198,7 @@ public final class AgentService extends Service {
         popup.stop();
         if (screen != null) screen.stop();
         if (control != null) control.stop();
+        if (tvmcp != null) tvmcp.stop();
         thread.quit();
         super.onDestroy();
     }
