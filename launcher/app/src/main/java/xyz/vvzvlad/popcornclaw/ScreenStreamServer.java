@@ -48,8 +48,14 @@ public final class ScreenStreamServer {
     private static final int JPEG_QUALITY = 60;
     // screencap's raw header on API 28: uint32 width, height, format, colorspace (little-endian), then RGBA pixels.
     private static final int SCREENCAP_HEADER = 16;
+    // screencap's pixel format field (header bytes 8-11): 1 = RGBA_8888, the only layout we unpack (4 bytes/px).
+    private static final int SCREENCAP_FORMAT_RGBA_8888 = 1;
     // Marks the end of a text command's output on the persistent root shell.
     private static final String MARK = "__PCXDONE__";
+    // Longer pause after a failed frame so a dead/denied shell is not re-spawned dozens of times a second.
+    private static final long ERROR_BACKOFF_MS = 1000;
+    // A single root-shell read may not block longer than this; a watchdog then kills the shell to unblock it.
+    private static final long OP_TIMEOUT_MS = 4000;
 
     private volatile boolean running;
     // Assigned on the accept thread, read by stop() on the caller's thread: volatile for the handoff.
@@ -231,26 +237,43 @@ public final class ScreenStreamServer {
         while (running) {
             synchronized (clientsLock) {
                 if (clients == 0) {
-                    captureThread = null;
-                    break;
+                    // Clear the thread handle and free the reused buffers in ONE critical section: a client
+                    // reconnecting (joinCapture) then either sees us still running or starts a fresh thread that
+                    // re-creates them -- it can never reach a half-freed/recycled Bitmap.
+                    releaseCapture();
+                    return;
                 }
             }
             byte[] jpeg = captureJpeg();
+            long delay = FRAME_DELAY_MS;
             if (jpeg != null) {
                 synchronized (frameLock) {
                     latestFrame = jpeg;
                     frameSeq++;
                     frameLock.notifyAll();
                 }
+            } else {
+                // A failed frame usually means the root shell was just killed; it is re-spawned on the next call.
+                // Back off so we do not re-spawn su (and flash SuperSU toasts) dozens of times a second.
+                delay = ERROR_BACKOFF_MS;
             }
             try {
-                Thread.sleep(FRAME_DELAY_MS);
+                Thread.sleep(delay);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;
             }
         }
-        // Last client gone (or shutting down): free the reused capture buffers.
+        // Shutting down (running == false) or interrupted: release under the lock, so an exit on any path leaves
+        // captureThread clear and never strands it pointing at a dead thread.
+        synchronized (clientsLock) {
+            releaseCapture();
+        }
+    }
+
+    /** Clears the capture-thread handle and frees the reused frame buffers. Caller holds {@link #clientsLock}. */
+    private void releaseCapture() {
+        if (captureThread == Thread.currentThread()) captureThread = null;
         if (frameBmp != null) { frameBmp.recycle(); frameBmp = null; }
         frameBuf = null;
     }
@@ -261,18 +284,24 @@ public final class ScreenStreamServer {
      * screen, 1:1 with the display, so its pixels are the device's and its size maps input coordinates.
      */
     private byte[] captureJpeg() {
-        int[] dim = root.screencap();
-        if (dim == null) return null;
-        int w = dim[0], h = dim[1];
-        if (deviceSize == null) deviceSize = new int[]{w, h};
-        if (frameBmp == null || frameBmp.getWidth() != w || frameBmp.getHeight() != h) {
-            if (frameBmp != null) frameBmp.recycle();
-            frameBmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        try {
+            int[] dim = root.screencap();
+            if (dim == null) return null;
+            int w = dim[0], h = dim[1];
+            if (deviceSize == null) deviceSize = new int[]{w, h};
+            if (frameBmp == null || frameBmp.getWidth() != w || frameBmp.getHeight() != h) {
+                if (frameBmp != null) frameBmp.recycle();
+                frameBmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            }
+            frameBmp.copyPixelsFromBuffer(ByteBuffer.wrap(frameBuf, 0, w * h * 4));
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            frameBmp.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, bos);
+            return bos.toByteArray();
+        } catch (RuntimeException e) {
+            // Never let a capture error (e.g. OOM on the big Bitmap) kill the capture thread and freeze the stream.
+            Log.w(TAG, "capture failed", e);
+            return null;
         }
-        frameBmp.copyPixelsFromBuffer(ByteBuffer.wrap(frameBuf, 0, w * h * 4));
-        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-        frameBmp.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, bos);
-        return bos.toByteArray();
     }
 
     // --- input injection -----------------------------------------------------------------------------------
@@ -384,24 +413,43 @@ public final class ScreenStreamServer {
      * All access is serialized -- the capture loop and the input handlers run one command at a time.
      */
     private final class RootShell {
-        private Process proc;
+        // proc is read without the monitor by the watchdog and by close(), so it is volatile.
+        private volatile Process proc;
         private OutputStream in;
         private InputStream out;
+        // Deadline (epoch ms) of the read in progress, 0 when idle; the watchdog kills the shell past it so a
+        // stuck read (e.g. a screencap that never finishes) cannot hang a thread forever.
+        private volatile long opDeadline;
 
         private boolean ensure() {
             if (proc != null && proc.isAlive()) return true;
             try {
                 // stdin is a pipe, not a tty, so the shell runs non-interactively and prints no prompt.
-                proc = new ProcessBuilder("su").redirectErrorStream(false).start();
-                in = proc.getOutputStream();
-                out = proc.getInputStream();
-                final InputStream err = proc.getErrorStream();
+                final Process started = new ProcessBuilder("su").redirectErrorStream(false).start();
+                proc = started;
+                in = started.getOutputStream();
+                out = started.getInputStream();
+                final InputStream err = started.getErrorStream();
                 Thread t = new Thread(() -> {
                     byte[] b = new byte[256];
                     try { while (err.read(b) != -1) { /* drain stderr */ } } catch (IOException ignored) { }
                 }, "pcx-root-err");
                 t.setDaemon(true);
                 t.start();
+                // Watchdog: if the current read outlives opDeadline, kill the shell so the blocked read unblocks.
+                Thread wd = new Thread(() -> {
+                    while (started.isAlive()) {
+                        try { Thread.sleep(500); } catch (InterruptedException e) { return; }
+                        long d = opDeadline;
+                        if (d != 0 && System.currentTimeMillis() > d) {
+                            Log.w(TAG, "root shell read timed out; killing the shell");
+                            started.destroy();
+                            return;
+                        }
+                    }
+                }, "pcx-root-wd");
+                wd.setDaemon(true);
+                wd.start();
                 // Swallow any shell/su startup banner so the stream starts at a clean command boundary.
                 in.write(("echo " + MARK + "0\n").getBytes(StandardCharsets.UTF_8));
                 in.flush();
@@ -419,8 +467,9 @@ public final class ScreenStreamServer {
 
         /** Runs a text command and returns its stdout up to the marker; null if the shell could not run it. */
         synchronized String exec(String cmd) {
-            if (!ensure()) return null;
+            opDeadline = System.currentTimeMillis() + OP_TIMEOUT_MS;
             try {
+                if (!ensure()) return null;
                 in.write((cmd + "\necho " + MARK + "$?\n").getBytes(StandardCharsets.UTF_8));
                 in.flush();
                 StringBuilder body = new StringBuilder();
@@ -434,20 +483,25 @@ public final class ScreenStreamServer {
                 Log.w(TAG, "root exec failed: " + cmd, e);
                 kill();
                 return null;
+            } finally {
+                opDeadline = 0;
             }
         }
 
         /** One raw screencap frame straight from stdout into {@link #frameBuf}; returns {width,height} or null. */
         synchronized int[] screencap() {
-            if (!ensure()) return null;
+            opDeadline = System.currentTimeMillis() + OP_TIMEOUT_MS;
             try {
+                if (!ensure()) return null;
                 in.write("screencap\n".getBytes(StandardCharsets.UTF_8));
                 in.flush();
                 byte[] hdr = new byte[SCREENCAP_HEADER];
                 if (!readFull(out, hdr, SCREENCAP_HEADER)) { kill(); return null; }
-                int w = le32(hdr, 0), h = le32(hdr, 4);
-                if (w <= 0 || h <= 0 || w > 8192 || h > 8192) {
-                    Log.w(TAG, "implausible screencap size " + w + "x" + h);
+                int w = le32(hdr, 0), h = le32(hdr, 4), fmt = le32(hdr, 8);
+                if (w <= 0 || h <= 0 || w > 8192 || h > 8192 || fmt != SCREENCAP_FORMAT_RGBA_8888) {
+                    // A bad header (or a non-RGBA_8888 surface, e.g. HDR FP16) would misread the pixel count and
+                    // desync the stream; drop the shell instead and let the next frame start clean.
+                    Log.w(TAG, "unexpected screencap header " + w + "x" + h + " fmt " + fmt);
                     kill();
                     return null;
                 }
@@ -459,18 +513,27 @@ public final class ScreenStreamServer {
                 Log.w(TAG, "root screencap failed", e);
                 kill();
                 return null;
+            } finally {
+                opDeadline = 0;
             }
         }
 
-        synchronized void close() {
-            kill();
+        /**
+         * Not synchronized: a reader may hold the monitor blocked on the pipe. destroy() closes the pipe so that
+         * read unblocks (its catch then runs kill()); taking the monitor here would deadlock against that reader.
+         */
+        void close() {
+            Process p = proc;
+            proc = null;
+            if (p != null) p.destroy();
         }
 
         private void kill() {
-            if (proc != null) proc.destroy();
+            Process p = proc;
             proc = null;
             in = null;
             out = null;
+            if (p != null) p.destroy();
         }
     }
 
