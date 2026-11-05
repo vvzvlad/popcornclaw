@@ -40,6 +40,7 @@ public final class AgentService extends Service {
     private HandlerThread thread;
     private Handler worker;
     private CommandPopup popup;
+    private ScreenStreamServer screen;
     // Both touched on the worker thread only.
     private int failures;
     // Set so the very first start is never held back by the one-minute gap.
@@ -67,6 +68,9 @@ public final class AgentService extends Service {
         // The service always runs, so it is the one that pops up each command the agent gets and its messages.
         popup = new CommandPopup(this);
         popup.start();
+        // The owner-facing web page (box screen + mouse/keyboard over the LAN, "just to set things up").
+        screen = new ScreenStreamServer();
+        screen.start();
         // The TV's half of the dialog with no screen open: the gateway has somewhere to send it.
         PicoLink.connect();
         // SPIKE: keep the voice helpers warm for the phone remote's ~15 s window.
@@ -184,6 +188,7 @@ public final class AgentService extends Service {
     public void onDestroy() {
         unregisterReceiver(bonded);
         popup.stop();
+        if (screen != null) screen.stop();
         thread.quit();
         super.onDestroy();
     }
