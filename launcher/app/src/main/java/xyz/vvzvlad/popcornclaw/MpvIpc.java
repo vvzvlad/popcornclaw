@@ -164,6 +164,18 @@ public final class MpvIpc {
     }
 
     /**
+     * The next event mpv sent, blocking until one arrives; null once the connection has closed (the END
+     * sentinel is dequeued), mirroring the Python follower's {@code await ipc.events.get()} returning None
+     * on close. The follower blocks here between items; {@link InterruptedException} propagates so a cancelled
+     * (interrupted) follower thread unwinds and exits. Like the Python queue, END is consumed once: a caller
+     * that gets null must stop reading this connection (the follower closes it and reconnects).
+     */
+    public JSONObject takeEvent() throws InterruptedException {
+        JSONObject event = events.take();
+        return event == END ? null : event;
+    }
+
+    /**
      * Whether mpv closed the connection within {@code timeoutMs} (the Python {@code Ipc.wait_closed}): the reader
      * thread ends when mpv shuts the socket, so this waits for it to die. Used by {@code Tv._stop} after sending
      * {@code stop}, which makes mpv-android close its activity and the IPC socket with it.

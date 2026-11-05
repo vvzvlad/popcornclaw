@@ -74,6 +74,10 @@ final class Tv {
     private static final int MPV_START_TIMEOUT = 30;
     private static final int PLAYER_TIMEOUT = 120;
     private static final int MPV_STOP_TIMEOUT = 10;
+    // Follower timing (src/tv.py 68-69): retry a reconnect every FOLLOW_INTERVAL s, give up after FOLLOW_IDLE
+    // s without a connection to mpv (mpv-android closes its activity at the end of the playlist or on stop).
+    private static final int FOLLOW_INTERVAL = 2;
+    private static final int FOLLOW_IDLE = 30;
     // Seconds one `am start` (su) run may take (Python ADB_TIMEOUT = 20).
     private static final long AM_TIMEOUT_MS = 20_000L;
     // _apply's default: both kinds (Python kinds=("subtitles", "audio")).
@@ -108,15 +112,18 @@ final class Tv {
     // The release the last play loaded into mpv (src/tv.py __init__, 627-631): every tracker topic and info
     // hash its plays have had, the entry URLs of its playlist, the subtitle languages (bottom, then top) and
     // the audio language chosen for that release. A play of any of those topics or hashes is the same release
-    // and keeps the chosen languages. Guarded by releaseLock because chunk 3c's follower thread will read
-    // these from another thread; play writes them and _apply reads them on the same call for now. (The
-    // follower field itself is not added here — it belongs to the next chunk.)
+    // and keeps the chosen languages. Guarded by releaseLock because the follower thread reads these from
+    // another thread; play writes them and _apply reads them.
     private final Object releaseLock = new Object();
     private final Set<String> relTopics = new HashSet<>();
     private final Set<String> relHashes = new HashSet<>();
     private List<String> relPlaylist = new ArrayList<>();
     private List<String> relSubs = new ArrayList<>();
     private String relAudio;
+    // The follower (src/tv.py 627): the daemon thread that keeps the chosen languages on each next item of
+    // relPlaylist (chunk 3c). Set, replaced and nulled under releaseLock, like the rest of the release-state;
+    // null when none runs. Cancelled by interrupting it (Java's thread cancellation).
+    private Thread follower;
 
     Tv(String jackettUrl, String jackettApiKey, String torrserverUrl) {
         this.jackettUrl = rstripSlash(jackettUrl);
@@ -326,6 +333,10 @@ final class Tv {
                     List<String> subsChoice = !subsArg.isEmpty() ? subsArg
                             : (same ? new ArrayList<>(relSubs) : new ArrayList<String>());
                     String audioChoice = audio != null ? audio : (same ? relAudio : null);
+                    // Stop the previous play's follower before loadfile (mirror tv.py:1002): otherwise it is
+                    // still alive on its own IPC when mpv broadcasts the new item's file-loaded and would apply
+                    // the tracks concurrently with this play's own apply below. follow() at the end restarts it.
+                    unfollowLocked();
                     if (!same) {
                         relTopics.clear();
                         relHashes.clear();
@@ -347,6 +358,9 @@ final class Tv {
                 List<String> lines = new ArrayList<>();
                 lines.add("Играет: " + TvFormat.basename(picked.optString("path")));
                 lines.addAll(apply(ipc));
+                // Also when this item has none of them: the languages are chosen for the following ones.
+                Object playingPath = ipc.get("path");
+                follow(playingPath == null ? null : playingPath.toString());
                 return join(lines);
             } finally {
                 if (ipc != null) ipc.close();
@@ -464,6 +478,131 @@ final class Tv {
 
     private static boolean sameId(Integer a, Integer b) {
         return a == null ? b == null : a.equals(b);
+    }
+
+    // --- Follower (src/tv.py 1414-1485) ----------------------------------------------------------------
+
+    /**
+     * Port of Tv._follow: (re)start the follower so the chosen languages stay on through the playlist the last
+     * play loaded. Without a chosen language it only stops the running follower. {@code handled} is the path
+     * of the item the caller has just set the tracks of, which the follower then leaves as they are. The
+     * follower reads the release-state, so it is (re)started under releaseLock like the rest of it.
+     */
+    private void follow(String handled) {
+        synchronized (releaseLock) {
+            unfollowLocked();
+            if ((!relSubs.isEmpty() || relAudio != null) && !relPlaylist.isEmpty()) {
+                List<String> playlist = new ArrayList<>(relPlaylist);
+                Thread t = new Thread(() -> followPlaylist(playlist, handled), "pcx-tv-follower");
+                t.setDaemon(true);
+                // Stored before start() so the thread's finally, which nulls the field only if it is still this
+                // thread, sees it (the write happens-before the thread runs); the thread itself takes
+                // releaseLock only briefly, in apply() and its finally, never across a blocking call.
+                follower = t;
+                t.start();
+            }
+        }
+    }
+
+    /** Port of Tv._unfollow: stop the follower; the chosen languages stay. Callable from TvMcpServer. */
+    void unfollow() {
+        synchronized (releaseLock) {
+            unfollowLocked();
+        }
+    }
+
+    /** _unfollow's body, with releaseLock already held; interrupting the thread is how it is cancelled. */
+    private void unfollowLocked() {
+        if (follower != null) {
+            follower.interrupt();
+            follower = null;
+        }
+    }
+
+    /**
+     * Port of Tv._follow_playlist: on each file-loaded mpv sends (it has chosen the item's tracks by then) put
+     * the chosen languages on the item, switching only what is not right already: mpv carries each slot's
+     * track over by its number, the right one only while the items' tracks are laid out alike. It does the
+     * same for the item playing whenever it connects, as an item may have loaded while it had no connection,
+     * apart from the {@code handled} item as long as no other has loaded since: a track the caller put on by
+     * number stays.
+     *
+     * <p>Ends when an item outside {@code playlist} loads, or after FOLLOW_IDLE s without a connection to mpv;
+     * the languages stay chosen either way. A bad answer does not end it. Runs on its own daemon thread with
+     * its own mpv connection; cancellation is an interrupt, which unwinds it at any blocking point.
+     */
+    private void followPlaylist(List<String> playlist, String handled) {
+        MpvIpc ipc = null;
+        Long lostNanos = null;  // System.nanoTime() when the connection was first lost (time.monotonic)
+        try {
+            while (true) {
+                JSONObject event;
+                if (ipc == null) {
+                    // _mpv() raises no ToolError on the box (no adb forward); MpvIpc.open returns null when mpv
+                    // is not running, which the Python _mpv does too.
+                    ipc = mpv();
+                    if (ipc == null) {
+                        long now = System.nanoTime();
+                        if (lostNanos == null) lostNanos = now;
+                        if (now - lostNanos >= FOLLOW_IDLE * 1_000_000_000L) {
+                            Log.i(TAG, "follower: no mpv for " + FOLLOW_IDLE + " s; done");
+                            return;
+                        }
+                        Thread.sleep(FOLLOW_INTERVAL * 1000L);
+                        continue;
+                    }
+                    // First connection: apply to the item playing now too, bar the handled one.
+                    lostNanos = null;
+                    event = handled != null ? obj("event", "file-loaded", "handled", handled)
+                            : obj("event", "file-loaded");
+                } else {
+                    event = ipc.takeEvent();
+                    if (event != null && "file-loaded".equals(event.optString("event"))) {
+                        handled = null;  // another item has loaded since the caller set the tracks
+                    }
+                }
+                if (event == null) {  // the connection closed (END sentinel): reconnect
+                    ipc.close();
+                    ipc = null;
+                    continue;
+                }
+                if (!"file-loaded".equals(event.optString("event"))) continue;
+                try {
+                    Object pathObj = ipc.get("path");
+                    String path = pathObj == null ? null : pathObj.toString();
+                    String eventHandled = event.has("handled") ? event.optString("handled") : null;
+                    if (path == null || path.equals(eventHandled)) continue;
+                    handled = null;  // another item plays: it has loaded since the caller set the tracks
+                    if (!playlist.contains(path)) {
+                        Log.i(TAG, "follower: " + path + " plays, not this playlist; done");
+                        return;
+                    }
+                    Log.i(TAG, "follower: " + TvFormat.urlPathBasename(path) + ": "
+                            + joinSemicolon(apply(ipc)));
+                } catch (MpvIpc.MpvError | RuntimeException exc) {
+                    // A bad answer must not end the task; a closed connection comes back as null from takeEvent.
+                    Log.w(TAG, "follower: " + exc.getClass().getSimpleName() + ": " + exc.getMessage());
+                }
+            }
+        } catch (InterruptedException cancelled) {
+            // Cancelled (unfollow interrupted the thread): exit cleanly, keeping the interrupt flag.
+            Thread.currentThread().interrupt();
+        } finally {
+            if (ipc != null) ipc.close();
+            synchronized (releaseLock) {
+                if (follower == Thread.currentThread()) follower = null;
+            }
+        }
+    }
+
+    /** `"; ".join(parts)` for the follower's log line. */
+    private static String joinSemicolon(List<String> parts) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < parts.size(); i++) {
+            if (i > 0) sb.append("; ");
+            sb.append(parts.get(i));
+        }
+        return sb.toString();
     }
 
     // --- mpv on the box (src/tv.py 1083-1213) ----------------------------------------------------------

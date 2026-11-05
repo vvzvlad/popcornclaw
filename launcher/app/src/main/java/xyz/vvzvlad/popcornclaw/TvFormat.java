@@ -826,6 +826,29 @@ final class TvFormat {
         return out;
     }
 
+    /** posixpath.basename(unquote(urlsplit(url).path)): the decoded file name of a URL's path. The follower's
+     *  log line names the item it set the languages on this way. */
+    static String urlPathBasename(String url) {
+        return basename(urlDecode(urlPath(url)));
+    }
+
+    /** urlsplit(url).path: the path component of a URL, without scheme/authority, query or fragment. A string
+     *  with no scheme (no "://") is treated as all path, as urlsplit does for a relative reference. */
+    private static String urlPath(String url) {
+        if (url == null) return "";
+        String s = url;
+        int hash = s.indexOf('#');
+        if (hash >= 0) s = s.substring(0, hash);
+        int qm = s.indexOf('?');
+        if (qm >= 0) s = s.substring(0, qm);
+        int scheme = s.indexOf("://");
+        if (scheme >= 0) {
+            int slash = s.indexOf('/', scheme + 3);
+            s = slash >= 0 ? s.substring(slash) : "";
+        }
+        return s;
+    }
+
     /** `(s.get("tags") or {}).get("language")`: the stream's tag language, or null when absent/empty. */
     private static String tagLanguage(JSONObject stream) {
         JSONObject tags = stream.optJSONObject("tags");

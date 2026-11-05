@@ -513,8 +513,9 @@ public final class TvMcpServer {
                         ipc.command("cycle", "pause");
                         return TvFormat.truthy(ipc.get("pause")) ? "Пауза" : "Играет";
                     case "stop":
-                        // No follower in this chunk; just send stop. The languages would stay chosen once a
-                        // later chunk adds the follower.
+                        // The languages stay chosen: a play of this release's next episode puts them on again
+                        // (Python player stop: _unfollow then _stop).
+                        unfollow();
                         stop(ipc);
                         return "Остановлено";
                     case "seek": {
@@ -599,6 +600,19 @@ public final class TvMcpServer {
             ipc.command("stop");
         } catch (MpvIpc.MpvError ignored) {
             // mpv may close the connection before it replies to stop; that is a successful stop.
+        }
+    }
+
+    /**
+     * Stop the follower before mpv is stopped (Python player stop: _unfollow then _stop). {@link #tv()} throws
+     * ToolError when tv_mcp.json is absent; with no {@link Tv} built there is no follower to stop, so that is
+     * swallowed and player stop still stops mpv.
+     */
+    private void unfollow() {
+        try {
+            tv().unfollow();
+        } catch (ToolError ignored) {
+            // tv_mcp not configured: no Tv instance, so no follower runs.
         }
     }
 
