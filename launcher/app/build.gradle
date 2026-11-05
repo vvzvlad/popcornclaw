@@ -24,12 +24,15 @@ android {
         }
     }
 
-    // PopcornClaw: the PicoClaw binary rides in jniLibs as libpicoclaw.so (copied there by the Makefile) so
-    // the installer extracts it as an executable file; it is a static Go binary, not a library: never strip it.
+    // PopcornClaw: the PicoClaw, TorrServer and ffprobe binaries ride in jniLibs as lib*.so (copied there by
+    // the Makefile) so the installer extracts them as executable files; they are whole binaries, not libraries,
+    // so AGP must not strip them (a stripped Go binary will not start).
     packaging {
         jniLibs {
             useLegacyPackaging = true
             keepDebugSymbols += '**/libpicoclaw.so'
+            keepDebugSymbols += '**/libtorrserver.so'
+            keepDebugSymbols += '**/libffprobe.so'
         }
     }
 

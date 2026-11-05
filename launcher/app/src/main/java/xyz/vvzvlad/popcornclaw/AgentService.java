@@ -81,6 +81,8 @@ public final class AgentService extends Service {
         tvmcp.start();
         // The TV's half of the dialog with no screen open: the gateway has somewhere to send it.
         PicoLink.connect();
+        // The box's own TorrServer (bundled in the app), so tv_mcp needs no networked one; ffprobe rides with it.
+        worker.post(this::startTorrServer);
         // SPIKE: keep the voice helpers warm for the phone remote's ~15 s window.
         worker.post(this::startVoiceHelpers);
         new Thread(() -> fixRemoteKeys(1), "popcornclaw-bt").start();
@@ -288,6 +290,47 @@ public final class AgentService extends Service {
             if (code != 0) appendLog("su exited with " + code + " (" + reason + "); no root grant for the app?");
         } catch (IOException e) {
             Log.e(TAG, "gateway start (" + reason + "): su failed", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * Starts the bundled TorrServer on :8090 (the port tv_mcp uses) the way {@link #start} starts the gateway:
+     * a leftover is killed first (SIGTERM, then SIGKILL), then a fresh one is launched under su --mount-master
+     * so it shares the box's mounts. TorrServer finds ffprobe (bundled too, as libffprobe.so) through PATH: a
+     * symlink named "ffprobe" in its data dir points at the extracted library, and the data dir leads PATH. The
+     * binary runs through the shell variable B so the pkill/pgrep pattern "[l]ibtorrserver.so --port 8090" does
+     * not match this script's own command line, only the running server.
+     */
+    private void startTorrServer() {
+        String bin = getApplicationInfo().nativeLibraryDir + "/libtorrserver.so";
+        String ffprobe = getApplicationInfo().nativeLibraryDir + "/libffprobe.so";
+        String data = DIR + "/torrserver";
+        String script = "umask 000\n"
+                + "B=" + bin + "\n"
+                + "D=" + data + "\n"
+                + "mkdir -p \"$D\"\n"
+                + "ln -sf " + ffprobe + " \"$D/ffprobe\"\n"
+                + "touch \"$D/torrserver.log\" && chmod 666 \"$D/torrserver.log\"\n"
+                + "pkill -f '[l]ibtorrserver.so --port 8090'\n"
+                + "for i in 1 2 3 4 5 6 7 8 9 10; do pgrep -f '[l]ibtorrserver.so --port 8090' >/dev/null || break; sleep 1; done\n"
+                + "p=$(pgrep -f '[l]ibtorrserver.so --port 8090') && kill -9 $p\n"
+                + "cd \"$D\" || exit 1\n"
+                // Go binaries: CA store for HTTPS tracker lists, a temp dir Android otherwise lacks, and the data
+                // dir on PATH so TorrServer's exec.LookPath finds the ffprobe symlink.
+                + "export HOME=\"$D\" TMPDIR=/data/local/tmp SSL_CERT_DIR=/system/etc/security/cacerts\n"
+                + "export PATH=\"$D:$PATH\"\n"
+                + "setsid \"$B\" --port 8090 --path \"$D\" --logpath \"$D/torrserver.log\" >> \"$D/torrserver.log\" 2>&1 < /dev/null &\n";
+        try {
+            Process p = new ProcessBuilder("su", "--mount-master", "-c", script).redirectErrorStream(true).start();
+            p.getOutputStream().close();
+            try (BufferedReader out = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
+                for (String line; (line = out.readLine()) != null; ) Log.w(TAG, "torrserver su: " + line);
+            }
+            Log.i(TAG, "torrserver: launched (su exited with " + p.waitFor() + ")");
+        } catch (IOException e) {
+            Log.e(TAG, "torrserver: launching failed", e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
