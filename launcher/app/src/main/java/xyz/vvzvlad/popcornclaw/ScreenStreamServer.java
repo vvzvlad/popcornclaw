@@ -511,7 +511,7 @@ public final class ScreenStreamServer {
             if (proc != null && Procs.alive(proc)) return true;
             try {
                 // stdin is a pipe, not a tty, so the shell runs non-interactively and prints no prompt.
-                final Process started = new ProcessBuilder("su").redirectErrorStream(false).start();
+                final Process started = new ProcessBuilder(Su.argv()).redirectErrorStream(false).start();
                 proc = started;
                 in = started.getOutputStream();
                 out = started.getInputStream();

@@ -32,7 +32,8 @@ where his notes are; read it first when it is there.
   `launcher/Dockerfile` with Gradle on the docker daemon, PicoClaw inside as
   `lib/armeabi-v7a/libpicoclaw.so` and `lib/arm64-v8a/libpicoclaw.so`. Our code lives in `launcher/app/src/main/java/xyz/vvzvlad/popcornclaw/`;
   upstream files get only hook lines, so upstream updates can be diffed in (`AgentService` keeps the
-  gateway running as root through SuperSU and starts the two LAN servers below; `PicoLink` is the app's
+  gateway running as root through su — SuperSU or Magisk, every root call builds its command line with `Su.argv` —
+  and starts the two LAN servers below; `PicoLink` is the app's
   WebSocket to the gateway's pico channel, open from the service's start; `PicoTurn` turns its frames
   into the assistant screen's events; `ScreenStreamServer` serves the box screen as MJPEG with mouse/
   keyboard back (port 8080, LAN); `ControlServer` is the owner's control surface on port 8081 — an MCP

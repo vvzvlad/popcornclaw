@@ -1463,7 +1463,7 @@ public final class ControlServer {
         String wrapped = ENV_PREFIX + command;
         Process proc = null;
         try {
-            proc = new ProcessBuilder("su", "--mount-master", "-c", wrapped).redirectErrorStream(true).start();
+            proc = new ProcessBuilder(Su.argv("--mount-master", "-c", wrapped)).redirectErrorStream(true).start();
             OutputStream os = proc.getOutputStream();
             if (stdin != null) os.write(stdin);
             os.close();

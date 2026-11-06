@@ -529,7 +529,7 @@ public final class TvMcpServer {
         Process p = null;
         try {
             // --mount-master: the same global mount namespace the gateway runs in (parity with AgentService).
-            p = new ProcessBuilder("su", "--mount-master", "-c", "cat " + path).redirectErrorStream(true).start();
+            p = new ProcessBuilder(Su.argv("--mount-master", "-c", "cat " + path)).redirectErrorStream(true).start();
             p.getOutputStream().close();
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             try (InputStream in = p.getInputStream()) {

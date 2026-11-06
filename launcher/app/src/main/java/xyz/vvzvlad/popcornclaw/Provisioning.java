@@ -638,7 +638,7 @@ final class Provisioning {
     static Result root(String script, byte[] stdin, long timeoutMs) {
         Process p;
         try {
-            p = new ProcessBuilder("su", "--mount-master", "-c", script).redirectErrorStream(true).start();
+            p = new ProcessBuilder(Su.argv("--mount-master", "-c", script)).redirectErrorStream(true).start();
         } catch (IOException e) {
             return new Result(-1, "su failed: " + e.getMessage());
         }

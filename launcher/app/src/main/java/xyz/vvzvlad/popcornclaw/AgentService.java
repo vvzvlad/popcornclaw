@@ -154,7 +154,7 @@ public final class AgentService extends Service {
                 + "svc bluetooth enable\n"
                 + "echo stripped the identity keys of $l\n";
         try {
-            Process p = new ProcessBuilder("su", "-c", script).redirectErrorStream(true).start();
+            Process p = new ProcessBuilder(Su.argv("-c", script)).redirectErrorStream(true).start();
             p.getOutputStream().close();
             try (BufferedReader out = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
                 for (String line; (line = out.readLine()) != null; ) Log.i(TAG, "remote keys: " + line);
@@ -228,7 +228,7 @@ public final class AgentService extends Service {
                 + cp + " setsid " + relay + " >> " + log + " 2>&1 < /dev/null &\n"
                 + "setsid su " + katnissUid + " -c \"" + cp + " " + worker + "\" >> " + log + " 2>&1 < /dev/null &\n";
         try {
-            Process p = new ProcessBuilder("su", "--mount-master", "-c", script).redirectErrorStream(true).start();
+            Process p = new ProcessBuilder(Su.argv("--mount-master", "-c", script)).redirectErrorStream(true).start();
             p.getOutputStream().close();
             try (BufferedReader out = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
                 for (String line; (line = out.readLine()) != null; ) Log.w(TAG, "voice su: " + line);
@@ -340,7 +340,7 @@ public final class AgentService extends Service {
         try {
             // --mount-master: SuperSU gives every su session its own mount namespace; the gateway must see
             // the same mounts as the rest of the box (the init.d script ran it in the global one).
-            Process p = new ProcessBuilder("su", "--mount-master", "-c", script).redirectErrorStream(true).start();
+            Process p = new ProcessBuilder(Su.argv("--mount-master", "-c", script)).redirectErrorStream(true).start();
             p.getOutputStream().close();
             try (BufferedReader out = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
                 for (String line; (line = out.readLine()) != null; ) Log.w(TAG, "su: " + line);
@@ -385,7 +385,7 @@ public final class AgentService extends Service {
                 + "export PATH=\"$D:$PATH\"\n"
                 + "setsid \"$B\" --port 8090 --path \"$D\" --logpath \"$D/torrserver.log\" >> \"$D/torrserver.log\" 2>&1 < /dev/null &\n";
         try {
-            Process p = new ProcessBuilder("su", "--mount-master", "-c", script).redirectErrorStream(true).start();
+            Process p = new ProcessBuilder(Su.argv("--mount-master", "-c", script)).redirectErrorStream(true).start();
             p.getOutputStream().close();
             try (BufferedReader out = new BufferedReader(new InputStreamReader(p.getInputStream()))) {
                 for (String line; (line = out.readLine()) != null; ) Log.w(TAG, "torrserver su: " + line);

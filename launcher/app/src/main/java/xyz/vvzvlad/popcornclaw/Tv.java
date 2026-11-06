@@ -847,7 +847,7 @@ final class Tv {
     private String su(String script, long timeoutMs) throws ToolError {
         Process proc = null;
         try {
-            proc = new ProcessBuilder("su", "--mount-master", "-c", script).redirectErrorStream(true).start();
+            proc = new ProcessBuilder(Su.argv("--mount-master", "-c", script)).redirectErrorStream(true).start();
             proc.getOutputStream().close();
             final Process p = proc;
             final long deadline = System.nanoTime() + timeoutMs * 1_000_000L;
