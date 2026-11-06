@@ -794,19 +794,29 @@ public final class ControlServer {
         if (err != null) b.append("<p class=err>").append(escapeHtml(err)).append("</p>");
         b.append("<form method=post action=/config>");
 
-        b.append(section("Model"));
+        // Tab bar: one section visible at a time (the panes below). The tabs are plain buttons (type=button) so
+        // they never submit the form; every pane's inputs still submit regardless of which tab is shown.
+        b.append("<nav class=tabs>");
+        b.append("<button type=button class=\"tab active\" data-t=model onclick=\"tab('model')\">Model</button>");
+        b.append("<button type=button class=tab data-t=stt onclick=\"tab('stt')\">STT</button>");
+        b.append("<button type=button class=tab data-t=mcp onclick=\"tab('mcp')\">MCP</button>");
+        b.append("<button type=button class=tab data-t=tg onclick=\"tab('tg')\">Telegram</button>");
+        b.append("<button type=button class=tab data-t=web onclick=\"tab('web')\">Web</button>");
+        b.append("</nav>");
+
+        b.append(pane("model", true));
         b.append(field(f, "model.model", "Model", "text", false));
         b.append(field(f, "model.api_base", "API base", "text", true));
         b.append(field(f, "model.proxy", "Proxy", "text", true));
         b.append(field(f, "model.api_key", "API key", "password", true));
-        b.append("</section>");
+        b.append("</div>");
 
-        b.append(section("STT"));
+        b.append(pane("stt", false));
         b.append(field(f, "asr.proxy", "Proxy", "text", true));
         b.append(field(f, "asr.api_key", "API key", "password", true));
-        b.append("</section>");
+        b.append("</div>");
 
-        b.append(section("MCP servers"));
+        b.append(pane("mcp", false));
         b.append("<div id=srvlist>");
         int i = 0;
         for (java.util.Iterator<String> it = servers.keys(); it.hasNext(); i++) {
@@ -824,20 +834,29 @@ public final class ControlServer {
         b.append("</div>");
         b.append("<button type=button class=add onclick=addServer()>Add server</button>");
         b.append(serverTemplate(i));
-        b.append("</section>");
+        b.append("</div>");
 
-        b.append(section("Telegram"));
+        b.append(pane("tg", false));
         b.append(field(f, "telegram.token", "bot token", "password", true));
-        b.append("</section>");
+        b.append("</div>");
 
-        b.append(section("Web search"));
+        b.append(pane("web", false));
         b.append(field(f, "brave.api_key", "Brave API key", "password", true));
-        b.append("</section>");
+        b.append("</div>");
 
-        b.append("<div class=buttons>");
+        // Action bar sticks to the bottom so Save/Reboot are always reachable from any tab. Reboot confirms first
+        // and never saves: applyForm handles action=reboot before the config apply.
+        b.append("<div class=actions>");
         b.append("<button name=action value=save class=primary>Save</button>");
         b.append("<button name=action value=save_restart class=secondary>Save &amp; restart</button>");
+        b.append("<button name=action value=reboot class=danger onclick=\"return confirm('Reboot the box now?')\">Reboot box</button>");
         b.append("</div></form>");
+        b.append("<script>function tab(n){var p=document.querySelectorAll('.pane');"
+                + "for(var i=0;i<p.length;i++)p[i].classList.toggle('hidden',p[i].id!='pane-'+n);"
+                + "var t=document.querySelectorAll('.tab');"
+                + "for(var j=0;j<t.length;j++)t[j].classList.toggle('active',t[j].dataset.t==n);}"
+                + "function rev(b){var i=b.previousElementSibling;var s=i.type=='password';"
+                + "i.type=s?'text':'password';b.textContent=s?'hide':'show';}</script>");
         b.append(FORM_TAIL);
         respond(out, "200 OK", "text/html; charset=utf-8", b.toString().getBytes(StandardCharsets.UTF_8));
     }
@@ -845,6 +864,24 @@ public final class ControlServer {
     private void applyForm(OutputStream out, byte[] body) throws IOException {
         Map<String, String> form = parseForm(body);
         String action = form.containsKey("action") ? form.get("action") : "save";
+        if ("reboot".equals(action)) {
+            // Reboot the box. Do it on a short delay on another thread so this response is flushed first -- the
+            // browser then gets a page instead of a dropped connection as the box goes down. No config is saved.
+            new Thread(() -> {
+                try {
+                    Thread.sleep(800);
+                } catch (InterruptedException ignored) {
+                }
+                runRoot("reboot", 10_000);
+            }, "pcx-reboot").start();
+            StringBuilder rb = new StringBuilder();
+            rb.append(FORM_HEAD);
+            rb.append("<p>Rebooting the box…</p>");
+            rb.append("<p><a href=/>← back</a></p>");
+            rb.append(FORM_TAIL);
+            respond(out, "200 OK", "text/html; charset=utf-8", rb.toString().getBytes(StandardCharsets.UTF_8));
+            return;
+        }
         JSONObject fields = new JSONObject();
         try {
             for (String k : FIELD_KEYS) if (form.containsKey(k)) fields.put(k, form.get(k));
@@ -904,22 +941,22 @@ public final class ControlServer {
      */
     private static String field(JSONObject f, String key, String label, String type, boolean mono) {
         String cls = mono ? " class=mono" : "";
-        String head = "<label><span class=lbl>" + escapeHtml(label) + "</span>"
-                + "<span class=key>" + escapeHtml(key) + "</span>";
+        String head = "<label><span class=lbl>" + escapeHtml(label) + "</span>";
         if ("password".equals(type)) {
             // A stored secret shows a dot mask (like a filled password field), never its value; empty submit = keep.
+            // The "show" button reveals what is being typed (toggles the input type), see rev() in serveForm.
             boolean present = !f.optString(key, "").isEmpty();
             String ph = present ? "••••••••••" : "";
-            return head + "<input" + cls + " type=password name=\"" + key + "\" placeholder=\""
-                    + escapeHtml(ph) + "\"></label>";
+            return head + "<div class=secret><input" + cls + " type=password name=\"" + key + "\" placeholder=\""
+                    + escapeHtml(ph) + "\"><button type=button class=reveal onclick=rev(this)>show</button></div></label>";
         }
         String v = f.optString(key, "");
         return head + "<input" + cls + " type=text name=\"" + key + "\" value=\""
                 + escapeHtml(v) + "\"></label>";
     }
 
-    private static String section(String title) {
-        return "<section class=card><h2>" + escapeHtml(title) + "</h2>";
+    private static String pane(String id, boolean active) {
+        return "<div class=\"pane" + (active ? "" : " hidden") + "\" id=pane-" + id + ">";
     }
 
     /**
@@ -940,7 +977,8 @@ public final class ControlServer {
                 + "<label><span class=lbl>URL</span>"
                 + "<input class=mono type=text name=\"" + p + "url\" value=\"" + escapeHtml(url) + "\"></label>"
                 + "<label><span class=lbl>Authorization</span>"
-                + "<input class=mono type=password name=\"" + p + "auth\" placeholder=\"" + escapeHtml(ph) + "\"></label>"
+                + "<div class=secret><input class=mono type=password name=\"" + p + "auth\" placeholder=\"" + escapeHtml(ph) + "\">"
+                + "<button type=button class=reveal onclick=rev(this)>show</button></div></label>"
                 + "<div class=srvrow>"
                 + "<label class=ck><input type=checkbox name=\"" + p + "enabled\" value=1"
                 + (enabled ? " checked" : "") + "> enabled</label>"
@@ -1310,7 +1348,20 @@ public final class ControlServer {
             + "button.secondary:hover{background:#28303c}"
             + "a{color:#7fb2ff}"
             + ".err{color:#ff8a8a;background:#2a1618;border:1px solid #512a2c;border-radius:8px;padding:10px 12px}"
-            + "@media(max-width:480px){.srvrow{flex-direction:column;gap:10px}}"
+            + ".tabs{display:flex;gap:6px;flex-wrap:wrap;margin:14px 0 12px}"
+            + "button.tab{background:#171a21;color:#9aa3b2;border-color:#262b36;padding:8px 14px;font-size:13px}"
+            + "button.tab:hover{background:#1c212b}"
+            + "button.tab.active{background:#243049;color:#cfe0ff;border-color:#36507d}"
+            + ".pane{background:#171a21;border:1px solid #262b36;border-radius:12px;padding:14px 16px;margin:0 0 14px}"
+            + ".pane.hidden{display:none}.pane>label:first-of-type{margin-top:0}"
+            + ".secret{display:flex;gap:8px;align-items:stretch}.secret input{flex:1;min-width:0}"
+            + "button.reveal{background:#20252f;color:#9aa3b2;border-color:#323846;padding:0 12px;font-size:12px}"
+            + "button.reveal:hover{background:#28303c}"
+            + ".actions{position:sticky;bottom:0;background:#0f1115;border-top:1px solid #262b36;"
+            + "display:flex;gap:10px;flex-wrap:wrap;padding:12px 0;margin-top:4px}"
+            + "button.danger{background:#3a1a1c;color:#ff9a9a;border-color:#5a2a2d}"
+            + "button.danger:hover{background:#4a2124}"
+            + "@media(max-width:480px){.srvrow{flex-direction:column;gap:10px;align-items:stretch}.actions button{flex:1}}"
             + "</style></head><body><div class=wrap>"
             + "<header><h1>PopcornClaw control</h1><a id=sv>Screen view →</a></header>"
             + "<script>document.getElementById('sv').href='http://'+location.hostname+':8080/'</script>";
