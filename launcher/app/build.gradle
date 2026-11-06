@@ -10,8 +10,9 @@ android {
         applicationId 'xyz.vvzvlad.popcornclaw'   // PopcornClaw
         minSdk 24
         targetSdk 34
-        versionCode 25
-        versionName '2.13.8'
+        // PopcornClaw's own version line (the fork started from OmarchyTV 2.13.8, versionCode 25).
+        versionCode 26
+        versionName '0.1.0'
     }
 
     // PopcornClaw: the project's debug key launcher/debug.keystore.
