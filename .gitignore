@@ -4,3 +4,4 @@ launcher/build/
 launcher/app/build/
 launcher/local.properties
 launcher/app/src/main/jniLibs/
+private/
