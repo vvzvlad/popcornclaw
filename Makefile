@@ -17,12 +17,18 @@ TERMUX_BOOTSTRAP_SHA256 := 99660c5a95733765c9967309a0c91c67335e9804b9e2027cfba71
 # TorrServer and a static ffprobe ride inside the app as native libs (like libpicoclaw.so), so installing the
 # app is enough: AgentService runs TorrServer on :8090 and puts ffprobe on its PATH, no separate TorrServe app.
 # Both are fetched at build time (immutable URLs + sha256), never committed. TorrServer's android build uses
-# Android's own linker; a statically linked GNU/Linux armhf ffprobe needs no shared libraries, so it runs too.
-TORRSERVER_URL := https://github.com/YouROK/TorrServer/releases/download/MatriX.149/TorrServer-android-arm7
-TORRSERVER_SHA256 := 08bb424083de6a56a2f9a6b798d191a8da30407d78758a7533a4f6a24ea47cee
-FFPROBE_URL := https://johnvansickle.com/ffmpeg/old-releases/ffmpeg-6.0.1-armhf-static.tar.xz
-FFPROBE_SHA256 := 241cbf509222420033486ea82a7cf3cf4fb534437fa00d79df8abebd0184d7e6
-FFPROBE_MEMBER := ffmpeg-6.0.1-armhf-static/ffprobe
+# Android's own linker; a statically linked GNU/Linux ffprobe needs no shared libraries, so it runs too.
+# One set per ABI, named by its build/ directory: arm (armeabi-v7a) and arm64 (arm64-v8a).
+TORRSERVER_URL_arm := https://github.com/YouROK/TorrServer/releases/download/MatriX.149/TorrServer-android-arm7
+TORRSERVER_SHA256_arm := 08bb424083de6a56a2f9a6b798d191a8da30407d78758a7533a4f6a24ea47cee
+TORRSERVER_URL_arm64 := https://github.com/YouROK/TorrServer/releases/download/MatriX.149/TorrServer-android-arm64
+TORRSERVER_SHA256_arm64 := f3486100192cd49776465348c73b34e2c4944abb72d89898c531a517c4903a2f
+FFPROBE_URL_arm := https://johnvansickle.com/ffmpeg/old-releases/ffmpeg-6.0.1-armhf-static.tar.xz
+FFPROBE_SHA256_arm := 241cbf509222420033486ea82a7cf3cf4fb534437fa00d79df8abebd0184d7e6
+FFPROBE_MEMBER_arm := ffmpeg-6.0.1-armhf-static/ffprobe
+FFPROBE_URL_arm64 := https://johnvansickle.com/ffmpeg/old-releases/ffmpeg-6.0.1-arm64-static.tar.xz
+FFPROBE_SHA256_arm64 := 7dbd8e2f47bd83de591b9d6ea70e67d32d9aa97e7d47ae402b60c2fe3fd4d0ab
+FFPROBE_MEMBER_arm64 := ffmpeg-6.0.1-arm64-static/ffprobe
 # Same environment as the app's AgentService gives the gateway.
 ENV := HOME=$(DIR) PICOCLAW_HOME=$(DIR) PICOCLAW_CONFIG=$(DIR)/config.json SSL_CERT_DIR=/system/etc/security/cacerts \
 	PATH=$$PATH:/data/data/com.termux/files/usr/bin PYTHONDONTWRITEBYTECODE=1
@@ -41,25 +47,32 @@ connect:
 
 app termux restart logs ask: connect
 
-# Patched PicoClaw (picoclaw/Dockerfile) built on the docker daemon; only the binary comes back.
-build/picoclaw: picoclaw/Dockerfile picoclaw/tool-status.patch picoclaw/asr-proxy.patch picoclaw/image-shrink.patch picoclaw/tool-feedback.patch picoclaw/keep-logs.patch \
+# Patched PicoClaw (picoclaw/Dockerfile) built on the docker daemon, once per ABI: the build/ directory's name
+# is the GOARCH (arm or arm64). Only the binary comes back.
+build/arm/picoclaw build/arm64/picoclaw: build/%/picoclaw: picoclaw/Dockerfile picoclaw/tool-status.patch picoclaw/asr-proxy.patch \
+	picoclaw/image-shrink.patch picoclaw/tool-feedback.patch picoclaw/keep-logs.patch \
 	picoclaw/shared-session.patch picoclaw/pico-audio.patch picoclaw/start-to-agent.patch
-	docker build -t popcornclaw-picoclaw picoclaw
-	mkdir -p build
-	id=$$(docker create popcornclaw-picoclaw /picoclaw) && { docker cp $$id:/picoclaw $@; r=$$?; docker rm $$id >/dev/null; exit $$r; }
+	docker build --build-arg GOARCH=$* -t popcornclaw-picoclaw-$* picoclaw
+	mkdir -p $(@D)
+	id=$$(docker create popcornclaw-picoclaw-$* /picoclaw) && { docker cp $$id:/picoclaw $@; r=$$?; docker rm $$id >/dev/null; exit $$r; }
 	touch $@
 
 # The app (launcher/Dockerfile: the OmarchyTV launcher fork) built on the docker daemon with the PicoClaw,
-# TorrServer and ffprobe binaries inside as lib/armeabi-v7a/lib{picoclaw,torrserver,ffprobe}.so: an unsigned
-# release APK. It is signed with the key KEY_CMD gives: run with a directory as its last argument, KEY_CMD writes
+# TorrServer and ffprobe binaries inside as lib/{armeabi-v7a,arm64-v8a}/lib{picoclaw,torrserver,ffprobe}.so: an
+# unsigned release APK. It is signed with the key KEY_CMD gives: run with a directory as its last argument, KEY_CMD writes
 # release.p12 (PKCS12, key alias popcornclaw) and pass (its store and key password) there. apksigner signs in a
 # throwaway container of the build image, so the key never lands in an image layer; only the signed APK comes back.
 UNSIGNED_APK := app/build/outputs/apk/release/app-release-unsigned.apk
-build/popcornclaw.apk: build/picoclaw build/libtorrserver.so build/libffprobe.so $(shell find launcher -type f -not -path 'launcher/app/src/main/jniLibs/*')
-	mkdir -p launcher/app/src/main/jniLibs/armeabi-v7a
-	cp build/picoclaw launcher/app/src/main/jniLibs/armeabi-v7a/libpicoclaw.so
-	cp build/libtorrserver.so launcher/app/src/main/jniLibs/armeabi-v7a/libtorrserver.so
-	cp build/libffprobe.so launcher/app/src/main/jniLibs/armeabi-v7a/libffprobe.so
+build/popcornclaw.apk: build/arm/picoclaw build/arm/libtorrserver.so build/arm/libffprobe.so \
+	build/arm64/picoclaw build/arm64/libtorrserver.so build/arm64/libffprobe.so \
+	$(shell find launcher -type f -not -path 'launcher/app/src/main/jniLibs/*')
+	mkdir -p launcher/app/src/main/jniLibs/armeabi-v7a launcher/app/src/main/jniLibs/arm64-v8a
+	cp build/arm/picoclaw launcher/app/src/main/jniLibs/armeabi-v7a/libpicoclaw.so
+	cp build/arm/libtorrserver.so launcher/app/src/main/jniLibs/armeabi-v7a/libtorrserver.so
+	cp build/arm/libffprobe.so launcher/app/src/main/jniLibs/armeabi-v7a/libffprobe.so
+	cp build/arm64/picoclaw launcher/app/src/main/jniLibs/arm64-v8a/libpicoclaw.so
+	cp build/arm64/libtorrserver.so launcher/app/src/main/jniLibs/arm64-v8a/libtorrserver.so
+	cp build/arm64/libffprobe.so launcher/app/src/main/jniLibs/arm64-v8a/libffprobe.so
 	$(if $(KEY_CMD),,$(error KEY_CMD is not set: a command that writes release.p12 and pass into the directory given last))
 	docker build -t popcornclaw-app launcher
 	k=$$(mktemp -d) && trap 'rm -rf "$$k"; [ -z "$$id" ] || docker rm -f "$$id" >/dev/null 2>&1' EXIT && \
@@ -82,20 +95,20 @@ build/bootstrap-arm.zip:
 	mv $@.tmp $@
 
 # TorrServer's android build (Android linker); packaged as a native lib so install extracts it executable.
-build/libtorrserver.so:
-	mkdir -p build
-	curl -fsSL -o $@.tmp '$(TORRSERVER_URL)'
-	echo "$(TORRSERVER_SHA256)  $@.tmp" | shasum -a 256 -c -
+build/arm/libtorrserver.so build/arm64/libtorrserver.so: build/%/libtorrserver.so:
+	mkdir -p $(@D)
+	curl -fsSL -o $@.tmp '$(TORRSERVER_URL_$*)'
+	echo "$(TORRSERVER_SHA256_$*)  $@.tmp" | shasum -a 256 -c -
 	mv $@.tmp $@
 
 # Only ffprobe is kept from the static ffmpeg tarball; TorrServer runs it to read a file's media info.
-build/libffprobe.so:
-	mkdir -p build
-	curl -fsSL -o build/ffprobe.tar.xz '$(FFPROBE_URL)'
-	echo "$(FFPROBE_SHA256)  build/ffprobe.tar.xz" | shasum -a 256 -c -
-	tar -xJf build/ffprobe.tar.xz -C build --strip-components=1 '$(FFPROBE_MEMBER)'
-	mv build/ffprobe $@
-	rm -f build/ffprobe.tar.xz
+build/arm/libffprobe.so build/arm64/libffprobe.so: build/%/libffprobe.so:
+	mkdir -p $(@D)
+	curl -fsSL -o $(@D)/ffprobe.tar.xz '$(FFPROBE_URL_$*)'
+	echo "$(FFPROBE_SHA256_$*)  $(@D)/ffprobe.tar.xz" | shasum -a 256 -c -
+	tar -xJf $(@D)/ffprobe.tar.xz -C $(@D) --strip-components=1 '$(FFPROBE_MEMBER_$*)'
+	mv $(@D)/ffprobe $@
+	rm -f $(@D)/ffprobe.tar.xz
 
 # The boxes have no unzip of their own: the zip is extracted here and the tree pushed (the app extracts it in Java).
 build/termux-bootstrap: build/bootstrap-arm.zip
@@ -103,7 +116,7 @@ build/termux-bootstrap: build/bootstrap-arm.zip
 	unzip -q $< -d $@.tmp
 	mv $@.tmp $@
 
-termux: build/termux.apk build/termux-bootstrap ## Install Termux and unpack its bootstrap (the unpack is skipped where already done)
+termux: build/termux.apk build/termux-bootstrap ## Install the 32-bit (armeabi-v7a) Termux and unpack its bootstrap (skipped where done); on a 64-bit box the app installs Termux itself
 	$(ADB) push build/termux.apk /data/local/tmp/termux.apk
 	# A never-opened app sits in app standby, and Android rejects all its network traffic.
 	$(ADB) shell 'pm install -r /data/local/tmp/termux.apk && dumpsys deviceidle whitelist +com.termux; r=$$?; rm -f /data/local/tmp/termux.apk; exit $$r'
@@ -122,9 +135,10 @@ app: build/popcornclaw.apk ## Build and install the app (launcher with the agent
 	$(ADB) shell 'mkdir -p $(DIR)/workspace $(DIR)/backups'
 	$(ADB) push build/popcornclaw.apk /data/local/tmp/popcornclaw.apk
 	$(ADB) shell 'pm install -r /data/local/tmp/popcornclaw.apk; r=$$?; rm -f /data/local/tmp/popcornclaw.apk; exit $$r'
-	# Every install gets a new /data/app directory: point $(DIR)/picoclaw (used by `ask`) at the new binary.
+	# Every install gets a new /data/app directory: point $(DIR)/picoclaw (used by `ask`) at the new binary,
+	# from lib/arm64 or lib/arm, whichever ABI the package was installed with.
 	# The running gateway keeps the old one until `make restart`.
-	$(ADB) shell 'p=$$(pm path $(APP)) && ln -sf "$$(dirname "$${p#package:}")/lib/arm/libpicoclaw.so" $(DIR)/picoclaw'
+	$(ADB) shell 'p=$$(pm path $(APP)) && l=$$(dirname "$${p#package:}")/lib && { [ -e $$l/arm64/libpicoclaw.so ] && a=arm64 || a=arm; } && ln -sf "$$l/$$a/libpicoclaw.so" $(DIR)/picoclaw'
 	# Off the whitelist Android stops the service a minute after the launcher leaves the screen and refuses
 	# to start it while the app is in the background ("app is in background uid null" from am startservice).
 	$(ADB) shell 'dumpsys deviceidle whitelist +$(APP)'

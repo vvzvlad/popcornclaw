@@ -1,8 +1,8 @@
 #!/system/bin/sh
 # Unpacks the Termux bootstrap the way the app's own installer does (TermuxInstaller.java),
 # without opening the app on the TV. Run as the Termux uid: run-as com.termux sh bootstrap.sh <dir>,
-# where <dir> is bootstrap-arm.zip already extracted and readable by that uid (the boxes have no
-# unzip of their own: the app extracts the zip in Java, make on the computer).
+# where <dir> is bootstrap-arm.zip or bootstrap-aarch64.zip already extracted and readable by that
+# uid (the boxes have no unzip of their own: the app extracts the zip in Java, make on the computer).
 # Does nothing once $T/usr exists.
 
 SRC=$1

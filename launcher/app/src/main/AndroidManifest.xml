@@ -90,7 +90,7 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:allowBackup="false">
 
-        <!-- PopcornClaw: keeps the PicoClaw gateway (lib/armeabi-v7a/libpicoclaw.so) running as root. -->
+        <!-- PopcornClaw: keeps the PicoClaw gateway (lib/armeabi-v7a or lib/arm64-v8a, libpicoclaw.so) running as root. -->
         <service
             android:name="xyz.vvzvlad.popcornclaw.AgentService"
             android:exported="false" />

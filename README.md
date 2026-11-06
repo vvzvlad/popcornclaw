@@ -109,8 +109,8 @@
 ## Что нужно
 
 - Android TV приставка с Android 7.0 или новее и root. Проверено на Beelink GT-King и GT-King Pro с
-  прошивкой slimBOXtv на Android 9 и SuperSU 2.82; с Magisk не проверено. В APK только 32-битные
-  библиотеки (armeabi-v7a).
+  прошивкой slimBOXtv на Android 9 и SuperSU 2.82; 64-битная сборка и Magisk 26.4 — на эмуляторе
+  Android 14 (arm64). В APK библиотеки для armeabi-v7a и arm64-v8a.
 - [mpv-android](https://github.com/mpv-android/mpv-android) (пакет `is.xyz.mpv`): фильмы агент
   запускает в нём.
 - API модели: адрес, имя модели и ключ. Проверено с nano-gpt (`https://nano-gpt.com/api/v1`,
@@ -210,11 +210,13 @@ PicoClaw собирается из исходников v0.3.1 с восемью
   кнопки микрофона пульта шлюз сохраняет, помечает `[voice]` и распознаёт тем же Groq, что и голосовые
   из Telegram.
 
-Сборка 32-битная (linux/armv7, статический бинарник), проверена на GT-King и GT-King Pro (Android 9,
-пространство пользователя 32-битное).
+Сборок две, обе — статические бинарники: linux/armv7 и linux/arm64, в APK едут обе. 32-битная
+проверена на GT-King и GT-King Pro (Android 9, пространство пользователя 32-битное), 64-битная на
+приставке не проверена.
 
-Недостающие программы агент ставит себе сам из Termux (сборка с GitHub для armeabi-v7a): пакеты — от
-пользователя Termux через `run-as com.termux`, запуск — от root, каталог программ Termux у агента в PATH.
+Недостающие программы агент ставит себе сам из Termux (сборка с GitHub для той же архитектуры, на
+которой работает приложение: armeabi-v7a или arm64-v8a): пакеты — от пользователя Termux через
+`run-as com.termux`, запуск — от root, каталог программ Termux у агента в PATH.
 
 Главный экран — наш форк лаунчера OmarchyTV ([launcher/](launcher/), приложение
 `xyz.vvzvlad.popcornclaw`; исходный лаунчер — <https://gitlab.com/piermark/omarchytv>, MIT). В нём
@@ -261,7 +263,7 @@ PicoClaw собирается из исходников v0.3.1 с восемью
 
 | Путь | Что |
 | --- | --- |
-| `/data/local/popcornclaw/picoclaw` | ссылка на бинарник PicoClaw из APK (`/data/app/xyz.vvzvlad.popcornclaw-…/lib/arm/libpicoclaw.so`; каталог меняется при каждой установке, ссылку обновляет запуск шлюза) |
+| `/data/local/popcornclaw/picoclaw` | ссылка на бинарник PicoClaw из APK (`/data/app/xyz.vvzvlad.popcornclaw-…/lib/arm/libpicoclaw.so`, на 64-битной приставке — `lib/arm64/`; каталог меняется при каждой установке, ссылку обновляет запуск шлюза) |
 | `/data/local/popcornclaw/config.json` | конфиг PicoClaw: на свежей приставке — из APK, дальше его правит панель; права 600 |
 | `/data/local/popcornclaw/.security.yml` | ключи модели, Groq, Brave Search и токен бота; права 600 |
 | `/data/local/popcornclaw/tv_mcp.json` | настройки поиска и субтитров (TorrServer, Jackett, ключи субтитров); права 600 |
@@ -276,8 +278,9 @@ PicoClaw собирается из исходников v0.3.1 с восемью
 ## Сборка
 
 Всё тяжёлое собирается в Docker: PicoClaw v0.3.1 с патчами из [picoclaw/](picoclaw/) — целью
-`make build/picoclaw`, APK — Gradle внутри [launcher/Dockerfile](launcher/Dockerfile), вместе с
-бинарниками PicoClaw, TorrServer и ffprobe в `lib/armeabi-v7a/`. Docker CLI может смотреть на удалённый
+`make build/arm/picoclaw` и `make build/arm64/picoclaw`, APK — Gradle внутри
+[launcher/Dockerfile](launcher/Dockerfile), вместе с бинарниками PicoClaw, TorrServer и ffprobe в
+`lib/armeabi-v7a/` и `lib/arm64-v8a/`. Docker CLI может смотреть на удалённый
 демон: bind mount не используется, артефакты забираются `docker cp`. `make build/popcornclaw.apk`
 собирает всё целиком и подписывает релиз ключом, который выдаёт команда `KEY_CMD`: она получает
 каталог последним аргументом и кладёт туда `release.p12` (PKCS12, алиас `popcornclaw`) и `pass` с

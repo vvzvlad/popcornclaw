@@ -3,8 +3,8 @@
 An LLM agent (PicoClaw) that lives on an Android TV box itself and runs as root: it has the box's
 shell, installs its own tools from Termux, fixes the box's small problems, finds and starts movies
 through the tv_mcp server, wakes the TV over HDMI-CEC, talks through a Telegram bot (voice too) and
-lives in our fork of the OmarchyTV launcher, which is the box's home screen. Made for Android 9 TV
-boxes with root and a 32-bit userspace (tested on Beelink GT-King and GT-King Pro).
+lives in our fork of the OmarchyTV launcher, which is the box's home screen. Made for Android TV
+boxes with root, 32- and 64-bit ARM (tested on Beelink GT-King and GT-King Pro: Android 9, 32-bit userspace).
 
 What it does and where things live on the box — `README.md`. Verified facts, the owner's
 decisions, rejected variants and pitfalls — `docs/SPEC.md`. The maintainer's own boxes live in
@@ -13,7 +13,7 @@ where his notes are; read it first when it is there.
 
 ## Structure
 
-- `picoclaw/` — Dockerfile that builds PicoClaw v0.3.1 for linux/armv7 with our patches:
+- `picoclaw/` — Dockerfile that builds PicoClaw v0.3.1 for linux/armv7 and linux/arm64 with our patches:
   `tool-status.patch` (each step's status in Telegram), `asr-proxy.patch` (voice through the
   model's proxy), `image-shrink.patch` (images go to the model as JPEG of at most 1280 px),
   `tool-feedback.patch` (steps as «status (`tool`)», sent silently, no animation), `keep-logs.patch`
@@ -30,7 +30,7 @@ where his notes are; read it first when it is there.
 - `launcher/` — the app `xyz.vvzvlad.popcornclaw`: fork of the OmarchyTV launcher
   (https://gitlab.com/piermark/omarchytv, imported at upstream 244528f in commit 222116c), built by
   `launcher/Dockerfile` with Gradle on the docker daemon, PicoClaw inside as
-  `lib/armeabi-v7a/libpicoclaw.so`. Our code lives in `launcher/app/src/main/java/xyz/vvzvlad/popcornclaw/`;
+  `lib/armeabi-v7a/libpicoclaw.so` and `lib/arm64-v8a/libpicoclaw.so`. Our code lives in `launcher/app/src/main/java/xyz/vvzvlad/popcornclaw/`;
   upstream files get only hook lines, so upstream updates can be diffed in (`AgentService` keeps the
   gateway running as root through SuperSU and starts the two LAN servers below; `PicoLink` is the app's
   WebSocket to the gateway's pico channel, open from the service's start; `PicoTurn` turns its frames

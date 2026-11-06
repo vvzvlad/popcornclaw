@@ -1,4 +1,4 @@
-# PicoClaw v0.3.1 for the TV box (linux/armv7) with our patches applied in order:
+# PicoClaw v0.3.1 for the TV box (linux/armv7, or linux/arm64 with --build-arg GOARCH=arm64) with our patches applied in order:
 # tool-status, asr-proxy, image-shrink, tool-feedback, keep-logs, shared-session, pico-audio, start-to-agent.
 # Build flags mirror the "picoclaw" build in upstream's .goreleaser.yaml; its
 # `go generate ./...` hook is skipped because v0.3.1 has no go:generate directives.
@@ -9,7 +9,9 @@ COPY tool-status.patch asr-proxy.patch image-shrink.patch tool-feedback.patch ke
     start-to-agent.patch /tmp/
 RUN git apply /tmp/tool-status.patch /tmp/asr-proxy.patch /tmp/image-shrink.patch /tmp/tool-feedback.patch /tmp/keep-logs.patch \
     /tmp/shared-session.patch /tmp/pico-audio.patch /tmp/start-to-agent.patch
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -tags goolm,stdjson \
+# Declared after the clone and the patches, so both ABIs share those layers; GOARM only applies to GOARCH=arm.
+ARG GOARCH=arm
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$GOARCH GOARM=7 go build -tags goolm,stdjson \
     -ldflags "-s -w -X github.com/sipeed/picoclaw/pkg/config.Version=0.3.1-popcornclaw" \
     -o /picoclaw ./cmd/picoclaw
 

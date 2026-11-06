@@ -80,12 +80,23 @@ final class Provisioning {
 
     private static final String TERMUX = "com.termux";
     private static final String TERMUX_PREFIX = "/data/data/com.termux/files/usr";
-    // The Makefile's TERMUX_* pins: keep the two in step. The GitHub build is debuggable, which is what lets
-    // run-as com.termux run apt (and the bootstrap) as the app's uid from the root shell.
-    private static final String TERMUX_APK_URL = "https://github.com/termux/termux-app/releases/download/v0.118.3/termux-app_v0.118.3+github-debug_armeabi-v7a.apk";
-    private static final String TERMUX_APK_SHA256 = "89416397b70f9ff67a0044e8abe6ef82487cd48fcf543e2d23e02688cc541cf0";
-    private static final String TERMUX_BOOTSTRAP_URL = "https://github.com/termux/termux-packages/releases/download/bootstrap-2026.11.01-r1%2Bapt.android-7/bootstrap-arm.zip";
-    private static final String TERMUX_BOOTSTRAP_SHA256 = "99660c5a95733765c9967309a0c91c67335e9804b9e2027cfba71926fa4a3140";
+    // Termux of the app's own ABI: a 64-bit app process runs the APK's arm64-v8a binaries, a 32-bit one its
+    // armeabi-v7a ones. The 32-bit pins are the Makefile's TERMUX_* (make termux): keep the two in step. The
+    // GitHub build is debuggable, which is what lets run-as com.termux run apt (and the bootstrap) as the app's
+    // uid from the root shell.
+    private static final boolean ARM64 = android.os.Process.is64Bit();
+    private static final String TERMUX_APK_URL = ARM64
+            ? "https://github.com/termux/termux-app/releases/download/v0.118.3/termux-app_v0.118.3+github-debug_arm64-v8a.apk"
+            : "https://github.com/termux/termux-app/releases/download/v0.118.3/termux-app_v0.118.3+github-debug_armeabi-v7a.apk";
+    private static final String TERMUX_APK_SHA256 = ARM64
+            ? "72fdb596045116bf5ba1b5bdf5b26fddb9acc0bd074ad9f2da9eb0ae85e83a4e"
+            : "89416397b70f9ff67a0044e8abe6ef82487cd48fcf543e2d23e02688cc541cf0";
+    private static final String TERMUX_BOOTSTRAP_ZIP = ARM64 ? "bootstrap-aarch64.zip" : "bootstrap-arm.zip";
+    private static final String TERMUX_BOOTSTRAP_URL = "https://github.com/termux/termux-packages/releases/download/bootstrap-2026.11.01-r1%2Bapt.android-7/"
+            + TERMUX_BOOTSTRAP_ZIP;
+    private static final String TERMUX_BOOTSTRAP_SHA256 = ARM64
+            ? "5a1429b6c68ee3bdc17b5fd6e47ba42933ec924cd7283fe74992574e1d5badae"
+            : "99660c5a95733765c9967309a0c91c67335e9804b9e2027cfba71926fa4a3140";
     /** Termux and resolv.conf need the network, which may still be down at boot: tried at most this often. */
     private static final long NET_GAP_MS = 3 * 60_000;
 
@@ -449,7 +460,7 @@ final class Provisioning {
      * tree out to a world-readable dir under /data/local/tmp, where run-as reads it (as in make termux).
      */
     private boolean bootstrap(File cache) {
-        File zip = new File(cache, "bootstrap-arm.zip");
+        File zip = new File(cache, TERMUX_BOOTSTRAP_ZIP);
         if (!fetch(TERMUX_BOOTSTRAP_URL, TERMUX_BOOTSTRAP_SHA256, zip)) return false;
         File tree = new File(cache, "termux-bootstrap");
         File script = new File(cache, "termux-bootstrap.sh");
