@@ -1,0 +1,84 @@
+{
+  "version": 3,
+  "agents": {
+    "defaults": {
+      "workspace": "/data/local/popcornclaw/workspace",
+      "restrict_to_workspace": false,
+      "model_name": "main",
+      "max_tool_iterations": 200,
+      "tool_feedback": {
+        "enabled": true,
+        "separate_messages": true
+      }
+    }
+  },
+  "model_list": [
+    {
+      "model_name": "main",
+      "provider": "openai",
+      "model": "",
+      "api_base": ""
+    },
+    {
+      "model_name": "groq-asr",
+      "model": "groq/whisper-large-v3-turbo"
+    }
+  ],
+  "voice": {
+    "model_name": "groq-asr",
+    "echo_transcription": false
+  },
+  "channel_list": {
+    "telegram": {
+      "enabled": false,
+      "type": "telegram",
+      "allow_from": [],
+      "placeholder": {
+        "enabled": false
+      },
+      "settings": {
+        "base_url": "https://api.telegram.org",
+        "use_markdown_v2": false
+      }
+    },
+    "pico": {
+      "enabled": true,
+      "type": "pico"
+    }
+  },
+  "session": {
+    "identity_links": {
+      "owner": [
+        "pico:tv"
+      ]
+    }
+  },
+  "tools": {
+    "web": {
+      "brave": {
+        "enabled": false
+      },
+      "sogou": {
+        "enabled": false
+      }
+    },
+    "exec": {
+      "enabled": true,
+      "allow_remote": true,
+      "enable_deny_patterns": false
+    },
+    "mcp": {
+      "enabled": true,
+      "servers": {
+        "tv": {
+          "enabled": true,
+          "type": "http",
+          "url": "http://127.0.0.1:8082/mcp"
+        }
+      }
+    }
+  },
+  "gateway": {
+    "log_level": "info"
+  }
+}

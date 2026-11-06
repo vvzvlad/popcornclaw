@@ -1,17 +1,16 @@
 #!/system/bin/sh
 # Unpacks the Termux bootstrap the way the app's own installer does (TermuxInstaller.java),
-# without opening the app on the TV. Run as the Termux uid: run-as com.termux sh bootstrap.sh <zip>.
+# without opening the app on the TV. Run as the Termux uid: run-as com.termux sh bootstrap.sh <dir>,
+# where <dir> is bootstrap-arm.zip already extracted and readable by that uid (the boxes have no
+# unzip of their own: the app extracts the zip in Java, make on the computer).
 # Does nothing once $T/usr exists.
 
-ZIP=$1
+SRC=$1
 T=/data/data/com.termux/files
 [ -d "$T/usr" ] && exit 0
-# unzip lives in /vendor/xbin on slimBOXtv; run-as resets PATH.
-PATH=$PATH:/vendor/xbin:/system/xbin
 
 rm -rf "$T/usr-staging"
-mkdir -p "$T/home" "$T/usr-staging" && cd "$T/usr-staging" || exit 1
-unzip -q "$ZIP" || exit 1
+mkdir -p "$T/home" && cp -R "$SRC" "$T/usr-staging" && cd "$T/usr-staging" || exit 1
 # Each line is "target←link"; the zip itself carries no symlinks.
 while IFS= read -r l; do
     p="${l#*←}"

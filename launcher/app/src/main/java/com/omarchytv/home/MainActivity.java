@@ -816,7 +816,9 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         }
         // Stock launcher back as home after a reboot? Ask once per boot, gently; never change it ourselves.
         // With the Home button override on, Home already lands here: nothing to ask.
-        if (!HomeCheck.isDefaultHome(this) && !HomeOverride.enabled() && (getIntent().getBooleanExtra(HomeCheck.EXTRA_ASK, false) || HomeCheck.shouldAsk(this))) {
+        // popcornclaw: not while the app's own provisioning is still to set the home screen (AgentService.homeAskable).
+        if (!HomeCheck.isDefaultHome(this) && !HomeOverride.enabled() && xyz.vvzvlad.popcornclaw.AgentService.homeAskable(this)
+                && (getIntent().getBooleanExtra(HomeCheck.EXTRA_ASK, false) || HomeCheck.shouldAsk(this))) {
             getIntent().removeExtra(HomeCheck.EXTRA_ASK);
             HomeCheck.asked(this);
             handler.postDelayed(this::homePrompt, 600);

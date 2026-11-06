@@ -1,5 +1,6 @@
 package xyz.vvzvlad.popcornclaw;
 
+import android.content.Context;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
@@ -34,14 +35,18 @@ import java.util.regex.Pattern;
  * The box's own control surface on the LAN: an MCP server any MCP client on the network (a PC, a smart
  * speaker) can drive to do what the on-box agent can -- run shell as root, report status, drive the mpv
  * player, read and write the gateway's config, and drop the agent a one-line message into the shared
- * TV/Telegram dialog -- plus a plain settings form in a browser. No auth: the box is on the home LAN only,
- * the owner's explicit decision. Shaped exactly like {@link ScreenStreamServer}: a bound {@link ServerSocket},
- * an accept loop, one thread per connection and raw HTTP parsing.
+ * TV/Telegram dialog -- plus a plain settings form in a browser. Every route but the login needs the box's
+ * {@link Pin}: MCP clients send it as {@code Authorization: Bearer <PIN>}, browsers keep it in the cookie the
+ * login (or the home-screen QR's {@code ?pin=} link) sets. Shaped exactly like {@link ScreenStreamServer}: a
+ * bound {@link ServerSocket}, an accept loop, one thread per connection and raw HTTP parsing.
  *
  * <p>Routes:
  * <ul>
- *   <li>{@code POST /mcp} -- one JSON-RPC 2.0 request or notification, stateless Streamable HTTP.</li>
- *   <li>{@code GET /} -- the settings form (HTML).</li>
+ *   <li>{@code POST /mcp} -- one JSON-RPC 2.0 request or notification, stateless Streamable HTTP; 401 without
+ *       the bearer PIN.</li>
+ *   <li>{@code GET /} -- the settings form (HTML) with the PIN cookie, else the login page.</li>
+ *   <li>{@code GET /?pin=<PIN>} -- sets the cookie and redirects to {@code /}; a wrong PIN gets the login page.</li>
+ *   <li>{@code POST /login} -- the login page's PIN; sets the cookie and redirects to {@code /}.</li>
  *   <li>{@code POST /config} -- apply the settings form.</li>
  *   <li>{@code GET}/{@code DELETE} on {@code /mcp} -- 405 Method Not Allowed.</li>
  *   <li>anything else -- 404.</li>
@@ -56,6 +61,7 @@ public final class ControlServer {
     private static final String DIR = "/data/local/popcornclaw";
     private static final String CONFIG_PATH = DIR + "/config.json";
     private static final String SECURITY_PATH = DIR + "/.security.yml";
+    private static final String TV_MCP_PATH = DIR + "/tv_mcp.json";
     private static final String HEALTH_URL = "http://127.0.0.1:18790/health";
 
     // Prepended to every root command: the Termux PATH (socat etc.), the CA store and the working dir, so a
@@ -70,16 +76,21 @@ public final class ControlServer {
     // the names used both in the config_set input schema and as the form's input names.
     private static final String[] CFG_KEYS = {
             "model.api_base", "model.model", "model.proxy", "asr.proxy",
-            "mcp.tv.url", "mcp.projector.url", "mcp.research.url", "research.auth"};
+            "mcp.tv.url", "telegram.allow_from", "telegram.base_url"};
     private static final String[] KEY_KEYS = {
             "model.api_key", "asr.api_key", "telegram.token", "brave.api_key"};
     private static final String[] FIELD_KEYS = {
             "model.api_base", "model.model", "model.proxy", "model.api_key",
-            "asr.proxy", "asr.api_key",
-            "mcp.tv.url", "mcp.projector.url", "mcp.research.url", "research.auth",
-            "telegram.token", "brave.api_key"};
+            "asr.proxy", "asr.api_key", "mcp.tv.url",
+            "telegram.token", "telegram.allow_from", "telegram.base_url", "brave.api_key"};
+    // tv_mcp.json's endpoints and keys (TvMcpServer reads them; the gateway never does). The form's inputs are
+    // named "media." + key. The URLs are plain fields, the keys secrets.
+    private static final String[] MEDIA_URLS = {"jackett_url", "torrserver_url"};
+    private static final String[] MEDIA_KEYS = {"jackett_api_key", "opensubtitles_api_key", "subdl_api_key"};
+    // The login form's body is a PIN and nothing else; an unauthenticated client gets no bigger read than this.
+    private static final int LOGIN_BODY_MAX = 1024;
 
-    // .security.yml has a fixed layout (see make secrets); each value is pulled with one regex. \s* spans the
+    // .security.yml has a fixed layout (see buildSecurityYml); each value is pulled with one regex. \s* spans the
     // newlines/indent between the fixed keys, so these match the one value under each key.
     private static final Pattern YML_MAIN = Pattern.compile("main:\\s*api_keys:\\s*-\\s*\"([^\"]*)\"");
     private static final Pattern YML_ASR = Pattern.compile("groq-asr:\\s*api_keys:\\s*-\\s*\"([^\"]*)\"");
@@ -95,6 +106,12 @@ public final class ControlServer {
     // Serializes the config read-modify-write across connection threads: two concurrent writers would lose one
     // update, and a reader could catch a half-written file (cat > truncates non-atomically).
     private final Object configLock = new Object();
+    // For the PIN and the app's own switches (AppSettings): the service's application context.
+    private final Context ctx;
+
+    public ControlServer(Context c) {
+        ctx = c.getApplicationContext();
+    }
 
     public void start() {
         if (running) return;
@@ -147,29 +164,68 @@ public final class ControlServer {
             String path = parts.length > 1 ? parts[1] : "/";
 
             int contentLength = 0;
+            String cookies = null;
+            String authorization = null;
             for (String line; (line = readLine(in)) != null && !line.isEmpty(); ) {
                 int colon = line.indexOf(':');
-                if (colon > 0 && line.substring(0, colon).trim().equalsIgnoreCase("Content-Length")) {
+                if (colon <= 0) continue;
+                String name = line.substring(0, colon).trim();
+                String value = line.substring(colon + 1).trim();
+                if (name.equalsIgnoreCase("Content-Length")) {
                     try {
-                        contentLength = Integer.parseInt(line.substring(colon + 1).trim());
+                        contentLength = Integer.parseInt(value);
                     } catch (NumberFormatException ignored) {
                     }
+                } else if (name.equalsIgnoreCase("Cookie")) {
+                    cookies = cookies == null ? value : cookies + "; " + value;
+                } else if (name.equalsIgnoreCase("Authorization")) {
+                    authorization = value;
                 }
             }
 
             String route = path;
+            String query = "";
             int q = route.indexOf('?');
-            if (q >= 0) route = route.substring(0, q);
+            if (q >= 0) {
+                query = route.substring(q + 1);
+                route = route.substring(0, q);
+            }
 
-            if ("POST".equals(method) && "/mcp".equals(route)) {
-                handleMcp(out, readBody(in, contentLength));
+            // The PIN is checked before an unauthorized request's body is read: such a client gets the login page
+            // (or a 401 on /mcp) and nothing else.
+            boolean browserOk = Pin.matches(ctx, Pin.fromCookies(cookies));
+            if ("/mcp".equals(route)) {
+                if (!Pin.matches(ctx, Pin.fromBearer(authorization))) {
+                    respond(out, "401 Unauthorized", "text/plain",
+                            "unauthorized: send Authorization: Bearer <the PIN shown on the TV>"
+                                    .getBytes(StandardCharsets.UTF_8),
+                            "WWW-Authenticate: Bearer realm=\"popcornclaw\"\r\n");
+                } else if ("POST".equals(method)) {
+                    handleMcp(out, readBody(in, contentLength));
+                } else if ("GET".equals(method) || "DELETE".equals(method)) {
+                    respond(out, "405 Method Not Allowed", "text/plain",
+                            "method not allowed".getBytes(StandardCharsets.UTF_8));
+                } else {
+                    respond(out, "404 Not Found", "text/plain", "not found".getBytes(StandardCharsets.UTF_8));
+                }
             } else if ("GET".equals(method) && "/".equals(route)) {
-                serveForm(out);
+                Map<String, String> params = parseForm(query.getBytes(StandardCharsets.UTF_8));
+                if (params.containsKey("pin")) {
+                    // The QR's link: a right PIN becomes the cookie and leaves the address bar; a wrong one asks.
+                    if (Pin.matches(ctx, params.get("pin"))) redirectHome(out, "302 Found");
+                    else serveLogin(out, "401 Unauthorized", true);
+                } else if (browserOk) {
+                    serveForm(out);
+                } else {
+                    serveLogin(out, "200 OK", false);
+                }
+            } else if ("POST".equals(method) && "/login".equals(route)) {
+                Map<String, String> form = parseForm(readBody(in, Math.min(contentLength, LOGIN_BODY_MAX)));
+                if (Pin.matches(ctx, form.get("pin"))) redirectHome(out, "303 See Other");
+                else serveLogin(out, "401 Unauthorized", true);
             } else if ("POST".equals(method) && "/config".equals(route)) {
-                applyForm(out, readBody(in, contentLength));
-            } else if (("GET".equals(method) || "DELETE".equals(method)) && "/mcp".equals(route)) {
-                respond(out, "405 Method Not Allowed", "text/plain",
-                        "method not allowed".getBytes(StandardCharsets.UTF_8));
+                if (browserOk) applyForm(out, readBody(in, contentLength));
+                else serveLogin(out, "401 Unauthorized", false);
             } else {
                 respond(out, "404 Not Found", "text/plain", "not found".getBytes(StandardCharsets.UTF_8));
             }
@@ -300,10 +356,10 @@ public final class ControlServer {
         setProps.put("asr.proxy", prop("string", "groq-asr proxy"));
         setProps.put("asr.api_key", prop("string", "groq-asr API key"));
         setProps.put("mcp.tv.url", prop("string", "tv MCP server url"));
-        setProps.put("mcp.projector.url", prop("string", "projector MCP server url"));
-        setProps.put("mcp.research.url", prop("string", "research MCP server url"));
-        setProps.put("research.auth", prop("string", "research MCP Authorization header"));
         setProps.put("telegram.token", prop("string", "telegram bot token"));
+        setProps.put("telegram.allow_from", prop("string", "comma-separated Telegram user IDs the bot answers;"
+                + " the first one shares the dialog with the TV, unless the TV is linked to another chat (a group)"));
+        setProps.put("telegram.base_url", prop("string", "Telegram Bot API base URL"));
         setProps.put("brave.api_key", prop("string", "brave web-search API key"));
         tools.put(tool("config_set", "Set any subset of the gateway's endpoints and keys; a gateway restart"
                 + " is needed to apply them.", schema(setProps)));
@@ -536,7 +592,7 @@ public final class ControlServer {
 
     // --- config read / write -------------------------------------------------------------------------------
 
-    /** The 12 fields with their current values: endpoints from config.json, keys from .security.yml. */
+    /** The fixed fields with their current values: endpoints from config.json, keys from .security.yml. */
     private JSONObject readConfigFields() throws ToolError {
         synchronized (configLock) {
             try {
@@ -558,7 +614,9 @@ public final class ControlServer {
     /**
      * Applies the given fields: config.json endpoints changed in place (everything else preserved) and
      * .security.yml regenerated from its four values. Only fields whose value actually differs are written,
-     * and each file is rewritten only when at least one of its fields changed. Returns the changed field names.
+     * and each file is rewritten only when at least one of its fields changed. Telegram is switched on exactly
+     * when it has a bot token and an allowed ID, and Brave search when it has its key, whenever a submit carries
+     * either side (the form always does). Returns the changed field names.
      */
     private JSONArray applyConfig(JSONObject fields) throws ToolError {
         synchronized (configLock) {
@@ -568,35 +626,39 @@ public final class ControlServer {
                 for (String k : CFG_KEYS) if (fields.has(k)) { cfgTouched = true; break; }
                 boolean keyTouched = false;
                 for (String k : KEY_KEYS) if (fields.has(k)) { keyTouched = true; break; }
+                boolean tgTouched = fields.has("telegram.token") || fields.has("telegram.allow_from");
+                boolean braveTouched = fields.has("brave.api_key");
+                // The enabled switches live in config.json but follow keys in .security.yml: both files needed.
+                boolean needCfg = cfgTouched || tgTouched || braveTouched;
+                boolean needYml = keyTouched || tgTouched;
 
                 // Read every file that will change BEFORE writing any of them, so a failed read of one aborts the
                 // whole submit instead of leaving the other file already rewritten while the reply says "error".
-                JSONObject cfg = cfgTouched ? parseConfig() : null;
-                String yml = keyTouched ? readFileRoot(SECURITY_PATH) : null;
+                JSONObject cfg = needCfg ? parseConfig() : null;
+                String yml = needYml ? readFileRoot(SECURITY_PATH) : null;
 
+                boolean cfgChanged = false;
                 if (cfgTouched) {
-                    boolean cfgChanged = false;
                     for (String k : CFG_KEYS) {
                         if (!fields.has(k)) continue;
                         String nv = fields.optString(k);
-                        // research.auth is a secret shown in a pre-filled password field; an empty submit means
-                        // "leave unchanged", like the .security.yml keys below -- never blank a stored secret.
-                        if (nv.isEmpty() && "research.auth".equals(k)) continue;
+                        // In the shape readCfgField gives, so "1,2" and "1, 2" are no change.
+                        if ("telegram.allow_from".equals(k)) nv = joinList(parseIds(nv));
+                        if ("telegram.base_url".equals(k)) nv = nv.trim();
                         if (!nv.equals(readCfgField(cfg, k))) {
                             setCfgField(cfg, k, nv);
                             changed.add(k);
                             cfgChanged = true;
                         }
                     }
-                    if (cfgChanged) writeFileRoot(CONFIG_PATH, cfg.toString(2));
                 }
 
+                boolean keysChanged = false;
+                String modelKey = ymlExtract(YML_MAIN, yml);
+                String asrKey = ymlExtract(YML_ASR, yml);
+                String token = ymlExtract(YML_TOKEN, yml);
+                String braveKey = ymlExtract(YML_BRAVE, yml);
                 if (keyTouched) {
-                    String modelKey = ymlExtract(YML_MAIN, yml);
-                    String asrKey = ymlExtract(YML_ASR, yml);
-                    String token = ymlExtract(YML_TOKEN, yml);
-                    String braveKey = ymlExtract(YML_BRAVE, yml);
-                    boolean keysChanged = false;
                     // An empty submitted key means "leave unchanged": the form pre-fills these password fields, so a
                     // cleared field (or one blank because the current value could not be read) must not blank the secret.
                     if (fields.has("model.api_key")) {
@@ -615,8 +677,33 @@ public final class ControlServer {
                         String nv = fields.optString("brave.api_key");
                         if (!nv.isEmpty() && !nv.equals(braveKey)) { braveKey = nv; changed.add("brave.api_key"); keysChanged = true; }
                     }
-                    if (keysChanged) writeFileRoot(SECURITY_PATH, buildSecurityYml(modelKey, asrKey, token, braveKey));
                 }
+
+                if (tgTouched) {
+                    JSONObject tg = telegramOpt(cfg);
+                    JSONArray ids = tg == null ? null : tg.optJSONArray("allow_from");
+                    boolean on = !token.isEmpty() && ids != null && ids.length() > 0;
+                    if ((tg != null && tg.optBoolean("enabled", false)) != on) {
+                        telegramObj(cfg).put("enabled", on);
+                        changed.add("telegram.enabled");
+                        cfgChanged = true;
+                    }
+                }
+                if (braveTouched) {
+                    JSONObject tools = cfg.optJSONObject("tools");
+                    JSONObject web = tools == null ? null : tools.optJSONObject("web");
+                    JSONObject brave = web == null ? null : web.optJSONObject("brave");
+                    boolean on = !braveKey.isEmpty();
+                    if ((brave != null && brave.optBoolean("enabled", false)) != on) {
+                        child(child(child(cfg, "tools"), "web"), "brave").put("enabled", on);
+                        changed.add("brave.enabled");
+                        cfgChanged = true;
+                    }
+                }
+
+                // Keys first: an "enabled" switched on in config.json is never on disk before the key it needs.
+                if (keysChanged) writeFileRoot(SECURITY_PATH, buildSecurityYml(modelKey, asrKey, token, braveKey));
+                if (cfgChanged) writeFileRoot(CONFIG_PATH, cfg.toString(2));
                 return new JSONArray(changed);
             } catch (JSONException e) {
                 throw new ToolError("internal: " + e.getMessage());
@@ -653,12 +740,21 @@ public final class ControlServer {
             }
             case "mcp.tv.url":
                 return serverUrl(cfg, "tv");
-            case "mcp.projector.url":
-                return serverUrl(cfg, "projector");
-            case "mcp.research.url":
-                return serverUrl(cfg, "research");
-            case "research.auth":
-                return researchAuth(cfg);
+            case "telegram.allow_from": {
+                JSONObject tg = telegramOpt(cfg);
+                JSONArray a = tg == null ? null : tg.optJSONArray("allow_from");
+                List<String> ids = new ArrayList<>();
+                for (int i = 0; a != null && i < a.length(); i++) {
+                    String id = a.optString(i).trim();
+                    if (!id.isEmpty()) ids.add(id);
+                }
+                return joinList(ids);
+            }
+            case "telegram.base_url": {
+                JSONObject tg = telegramOpt(cfg);
+                JSONObject st = tg == null ? null : tg.optJSONObject("settings");
+                return st == null ? "" : st.optString("base_url", "");
+            }
             default:
                 return "";
         }
@@ -681,18 +777,77 @@ public final class ControlServer {
             case "mcp.tv.url":
                 serverObj(cfg, "tv").put("url", value);
                 break;
-            case "mcp.projector.url":
-                serverObj(cfg, "projector").put("url", value);
+            case "telegram.allow_from": {
+                List<String> was = parseIds(readCfgField(cfg, key));
+                List<String> ids = parseIds(value);
+                JSONArray a = new JSONArray();
+                for (String id : ids) a.put(id);
+                telegramObj(cfg).put("allow_from", a);
+                JSONObject links = child(child(cfg, "session"), "identity_links");
+                JSONArray owner = ownerLink(links.optJSONArray("owner"), was.isEmpty() ? null : was.get(0), ids);
+                if (owner != null) links.put("owner", owner);
                 break;
-            case "mcp.research.url":
-                serverObj(cfg, "research").put("url", value);
-                break;
-            case "research.auth":
-                child(serverObj(cfg, "research"), "headers").put("Authorization", value);
+            }
+            case "telegram.base_url":
+                child(telegramObj(cfg), "settings").put("base_url", value);
                 break;
             default:
                 break;
         }
+    }
+
+    /** channel_list.telegram, or null when absent. */
+    private static JSONObject telegramOpt(JSONObject cfg) {
+        JSONObject cl = cfg.optJSONObject("channel_list");
+        return cl == null ? null : cl.optJSONObject("telegram");
+    }
+
+    /** channel_list.telegram, created (with its type) when absent. */
+    private static JSONObject telegramObj(JSONObject cfg) throws JSONException {
+        JSONObject tg = child(child(cfg, "channel_list"), "telegram");
+        if (!tg.has("type")) tg.put("type", "telegram");
+        return tg;
+    }
+
+    /**
+     * The session.identity_links.owner to write when allow_from goes from {@code oldFirstId} (null when it was
+     * empty) to {@code newIds}, or null to keep {@code currentOwner}. The TV's dialog is shared with the first
+     * allowed ID's Telegram chat (shared-session.patch) while it is linked to no chat or to that one; a link to any
+     * other chat (a group) is left as it is.
+     */
+    static JSONArray ownerLink(JSONArray currentOwner, String oldFirstId, List<String> newIds) {
+        String linked = null;
+        for (int i = 0; currentOwner != null && i < currentOwner.length(); i++) {
+            String s = currentOwner.optString(i);
+            if (s.startsWith("telegram:")) {
+                linked = s;
+                break;
+            }
+        }
+        if (linked != null && (oldFirstId == null || !linked.equals("telegram:" + oldFirstId))) return null;
+        JSONArray owner = new JSONArray();
+        if (!newIds.isEmpty()) owner.put("telegram:" + newIds.get(0));
+        owner.put("pico:tv");
+        return owner;
+    }
+
+    /** Telegram IDs out of the form's comma-separated text: trimmed, empties and repeats dropped, order kept. */
+    static List<String> parseIds(String text) {
+        List<String> ids = new ArrayList<>();
+        for (String part : text.split("[,\\s]+")) {
+            String id = part.trim();
+            if (!id.isEmpty() && !ids.contains(id)) ids.add(id);
+        }
+        return ids;
+    }
+
+    private static String joinList(List<String> l) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < l.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(l.get(i));
+        }
+        return sb.toString();
     }
 
     private static JSONObject modelEntry(JSONObject cfg, String name) throws JSONException {
@@ -714,13 +869,6 @@ public final class ControlServer {
     private static String serverUrl(JSONObject cfg, String name) {
         JSONObject s = serverOpt(cfg, name);
         return s == null ? "" : s.optString("url", "");
-    }
-
-    private static String researchAuth(JSONObject cfg) {
-        JSONObject r = serverOpt(cfg, "research");
-        if (r == null) return "";
-        JSONObject h = r.optJSONObject("headers");
-        return h == null ? "" : h.optString("Authorization", "");
     }
 
     private static JSONObject serverOpt(JSONObject cfg, String name) {
@@ -752,7 +900,7 @@ public final class ControlServer {
         return m.find() ? m.group(1) : "";
     }
 
-    /** Regenerates the whole .security.yml from its four values, in the fixed layout make secrets writes. */
+    /** Regenerates the whole .security.yml from its four values, in its fixed layout. */
     private static String buildSecurityYml(String modelKey, String asrKey, String token, String braveKey) {
         return "model_list:\n"
                 + "  main:\n"
@@ -774,24 +922,31 @@ public final class ControlServer {
     // --- settings form -------------------------------------------------------------------------------------
 
     private void serveForm(OutputStream out) throws IOException {
-        JSONObject f;
+        // A file that could not be read gets no inputs at all (only its error): blank inputs would be submitted
+        // and overwrite the values that are really there, e.g. the Telegram IDs and the dialog link they make.
+        JSONObject f = null;
         JSONObject servers;
-        String err = null;
+        JSONObject media = null;
+        List<String> errs = new ArrayList<>();
         try {
             f = readConfigFields();
         } catch (ToolError e) {
-            f = new JSONObject();
-            err = e.getMessage();
+            errs.add(e.getMessage());
         }
         try {
             servers = readServers();
         } catch (ToolError e) {
             servers = new JSONObject();
-            if (err == null) err = e.getMessage();
+            errs.add(e.getMessage());
+        }
+        try {
+            media = readMedia();
+        } catch (ToolError e) {
+            errs.add(e.getMessage());
         }
         StringBuilder b = new StringBuilder();
         b.append(FORM_HEAD);
-        if (err != null) b.append("<p class=err>").append(escapeHtml(err)).append("</p>");
+        for (String e : errs) b.append("<p class=err>").append(escapeHtml(e)).append("</p>");
         b.append("<form method=post action=/config>");
 
         // Tab bar: one section visible at a time (the panes below). The tabs are plain buttons (type=button) so
@@ -802,19 +957,37 @@ public final class ControlServer {
         b.append("<button type=button class=tab data-t=mcp onclick=\"tab('mcp')\">MCP</button>");
         b.append("<button type=button class=tab data-t=tg onclick=\"tab('tg')\">Telegram</button>");
         b.append("<button type=button class=tab data-t=web onclick=\"tab('web')\">Web</button>");
+        b.append("<button type=button class=tab data-t=media onclick=\"tab('media')\">Media</button>");
         b.append("<button type=button class=tab data-t=screen onclick=\"tab('screen')\">Screen</button>");
         b.append("</nav>");
 
         b.append(pane("model", true));
-        b.append(field(f, "model.model", "Model", "text", false));
-        b.append(field(f, "model.api_base", "API base", "text", true));
-        b.append(field(f, "model.proxy", "Proxy", "text", true));
-        b.append(field(f, "model.api_key", "API key", "password", true));
+        if (f != null) {
+            // The gateway is not started without these three (Provisioning.unconfigured); a save that completes
+            // them starts it (applyForm).
+            if (f.optString("model.model").isEmpty() || f.optString("model.api_base").isEmpty()
+                    || f.optString("model.api_key").isEmpty()) {
+                b.append("<p class=warn>The agent starts once Model, API base and API key are filled in:"
+                        + " fill them in and press Save.</p>");
+            }
+            b.append(field(f, "model.model", "Model", "text", false));
+            b.append(field(f, "model.api_base", "API base", "text", true));
+            b.append(field(f, "model.proxy", "Proxy", "text", true));
+            b.append(field(f, "model.api_key", "API key", "password", true));
+        }
         b.append("</div>");
 
         b.append(pane("stt", false));
-        b.append(field(f, "asr.proxy", "Proxy", "text", true));
-        b.append(field(f, "asr.api_key", "API key", "password", true));
+        if (f != null) {
+            b.append(field(f, "asr.proxy", "Proxy", "text", true));
+            b.append(field(f, "asr.api_key", "API key", "password", true));
+        }
+        // An unticked checkbox submits nothing: the hidden 0 comes first and the ticked box's 1 after it wins
+        // (parseForm keeps the last value of a repeated name), so a missing name means an old form -- keep.
+        b.append("<div class=opt><input type=hidden name=voice_remote value=0>"
+                + "<label class=ck><input type=checkbox name=voice_remote value=1"
+                + (AppSettings.getVoiceRemote(ctx) ? " checked" : "")
+                + "> Remote's voice button talks to the agent</label></div>");
         b.append("</div>");
 
         b.append(pane("mcp", false));
@@ -838,11 +1011,29 @@ public final class ControlServer {
         b.append("</div>");
 
         b.append(pane("tg", false));
-        b.append(field(f, "telegram.token", "bot token", "password", true));
+        if (f != null) {
+            b.append(field(f, "telegram.token", "bot token", "password", true));
+            b.append(field(f, "telegram.allow_from", "Allowed user IDs", "text", true));
+            b.append("<p class=hint>Comma-separated. The bot is on once it has a token and an ID; the first ID"
+                    + " shares the dialog with the TV, unless the TV is linked to another chat (a group).</p>");
+            b.append(field(f, "telegram.base_url", "Bot API URL", "text", true));
+        }
         b.append("</div>");
 
         b.append(pane("web", false));
-        b.append(field(f, "brave.api_key", "Brave API key", "password", true));
+        if (f != null) b.append(field(f, "brave.api_key", "Brave API key", "password", true));
+        b.append("</div>");
+
+        // tv_mcp.json: the media search and subtitle backends of the box's own tv MCP server.
+        b.append(pane("media", false));
+        if (media != null) {
+            b.append(field(media, "media.jackett_url", "Jackett URL", "text", true));
+            b.append("<p class=hint>Empty: the search goes through TorrServer's RuTor.</p>");
+            b.append(field(media, "media.jackett_api_key", "Jackett API key", "password", true));
+            b.append(field(media, "media.torrserver_url", "TorrServer URL", "text", true));
+            b.append(field(media, "media.opensubtitles_api_key", "OpenSubtitles API key", "password", true));
+            b.append(field(media, "media.subdl_api_key", "SubDL API key", "password", true));
+        }
         b.append("</div>");
 
         // Screen view as a tab: the box's :8080 MJPEG page in an iframe. Its src is set only while this tab is
@@ -863,7 +1054,9 @@ public final class ControlServer {
                 + "var t=document.querySelectorAll('.tab');"
                 + "for(var j=0;j<t.length;j++)t[j].classList.toggle('active',t[j].dataset.t==n);"
                 + "var f=document.getElementById('scr');"
-                + "if(f)f.src=(n=='screen')?('http://'+location.hostname+':8080/'):'about:blank';}"
+                // The screen server wants the PIN too; this page is only served with it, so it may carry it.
+                + "if(f)f.src=(n=='screen')?('http://'+location.hostname+':" + ScreenStreamServer.PORT
+                + "/?pin=" + Pin.get(ctx) + "'):'about:blank';}"
                 + "function rev(b){var i=b.previousElementSibling;var s=i.type=='password';"
                 + "i.type=s?'text':'password';b.textContent=s?'hide':'show';}</script>");
         b.append(FORM_TAIL);
@@ -899,14 +1092,29 @@ public final class ControlServer {
         String msg;
         boolean restarted = false;
         try {
-            // Fixed model/asr/telegram/brave fields go through the untouched applyConfig path; the dynamic
-            // MCP-server rows go through applyServers. Both write config.json; their changed lists are combined.
+            // Fixed model/asr/telegram/brave fields go through applyConfig; the dynamic MCP-server rows go
+            // through applyServers. Both write config.json; their changed lists are combined. Then the files that
+            // are not the gateway's: tv_mcp.json (applyMedia) and the app's own switch.
             List<String> changed = new ArrayList<>();
             JSONArray fixedChanged = applyConfig(fields);
             for (int i = 0; i < fixedChanged.length(); i++) changed.add(fixedChanged.optString(i));
             changed.addAll(applyServers(form));
+            boolean gatewayChanged = !changed.isEmpty();
+            changed.addAll(applyMedia(form));
+            if (form.containsKey("voice_remote")) {
+                boolean on = "1".equals(form.get("voice_remote"));
+                if (on != AppSettings.getVoiceRemote(ctx)) {
+                    AppSettings.setVoiceRemote(ctx, on);
+                    changed.add("voice_remote");
+                    // AgentService applies the switch: the voice activities, the helpers, the preferred entries.
+                    runRoot("am startservice -a " + AgentService.ACTION_VOICE
+                            + " -n xyz.vvzvlad.popcornclaw/xyz.vvzvlad.popcornclaw.AgentService", 10_000);
+                }
+            }
             msg = changed.isEmpty() ? "No changes." : "Changed: " + join(new JSONArray(changed));
-            if ("save_restart".equals(action)) {
+            // A plain save that changed the gateway's config while no gateway answers (a fresh box whose model was
+            // just filled in) asks for a start too; AgentService checks the config on that action first.
+            if ("save_restart".equals(action) || (gatewayChanged && !gatewayHealthy())) {
                 runRoot("am startservice -a " + AgentService.ACTION_RESTART
                         + " -n xyz.vvzvlad.popcornclaw/xyz.vvzvlad.popcornclaw.AgentService", 10_000);
                 restarted = true;
@@ -921,6 +1129,97 @@ public final class ControlServer {
         b.append("<p><a href=/>← back</a></p>");
         b.append(FORM_TAIL);
         respond(out, "200 OK", "text/html; charset=utf-8", b.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** tv_mcp.json's values as "media." + key; "" for an absent or null key. Throws on a failed read. */
+    private JSONObject readMedia() throws ToolError {
+        synchronized (configLock) {
+            JSONObject o = parseMedia();
+            JSONObject out = new JSONObject();
+            try {
+                for (String k : MEDIA_URLS) out.put("media." + k, jsonStr(o, k));
+                for (String k : MEDIA_KEYS) out.put("media." + k, jsonStr(o, k));
+            } catch (JSONException e) {
+                throw new ToolError("internal: " + e.getMessage());
+            }
+            return out;
+        }
+    }
+
+    /**
+     * Applies the Media tab to tv_mcp.json: every other key in it is kept, a blank key field keeps the stored key,
+     * an empty URL is written as "" (TvMcpServer would read a JSON null as the string "null"). The file is written
+     * (mode 600) only when a value changed, and then TvMcpServer drops its cached settings. Returns the changed
+     * field names; nothing is read when the submit has no Media fields.
+     */
+    private List<String> applyMedia(Map<String, String> form) throws ToolError {
+        List<String> changed = new ArrayList<>();
+        boolean touched = false;
+        for (String k : MEDIA_URLS) touched |= form.containsKey("media." + k);
+        for (String k : MEDIA_KEYS) touched |= form.containsKey("media." + k);
+        if (!touched) return changed;
+        synchronized (configLock) {
+            JSONObject o = parseMedia();
+            try {
+                for (String k : MEDIA_URLS) {
+                    String name = "media." + k;
+                    if (!form.containsKey(name)) continue;
+                    String nv = form.get(name).trim();
+                    if (!nv.equals(jsonStr(o, k)) || (o.has(k) && o.isNull(k))) {
+                        o.put(k, nv);
+                        changed.add(name);
+                    }
+                }
+                for (String k : MEDIA_KEYS) {
+                    String name = "media." + k;
+                    String nv = form.containsKey(name) ? form.get(name).trim() : "";
+                    if (!nv.isEmpty() && !nv.equals(jsonStr(o, k))) {
+                        o.put(k, nv);
+                        changed.add(name);
+                    }
+                }
+                if (changed.isEmpty()) return changed;
+                writeFileRoot(TV_MCP_PATH, o.toString(2) + "\n");
+            } catch (JSONException e) {
+                throw new ToolError("internal: " + e.getMessage());
+            }
+        }
+        TvMcpServer.reloadSettings();
+        return changed;
+    }
+
+    private JSONObject parseMedia() throws ToolError {
+        String text = readFileRoot(TV_MCP_PATH);
+        try {
+            return new JSONObject(text);
+        } catch (JSONException e) {
+            throw new ToolError("cannot parse tv_mcp.json on the box: " + e.getMessage());
+        }
+    }
+
+    /** A string value; "" for an absent key and for JSON null (optString would give "null"). */
+    private static String jsonStr(JSONObject o, String key) {
+        return o.isNull(key) ? "" : o.optString(key, "");
+    }
+
+    /** The login page: one PIN input posting to /login. */
+    private static void serveLogin(OutputStream out, String status, boolean wrong) throws IOException {
+        StringBuilder b = new StringBuilder();
+        b.append(FORM_HEAD);
+        b.append("<form class=pane method=post action=/login>");
+        if (wrong) b.append("<p class=err>Wrong PIN.</p>");
+        b.append("<label><span class=lbl>Enter the PIN shown on the TV</span>"
+                + "<input class=mono type=text name=pin inputmode=numeric autocomplete=off maxlength=6 autofocus>"
+                + "</label>");
+        b.append("<div class=buttons><button class=primary>Open</button></div>");
+        b.append("</form>");
+        b.append(FORM_TAIL);
+        respond(out, status, "text/html; charset=utf-8", b.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** A right PIN: stored in the browser's cookie, then on to the settings form. */
+    private void redirectHome(OutputStream out, String status) throws IOException {
+        respond(out, status, "text/plain", new byte[0], "Location: /\r\n" + Pin.setCookieHeader(ctx));
     }
 
     private static Map<String, String> parseForm(byte[] body) {
@@ -1172,7 +1471,7 @@ public final class ControlServer {
             final long deadline = System.nanoTime() + timeoutMs * 1_000_000L;
             final AtomicBoolean killed = new AtomicBoolean(false);
             Thread wd = new Thread(() -> {
-                while (p.isAlive()) {
+                while (Procs.alive(p)) {
                     if (System.nanoTime() - deadline > 0) {
                         killed.set(true);
                         p.destroy();
@@ -1304,10 +1603,17 @@ public final class ControlServer {
 
     private static void respond(OutputStream out, String status, String contentType, byte[] body)
             throws IOException {
+        respond(out, status, contentType, body, "");
+    }
+
+    /** {@code extraHeaders}: whole header lines, each ending in CRLF (a Location, a Set-Cookie); "" for none. */
+    private static void respond(OutputStream out, String status, String contentType, byte[] body,
+            String extraHeaders) throws IOException {
         String header = "HTTP/1.1 " + status + "\r\n"
                 + "Content-Type: " + contentType + "\r\n"
                 + "Content-Length: " + body.length + "\r\n"
                 + "Cache-Control: no-cache, no-store\r\n"
+                + extraHeaders
                 + "Connection: close\r\n\r\n";
         out.write(header.getBytes(StandardCharsets.UTF_8));
         out.write(body);
@@ -1344,6 +1650,10 @@ public final class ControlServer {
             + ".srvrow{display:flex;gap:18px;margin-top:12px;align-items:center}"
             + ".ck{display:inline-flex;align-items:center;gap:6px;margin:0;color:#c3c9d4;font-size:13px;cursor:pointer}"
             + ".ck input{width:auto;margin:0}"
+            + ".opt{margin-top:16px}"
+            + ".hint{color:#8a93a6;font-size:12px;margin:6px 0 0}"
+            + ".warn{color:#ffd58a;background:#2a2416;border:1px solid #514426;border-radius:8px;"
+            + "padding:10px 12px;margin:0 0 12px}"
             + "button{font:14px system-ui,sans-serif;border-radius:8px;padding:10px 16px;cursor:pointer;"
             + "border:1px solid transparent}"
             + "button.add{background:#1b2230;color:#9fc0ff;border-color:#2d3a52;margin-top:4px}"

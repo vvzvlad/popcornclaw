@@ -30,8 +30,9 @@ import java.util.Map;
 
 /**
  * A small home-screen card with a QR that encodes the box's control panel URL
- * {@code http://<box LAN IPv4>:<ControlServer.PORT>/}. The owner scans it with a phone to open the
- * settings panel. The IP is read at render time ({@link #onAttachedToWindow()} and every time the
+ * {@code http://<box LAN IPv4>:<ControlServer.PORT>/?pin=<PIN>}. The owner scans it with a phone to open the
+ * settings panel already logged in; the PIN ({@link Pin}) is also written under the QR for typing it in by
+ * hand. The IP is read at render time ({@link #onAttachedToWindow()} and every time the
  * window becomes visible), so a DHCP change is picked up; with no IPv4 the card hides itself.
  */
 public final class SetupQr extends LinearLayout {
@@ -39,6 +40,7 @@ public final class SetupQr extends LinearLayout {
     private static final String CAPTION = "Scan to configure";
 
     private final ImageView image;
+    private final TextView pinText;
     private final int qrPx;
     private String shownUrl;
 
@@ -74,6 +76,17 @@ public final class SetupQr extends LinearLayout {
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         cl.topMargin = Math.round(8 * density);
         addView(caption, cl);
+
+        // The panel's PIN, for typing it in when the QR is not used (a PC browser, an MCP client).
+        pinText = new TextView(c);
+        pinText.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        pinText.setTextColor(0xFFE8E8E8);
+        pinText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        pinText.setGravity(Gravity.CENTER_HORIZONTAL);
+        LayoutParams pl = new LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        pl.topMargin = Math.round(2 * density);
+        addView(pinText, pl);
     }
 
     @Override
@@ -99,7 +112,8 @@ public final class SetupQr extends LinearLayout {
             setVisibility(GONE);
             return;
         }
-        String url = "http://" + ip + ":" + ControlServer.PORT + "/";
+        String pin = Pin.get(getContext());
+        String url = "http://" + ip + ":" + ControlServer.PORT + "/?pin=" + pin;
         if (!url.equals(shownUrl)) {
             Bitmap qr = encode(url, qrPx);
             if (qr == null) {
@@ -108,6 +122,7 @@ public final class SetupQr extends LinearLayout {
                 return;
             }
             image.setImageBitmap(qr);
+            pinText.setText("PIN " + pin);
             shownUrl = url;
         }
         setVisibility(VISIBLE);

@@ -1,5 +1,6 @@
 package xyz.vvzvlad.popcornclaw;
 
+import android.content.Context;
 import android.graphics.Bitmap;
 import android.util.Log;
 
@@ -10,9 +11,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UnsupportedEncodingException;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.URLDecoder;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -21,7 +24,10 @@ import java.util.regex.Pattern;
 
 /**
  * The app's own tiny web interface, served on the LAN so the owner can see the box's screen in a PC browser
- * and drive it with the mouse and keyboard "just to set things up". No auth: the box is on the home LAN only.
+ * and drive it with the mouse and keyboard "just to set things up". Every route needs the box's {@link Pin}:
+ * the control panel's cookie (cookies are per host, so the one :8081 sets reaches this port too) or a
+ * {@code ?pin=} query, which also sets that cookie; the panel's Screen tab loads this page with it. Anything
+ * else gets a 401 page pointing at the control panel.
  *
  * <p>Routes:
  * <ul>
@@ -80,9 +86,15 @@ public final class ScreenStreamServer {
     // One persistent root shell instead of a `su` per frame: SuperSU grants once (a single toast, not one per
     // frame) and the per-call su spawn is gone. Capture and input are serialized through it.
     private final RootShell root = new RootShell();
+    // For the PIN: the service's application context.
+    private final Context ctx;
     // Reused across frames (the capture loop is single-threaded): the raw RGBA buffer and the Bitmap it fills.
     private byte[] frameBuf;
     private Bitmap frameBmp;
+
+    public ScreenStreamServer(Context c) {
+        ctx = c.getApplicationContext();
+    }
 
     public void start() {
         if (running) return;
@@ -139,26 +151,48 @@ public final class ScreenStreamServer {
             String path = parts.length > 1 ? parts[1] : "/";
 
             int contentLength = 0;
+            String cookies = null;
+            String host = null;
             for (String line; (line = readLine(in)) != null && !line.isEmpty(); ) {
                 int colon = line.indexOf(':');
-                if (colon > 0 && line.substring(0, colon).trim().equalsIgnoreCase("Content-Length")) {
+                if (colon <= 0) continue;
+                String name = line.substring(0, colon).trim();
+                String value = line.substring(colon + 1).trim();
+                if (name.equalsIgnoreCase("Content-Length")) {
                     try {
-                        contentLength = Integer.parseInt(line.substring(colon + 1).trim());
+                        contentLength = Integer.parseInt(value);
                     } catch (NumberFormatException ignored) {
                     }
+                } else if (name.equalsIgnoreCase("Cookie")) {
+                    cookies = cookies == null ? value : cookies + "; " + value;
+                } else if (name.equalsIgnoreCase("Host")) {
+                    host = value;
                 }
             }
 
             String route = path;
+            String query = "";
             int q = route.indexOf('?');
-            if (q >= 0) route = route.substring(0, q);
+            if (q >= 0) {
+                query = route.substring(q + 1);
+                route = route.substring(0, q);
+            }
+
+            // The PIN before anything else, the request body included: an unknown client gets nothing but the
+            // pointer to the control panel. A right ?pin= also stores the cookie for the page's own requests.
+            boolean byQuery = Pin.matches(ctx, queryParam(query, "pin"));
+            if (!byQuery && !Pin.matches(ctx, Pin.fromCookies(cookies))) {
+                serveUnauthorized(out, socket, host);
+                return;
+            }
+            String setCookie = byQuery ? Pin.setCookieHeader(ctx) : "";
 
             if ("GET".equals(method) && ("/".equals(route) || "/screen".equals(route))) {
-                serveHtml(out);
+                serveHtml(out, setCookie);
             } else if ("GET".equals(method) && "/screen.mjpeg".equals(route)) {
-                serveMjpeg(out);
+                serveMjpeg(out, setCookie);
             } else if ("POST".equals(method) && "/input".equals(route)) {
-                serveInput(out, readBody(in, contentLength));
+                serveInput(out, readBody(in, contentLength), setCookie);
             } else {
                 respond(out, "404 Not Found", "text/plain", "not found".getBytes(StandardCharsets.UTF_8));
             }
@@ -175,17 +209,66 @@ public final class ScreenStreamServer {
 
     // --- screen page ---------------------------------------------------------------------------------------
 
-    private void serveHtml(OutputStream out) throws IOException {
-        respond(out, "200 OK", "text/html; charset=utf-8", PAGE.getBytes(StandardCharsets.UTF_8));
+    private void serveHtml(OutputStream out, String setCookie) throws IOException {
+        // The page's own requests carry the PIN too, so it works even where the browser keeps no cookie.
+        String page = PAGE.replace("__PIN__", Pin.get(ctx));
+        respond(out, "200 OK", "text/html; charset=utf-8", page.getBytes(StandardCharsets.UTF_8), setCookie);
+    }
+
+    /** 401 with a link to the control panel on the same host, where the PIN is entered. */
+    private static void serveUnauthorized(OutputStream out, Socket socket, String hostHeader) throws IOException {
+        String host = hostOnly(hostHeader);
+        if (host == null) host = socket.getLocalAddress().getHostAddress();
+        String panel = escapeHtml("http://" + host + ":" + ControlServer.PORT + "/");
+        String body = "<!doctype html><html lang=en><head><meta charset=utf-8>"
+                + "<meta name=viewport content='width=device-width,initial-scale=1'>"
+                + "<title>PopcornClaw screen</title></head>"
+                + "<body style='margin:0;padding:24px 16px;background:#111;color:#ccc;font:15px system-ui,sans-serif'>"
+                + "<p>This page needs the PIN shown on the TV.</p>"
+                + "<p>Open the control panel: <a style='color:#7fb2ff' href=\"" + panel + "\">" + panel + "</a></p>"
+                + "</body></html>";
+        respond(out, "401 Unauthorized", "text/html; charset=utf-8", body.getBytes(StandardCharsets.UTF_8), "");
+    }
+
+    /** The host part of a Host header ("10.0.0.5:8080" -> "10.0.0.5", "[fe80::1]:8080" -> "[fe80::1]"). */
+    private static String hostOnly(String hostHeader) {
+        if (hostHeader == null || hostHeader.isEmpty()) return null;
+        if (hostHeader.startsWith("[")) {
+            int end = hostHeader.indexOf(']');
+            return end > 0 ? hostHeader.substring(0, end + 1) : null;
+        }
+        int colon = hostHeader.indexOf(':');
+        String h = colon >= 0 ? hostHeader.substring(0, colon) : hostHeader;
+        return h.isEmpty() ? null : h;
+    }
+
+    /** One query-string parameter, URL-decoded; null when absent or malformed. */
+    private static String queryParam(String query, String name) {
+        for (String pair : query.split("&")) {
+            int eq = pair.indexOf('=');
+            if (eq < 0 || !name.equals(pair.substring(0, eq))) continue;
+            try {
+                return URLDecoder.decode(pair.substring(eq + 1), "UTF-8");
+            } catch (UnsupportedEncodingException | IllegalArgumentException e) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static String escapeHtml(String s) {
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+                .replace("'", "&#39;");
     }
 
     // --- MJPEG stream --------------------------------------------------------------------------------------
 
-    private void serveMjpeg(OutputStream out) throws IOException {
+    private void serveMjpeg(OutputStream out, String setCookie) throws IOException {
         String header = "HTTP/1.1 200 OK\r\n"
                 + "Content-Type: multipart/x-mixed-replace; boundary=" + BOUNDARY + "\r\n"
                 + "Cache-Control: no-cache, no-store\r\n"
                 + "Pragma: no-cache\r\n"
+                + setCookie
                 + "Connection: close\r\n\r\n";
         out.write(header.getBytes(StandardCharsets.UTF_8));
         out.flush();
@@ -307,11 +390,11 @@ public final class ScreenStreamServer {
 
     // --- input injection -----------------------------------------------------------------------------------
 
-    private void serveInput(OutputStream out, byte[] body) throws IOException {
+    private void serveInput(OutputStream out, byte[] body, String setCookie) throws IOException {
         int[] size = deviceSize();
         if (size == null) {
             respond(out, "503 Service Unavailable", "text/plain",
-                    "no screen size".getBytes(StandardCharsets.UTF_8));
+                    "no screen size".getBytes(StandardCharsets.UTF_8), setCookie);
             return;
         }
         int w = size[0], h = size[1];
@@ -336,14 +419,14 @@ public final class ScreenStreamServer {
                     break;
                 default:
                     respond(out, "400 Bad Request", "text/plain",
-                            "unknown type".getBytes(StandardCharsets.UTF_8));
+                            "unknown type".getBytes(StandardCharsets.UTF_8), setCookie);
                     return;
             }
         } catch (JSONException e) {
-            respond(out, "400 Bad Request", "text/plain", "bad json".getBytes(StandardCharsets.UTF_8));
+            respond(out, "400 Bad Request", "text/plain", "bad json".getBytes(StandardCharsets.UTF_8), setCookie);
             return;
         }
-        respond(out, "200 OK", "text/plain", "ok".getBytes(StandardCharsets.UTF_8));
+        respond(out, "200 OK", "text/plain", "ok".getBytes(StandardCharsets.UTF_8), setCookie);
     }
 
     /** Types a string char by char. Space is its own keyevent; every other char goes single-quoted. */
@@ -425,7 +508,7 @@ public final class ScreenStreamServer {
         private volatile long opDeadlineNanos;
 
         private boolean ensure() {
-            if (proc != null && proc.isAlive()) return true;
+            if (proc != null && Procs.alive(proc)) return true;
             try {
                 // stdin is a pipe, not a tty, so the shell runs non-interactively and prints no prompt.
                 final Process started = new ProcessBuilder("su").redirectErrorStream(false).start();
@@ -441,7 +524,7 @@ public final class ScreenStreamServer {
                 t.start();
                 // Watchdog: if the current read outlives opDeadline, kill the shell so the blocked read unblocks.
                 Thread wd = new Thread(() -> {
-                    while (started.isAlive()) {
+                    while (Procs.alive(started)) {
                         try { Thread.sleep(500); } catch (InterruptedException e) { return; }
                         if (opActive && System.nanoTime() - opDeadlineNanos > 0) {
                             Log.w(TAG, "root shell read timed out; killing the shell");
@@ -568,10 +651,17 @@ public final class ScreenStreamServer {
 
     private static void respond(OutputStream out, String status, String contentType, byte[] body)
             throws IOException {
+        respond(out, status, contentType, body, "");
+    }
+
+    /** {@code extraHeaders}: whole header lines, each ending in CRLF (e.g. a Set-Cookie); "" for none. */
+    private static void respond(OutputStream out, String status, String contentType, byte[] body,
+            String extraHeaders) throws IOException {
         String header = "HTTP/1.1 " + status + "\r\n"
                 + "Content-Type: " + contentType + "\r\n"
                 + "Content-Length: " + body.length + "\r\n"
                 + "Cache-Control: no-cache, no-store\r\n"
+                + extraHeaders
                 + "Connection: close\r\n\r\n";
         out.write(header.getBytes(StandardCharsets.UTF_8));
         out.write(body);
@@ -604,11 +694,11 @@ public final class ScreenStreamServer {
             + "<button data-key=66>Enter</button>"
             + "<button data-key=67>Del</button>"
             + "</div>"
-            + "<div id=stage><img id=screen src='/screen.mjpeg' draggable=false></div>"
+            + "<div id=stage><img id=screen src='/screen.mjpeg?pin=__PIN__' draggable=false></div>"
             + "<div id=hint>Click to tap, drag to swipe, wheel to scroll. Type on the keyboard; buttons above for keys. LAN only.</div>"
             + "</div><script>"
             + "var img=document.getElementById('screen');"
-            + "function send(o){fetch('/input',{method:'POST',body:JSON.stringify(o)});}"
+            + "function send(o){fetch('/input?pin=__PIN__',{method:'POST',body:JSON.stringify(o)});}"
             + "function frac(cx,cy){var r=img.getBoundingClientRect();"
             + "var fx=(cx-r.left)/r.width,fy=(cy-r.top)/r.height;"
             + "fx=Math.max(0,Math.min(1,fx));fy=Math.max(0,Math.min(1,fy));return{fx:fx,fy:fy};}"

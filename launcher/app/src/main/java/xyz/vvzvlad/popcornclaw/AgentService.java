@@ -3,9 +3,11 @@ package xyz.vvzvlad.popcornclaw;
 import android.app.Service;
 import android.bluetooth.BluetoothDevice;
 import android.content.BroadcastReceiver;
+import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.pm.PackageManager;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
@@ -25,9 +27,13 @@ import java.net.URL;
  * this app: its output goes to a file, never to a pipe back here. It also shows every new command to the agent
  * and the agent's messages as the Telegram chat gets them in a popup over everything ({@link CommandPopup}).
  * And it strips the keys that stop a bonded Bluetooth remote from reconnecting ({@link #fixRemoteKeys}).
+ * Its check loop first brings a fresh box to a working state ({@link Provisioning}), and the gateway is started
+ * only once the model is configured.
  */
 public final class AgentService extends Service {
     public static final String ACTION_RESTART = "xyz.vvzvlad.popcornclaw.RESTART";
+    /** The panel's remote-voice switch changed: {@link #applyVoice} applies it. */
+    public static final String ACTION_VOICE = "xyz.vvzvlad.popcornclaw.VOICE";
 
     private static final String TAG = "PopcornClaw";
     private static final String HEALTH_URL = "http://127.0.0.1:18790/health";
@@ -43,18 +49,33 @@ public final class AgentService extends Service {
     private ScreenStreamServer screen;
     private ControlServer control;
     private TvMcpServer tvmcp;
-    // Both touched on the worker thread only.
+    private Provisioning provisioning;
+    // All touched on the worker thread only.
     private int failures;
     // Set so the very first start is never held back by the one-minute gap.
     private long lastStart = -START_GAP_MS;
+    private boolean provisioned;
+    // The config gate (Provisioning.unconfigured): null when the model is configured, else the line written to
+    // the gateway log once per change. Read at the service's first start attempt and on every ACTION_RESTART
+    // only (the panel sends one after a save), so an unconfigured box gets no su a minute from the health check;
+    // a failed read (no root grant yet) is not kept and is read again on the next attempt.
+    private boolean gateRead;
+    private String unready;
+
+    /** Whether the launcher's "not the home screen" question may be asked now (Provisioning.homeAskable). */
+    public static boolean homeAskable(Context c) {
+        return Provisioning.homeAskable(c);
+    }
 
     private final Runnable check = new Runnable() {
         @Override
         public void run() {
+            // Before the gateway's first start: on a fresh box it needs the files provisioning writes.
+            if (!provisioned) provisioned = provisioning.run();
             if (healthy()) {
                 failures = 0;
             } else if (++failures >= FAILURES_TO_START && SystemClock.elapsedRealtime() - lastStart >= START_GAP_MS) {
-                start("health check failed " + failures + " times in a row");
+                start("health check failed " + failures + " times in a row", false);
             }
             worker.postDelayed(this, CHECK_MS);
         }
@@ -66,25 +87,26 @@ public final class AgentService extends Service {
         thread = new HandlerThread("popcornclaw-agent");
         thread.start();
         worker = new Handler(thread.getLooper());
+        provisioning = new Provisioning(this);
         worker.post(check);
         // The service always runs, so it is the one that pops up each command the agent gets and its messages.
         popup = new CommandPopup(this);
         popup.start();
         // The owner-facing web page (box screen + mouse/keyboard over the LAN, "just to set things up").
-        screen = new ScreenStreamServer();
+        screen = new ScreenStreamServer(this);
         screen.start();
         // The owner-facing control MCP + settings form over the LAN.
-        control = new ControlServer();
+        control = new ControlServer(this);
         control.start();
-        // The ported tv_mcp (search/files/prepare/play/player/find_subtitles) over the LAN.
+        // The ported tv_mcp (search/files/prepare/play/player/find_subtitles) on 127.0.0.1, for the gateway.
         tvmcp = new TvMcpServer();
         tvmcp.start();
         // The TV's half of the dialog with no screen open: the gateway has somewhere to send it.
         PicoLink.connect();
         // The box's own TorrServer (bundled in the app), so tv_mcp needs no networked one; ffprobe rides with it.
         worker.post(this::startTorrServer);
-        // SPIKE: keep the voice helpers warm for the phone remote's ~15 s window.
-        worker.post(this::startVoiceHelpers);
+        // SPIKE: keep the voice helpers warm for the phone remote's ~15 s window (when the panel's switch is on).
+        worker.post(() -> applyVoice(false));
         new Thread(() -> fixRemoteKeys(1), "popcornclaw-bt").start();
         registerReceiver(bonded, new IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED));
     }
@@ -146,10 +168,41 @@ public final class AgentService extends Service {
     }
 
     /**
+     * Applies the panel's "Remote's voice button talks to the agent" switch (AppSettings), read at the service's
+     * start and on every {@link #ACTION_VOICE} the panel sends when the switch changes. Off: our two voice
+     * activities are disabled -- a disabled activity drops out of the resolver, so the system's WEB_SEARCH and
+     * ASSIST go to Google (katniss) again -- and the helpers are killed. On: the activities are enabled and the
+     * helpers started; on a change also AssistRole, since the preferred entries must point at the re-enabled
+     * activities again (the owner may have picked "always Google" while ours were off). DONT_KILL_APP: this
+     * service runs in the app's own process.
+     */
+    private void applyVoice(boolean changed) {
+        boolean on = AppSettings.getVoiceRemote(this);
+        int state = on ? PackageManager.COMPONENT_ENABLED_STATE_DEFAULT : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
+        PackageManager pm = getPackageManager();
+        pm.setComponentEnabledSetting(new ComponentName(this, VoiceSearchActivity.class), state, PackageManager.DONT_KILL_APP);
+        pm.setComponentEnabledSetting(new ComponentName(this, VoiceAssistActivity.class), state, PackageManager.DONT_KILL_APP);
+        if (!on) {
+            // By comm, as in startVoiceHelpers: the su's own command text names the helpers too.
+            Provisioning.Result r = Provisioning.root("pkill pcvoicerelay; pkill pcvoiceworker", null, 15_000);
+            Log.i(TAG, "voice: remote voice button is off in the panel; activities disabled, helpers killed (su exited with "
+                    + r.code + ")");
+            return;
+        }
+        startVoiceHelpers();
+        if (changed) {
+            Provisioning.Result r = Provisioning.root("CLASSPATH=" + getPackageCodePath() + " app_process /system/bin "
+                    + AssistRole.class.getName(), null, 60_000);
+            Log.i(TAG, "voice: AssistRole exited with " + r.code + ": " + r.out.trim());
+        }
+    }
+
+    /**
      * SPIKE: launches the two voice helpers kept warm for the phone remote (see {@link VoiceHelper}). The relay
      * must be root (only uid < AID_APP may ServiceManager.addService); the worker must be the assistant
      * package's uid so its transact(1) passes the service's uid gate, and it must open /dev/binder already as
-     * that uid, so it is a fresh app_process under su, not a fork of root.
+     * that uid, so it is a fresh app_process under su, not a fork of root. Called by {@link #applyVoice} only
+     * while the panel's switch is on.
      */
     private void startVoiceHelpers() {
         int katnissUid;
@@ -190,7 +243,8 @@ public final class AgentService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && ACTION_RESTART.equals(intent.getAction())) worker.post(() -> start("restart requested"));
+        if (intent != null && ACTION_RESTART.equals(intent.getAction())) worker.post(() -> start("restart requested", true));
+        if (intent != null && ACTION_VOICE.equals(intent.getAction())) worker.post(() -> applyVoice(true));
         return START_STICKY;
     }
 
@@ -240,8 +294,16 @@ public final class AgentService extends Service {
      * Runs on the worker thread and waits for su: up to ~10 s while an old gateway ignores SIGTERM, plus up
      * to SuperSU's prompt timeout (10 s) when the app has no root grant yet.
      */
-    private void start(String reason) {
+    private void start(String reason, boolean readConfig) {
         lastStart = SystemClock.elapsedRealtime();
+        // A fresh box has no model until the owner sets one in the control panel: nothing to start yet.
+        if (readConfig || !gateRead) {
+            String u = Provisioning.unconfigured();
+            if (u != null && !u.equals(unready)) appendLog(u);
+            unready = u;
+            gateRead = u == null || Provisioning.NOT_CONFIGURED.equals(u);
+        }
+        if (unready != null) return;
         String lib = getApplicationInfo().nativeLibraryDir + "/libpicoclaw.so";
         // pkill/pgrep -f match this script's own command line too (the su client and the root shell), so the
         // text "picoclaw gateway" must not appear in it: "[p]icoclaw" in the patterns and "gateway" in quotes
