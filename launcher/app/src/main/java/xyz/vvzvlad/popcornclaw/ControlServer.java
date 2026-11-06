@@ -802,6 +802,7 @@ public final class ControlServer {
         b.append("<button type=button class=tab data-t=mcp onclick=\"tab('mcp')\">MCP</button>");
         b.append("<button type=button class=tab data-t=tg onclick=\"tab('tg')\">Telegram</button>");
         b.append("<button type=button class=tab data-t=web onclick=\"tab('web')\">Web</button>");
+        b.append("<button type=button class=tab data-t=screen onclick=\"tab('screen')\">Screen</button>");
         b.append("</nav>");
 
         b.append(pane("model", true));
@@ -844,6 +845,12 @@ public final class ControlServer {
         b.append(field(f, "brave.api_key", "Brave API key", "password", true));
         b.append("</div>");
 
+        // Screen view as a tab: the box's :8080 MJPEG page in an iframe. Its src is set only while this tab is
+        // open (see tab() below), so the stream does not run in the background.
+        b.append(pane("screen", false));
+        b.append("<iframe id=scr class=scrframe title=\"box screen\"></iframe>");
+        b.append("</div>");
+
         // Action bar sticks to the bottom so Save/Reboot are always reachable from any tab. Reboot confirms first
         // and never saves: applyForm handles action=reboot before the config apply.
         b.append("<div class=actions>");
@@ -854,7 +861,9 @@ public final class ControlServer {
         b.append("<script>function tab(n){var p=document.querySelectorAll('.pane');"
                 + "for(var i=0;i<p.length;i++)p[i].classList.toggle('hidden',p[i].id!='pane-'+n);"
                 + "var t=document.querySelectorAll('.tab');"
-                + "for(var j=0;j<t.length;j++)t[j].classList.toggle('active',t[j].dataset.t==n);}"
+                + "for(var j=0;j<t.length;j++)t[j].classList.toggle('active',t[j].dataset.t==n);"
+                + "var f=document.getElementById('scr');"
+                + "if(f)f.src=(n=='screen')?('http://'+location.hostname+':8080/'):'about:blank';}"
                 + "function rev(b){var i=b.previousElementSibling;var s=i.type=='password';"
                 + "i.type=s?'text':'password';b.textContent=s?'hide':'show';}</script>");
         b.append(FORM_TAIL);
@@ -1361,9 +1370,9 @@ public final class ControlServer {
             + "display:flex;gap:10px;flex-wrap:wrap;padding:12px 0;margin-top:4px}"
             + "button.danger{background:#3a1a1c;color:#ff9a9a;border-color:#5a2a2d}"
             + "button.danger:hover{background:#4a2124}"
+            + ".scrframe{width:100%;height:72vh;border:0;border-radius:8px;background:#000;display:block}"
             + "@media(max-width:480px){.srvrow{flex-direction:column;gap:10px;align-items:stretch}.actions button{flex:1}}"
             + "</style></head><body><div class=wrap>"
-            + "<header><h1>PopcornClaw control</h1><a id=sv>Screen view →</a></header>"
-            + "<script>document.getElementById('sv').href='http://'+location.hostname+':8080/'</script>";
+            + "<header><h1>PopcornClaw control</h1></header>";
     private static final String FORM_TAIL = "</div></body></html>";
 }
