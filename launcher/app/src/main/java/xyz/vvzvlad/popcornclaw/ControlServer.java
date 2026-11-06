@@ -1370,7 +1370,9 @@ public final class ControlServer {
             + "display:flex;gap:10px;flex-wrap:wrap;padding:12px 0;margin-top:4px}"
             + "button.danger{background:#3a1a1c;color:#ff9a9a;border-color:#5a2a2d}"
             + "button.danger:hover{background:#4a2124}"
-            + ".scrframe{width:100%;height:72vh;border:0;border-radius:8px;background:#000;display:block}"
+            + "#pane-screen{position:relative;left:50%;transform:translateX(-50%);width:min(96vw,1120px);padding:8px}"
+            + ".scrframe{width:100%;height:calc(min(96vw,1120px)*0.5625 + 92px);border:0;border-radius:8px;"
+            + "background:#000;display:block}"
             + "@media(max-width:480px){.srvrow{flex-direction:column;gap:10px;align-items:stretch}.actions button{flex:1}}"
             + "</style></head><body><div class=wrap>"
             + "<header><h1>PopcornClaw control</h1></header>";
