@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">popcornclaw</string>
-    <string name="brand" translatable="false">OmarchyTV</string>
-    <string name="brand_short" translatable="false">[otv]</string>
-    <string name="prompt" translatable="false">user@omarchytv:~$</string>
-    <string name="dream_omarchy">OmarchyTV</string>
+    <string name="brand" translatable="false">PopcornClaw</string>
+    <string name="brand_short" translatable="false">[popcorn]</string>
+    <string name="prompt" translatable="false">user@popcornclaw:~$</string>
+    <string name="dream_omarchy">PopcornClaw</string>
     <string name="inputs">Inputs</string>
     <string name="wifi">Wi-Fi</string>
     <string name="settings">Settings</string>
@@ -20,7 +20,7 @@
     <string name="cant_open">Can\'t open %1$s</string>
     <string name="date_format">EEE d MMM</string>
     <string name="dream_date_format">EEEE  d MMMM</string>
-    <string name="dream_name">OmarchyTV Clock</string>
+    <string name="dream_name">PopcornClaw Clock</string>
     <string name="walker_hint">all  ·  %1$d installed</string>
     <string name="menu_launcher">Launcher settings</string>
     <string name="menu_wallpaper">Wallpaper</string>
@@ -85,10 +85,10 @@
     <string name="lang_en" translatable="false">English</string>
     <string name="lang_it" translatable="false">Italiano</string>
     <string name="lang_de" translatable="false">Deutsch</string>
-    <string name="logo_omarchy_tv" translatable="false">OMARCHY TV</string>
+    <string name="logo_omarchy_tv" translatable="false">POPCORNCLAW</string>
     <string name="logo_omarchy" translatable="false">Omarchy</string>
     <string name="mark_current" translatable="false">✓</string>
-    <string name="menu_title" translatable="false">omarchytv</string>
+    <string name="menu_title" translatable="false">popcornclaw</string>
     <string name="ctx_move">Move</string>
     <string name="ctx_hide">Hide from launcher</string>
     <string name="ctx_info">App info</string>
@@ -151,11 +151,11 @@
     <string name="tv_tile_hint">Live TV · resumes the last channel</string>
     <string name="search_prompt">Say an app name</string>
 
-    <string name="keymap_service">OmarchyTV remote buttons</string>
+    <string name="keymap_service">PopcornClaw remote buttons</string>
     <string name="keymap_service_desc">Runs the actions you assign to remote buttons, in any app. It sees button presses only; it reads nothing on screen.</string>
-    <string name="home_service">OmarchyTV home button</string>
-    <string name="home_service_desc">Opens OmarchyTV when Home shows the TV\'s own home screen. It only sees which home screen opened and reads nothing on screen.</string>
-    <string name="set_home_override">Home button opens OmarchyTV</string>
+    <string name="home_service">PopcornClaw home button</string>
+    <string name="home_service_desc">Opens PopcornClaw when Home shows the TV\'s own home screen. It only sees which home screen opened and reads nothing on screen.</string>
+    <string name="set_home_override">Home button opens PopcornClaw</string>
     <string name="ai_pc_offline">not connected</string>
     <string name="ai_offline_row">When not connected</string>
     <string name="ai_offline_stale">show last data</string>
@@ -194,16 +194,16 @@
     <string name="set_app_size">App size</string>
     <string name="per_row">%d per row</string>
     <!-- v2.8.2 reboot check -->
-    <string name="home_check_title">OmarchyTV is not the home screen</string>
+    <string name="home_check_title">PopcornClaw is not the home screen</string>
     <string name="home_check_hint">After a reboot the TV picked another launcher. Nothing was changed.</string>
-    <string name="home_check_restore">Make OmarchyTV the home screen</string>
+    <string name="home_check_restore">Make PopcornClaw the home screen</string>
     <string name="home_check_later">Not now</string>
     <string name="home_check_never">Don\'t ask again</string>
-    <string name="home_check_adb">Pick OmarchyTV and Always, or run: cmd package set-home-activity --user 0 xyz.vvzvlad.popcornclaw/com.omarchytv.home.MainActivity</string>
+    <string name="home_check_adb">Pick popcornclaw and Always, or run: cmd package set-home-activity --user 0 xyz.vvzvlad.popcornclaw/com.omarchytv.home.MainActivity</string>
     <string name="set_originale">Originale (Sony home)</string>
     <string name="originale_wait">Switching… accept \"Allow debugging?\" on the TV if asked</string>
-    <string name="originale_on">Stock Sony home and screensaver are back. Press again to return to OmarchyTV</string>
-    <string name="originale_omarchy">OmarchyTV is the home screen again</string>
+    <string name="originale_on">Stock Sony home and screensaver are back. Press again to return to PopcornClaw</string>
+    <string name="originale_omarchy">PopcornClaw is the home screen again</string>
     <string name="originale_reverted">Home did not switch: the stock home was kept</string>
     <string name="originale_no_adb">Needs Network debugging on (Developer options). Opening the home picker; or run tools/restore.sh from the PC</string>
     <string name="v29_hints">OK open · ▲ bar · search key: Walker</string>
@@ -237,7 +237,7 @@
     <string name="v29_set_dev">Developer options</string>
     <string name="v29_set_about">About</string>
     <string name="v29_set_android">Android settings</string>
-    <string name="v29_set_omarchy">OmarchyTV settings</string>
+    <string name="v29_set_omarchy">PopcornClaw settings</string>
     <string name="v29_set_network">Network &amp; internet</string>
     <string name="v29_set_input">Inputs</string>
     <string name="v210_tv_hints">OK watch TV · ▲ bar · long OK: Walker</string>
@@ -247,7 +247,7 @@
     <string name="v210_sys_themes">Themes</string>
     <string name="v210_sys_transparency">Transparency</string>
     <string name="v210_sys_widgets">Home widgets</string>
-    <string name="v210_sys_all">All OmarchyTV settings</string>
+    <string name="v210_sys_all">All PopcornClaw settings</string>
     <string name="v210_ss_after">Start screensaver after</string>
     <string name="v210_logo_anim">Animated logo</string>
     <string name="v210_text_tiles">Text tiles (terminal style)</string>
@@ -311,12 +311,12 @@
     <string name="keys_triple">Triple press</string>
     <string name="keys_long">Long press</string>
     <string name="keys_app">App</string>
-    <string name="keys_action">OmarchyTV action</string>
+    <string name="keys_action">PopcornClaw action</string>
     <string name="keys_intent">Intent…</string>
     <string name="keys_intent_value">intent</string>
     <string name="keys_intent_title">Intent URI</string>
     <string name="keys_intent_bad">Not a valid intent URI</string>
-    <string name="keys_hint">Needs the \"OmarchyTV remote buttons\" service (OK on the first row). Unbound buttons work as usual.</string>
+    <string name="keys_hint">Needs the \"PopcornClaw remote buttons\" service (OK on the first row). Unbound buttons work as usual.</string>
     <string name="keys_action_walker">Search (Walker)</string>
     <string name="keys_action_voice">Voice search</string>
     <string name="keys_action_home">Home</string>

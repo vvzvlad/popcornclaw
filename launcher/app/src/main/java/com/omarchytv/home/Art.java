@@ -9,16 +9,12 @@ import java.nio.charset.StandardCharsets;
 /**
  * The ASCII logos shared by the home wordmark and the screensaver. Config value ("logo"):
  * <ul>
- * <li>"omarchy-tv" (default): Omarchy's logo.txt (MIT) with a matching "TV" drawn in the same
- *     half-block style (res/raw/omarchy_tv_logo.txt; the TV glyphs are original).</li>
+ * <li>"omarchy-tv" (default): popcornclaw: our POPCORNCLAW wordmark (assets/popcornclaw/wordmark.txt).</li>
  * <li>"omarchy": Omarchy's logo.txt unchanged (MIT, Copyright (c) David Heinemeier Hansson).</li>
  * <li>"original": OmarchyTV's own block font ({@link BlockFont}), no Omarchy artwork at all.</li>
  * </ul>
  */
 final class Art {
-
-    /** First column of "TV" in omarchy_tv_logo.txt. */
-    private static final int OMARCHY_TV_SPLIT = 86;
 
     private Art() {
     }
@@ -35,7 +31,7 @@ final class Art {
         switch (normalise(which)) {
             case "omarchy": return raw(c, R.raw.omarchy_logo);
             case "original": return blockFontArt();
-            default: return raw(c, R.raw.omarchy_tv_logo);
+            default: return asset(c, "popcornclaw/wordmark.txt");   // popcornclaw: our wordmark
         }
     }
 
@@ -44,7 +40,7 @@ final class Art {
         switch (normalise(which)) {
             case "omarchy": return -1;
             case "original": return BlockFont.splitColumn(WordmarkView.TEXT);
-            default: return OMARCHY_TV_SPLIT;
+            default: return -1;
         }
     }
 
@@ -57,6 +53,16 @@ final class Art {
         char[][] g = BlockFont.render(WordmarkView.TEXT);
         StringBuilder sb = new StringBuilder();
         for (char[] row : g) sb.append(new String(row).replace('#', '\u2588')).append('\n');
+        return sb.toString();
+    }
+
+    private static String asset(Context c, String path) {
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader r = new BufferedReader(new InputStreamReader(c.getAssets().open(path), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = r.readLine()) != null) sb.append(line).append('\n');
+        } catch (Exception ignored) {
+        }
         return sb.toString();
     }
 

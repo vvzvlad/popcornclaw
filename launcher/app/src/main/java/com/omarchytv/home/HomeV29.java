@@ -434,7 +434,7 @@ final class HomeV29 extends FrameLayout {
             String txt = new String(b, 0, Math.max(0, n), StandardCharsets.UTF_8);
             return txt.replaceAll("\\s+$", "");
         } catch (Exception e) {
-            return "OMARCHY TV";
+            return "POPCORNCLAW";
         }
     }
 

@@ -17,8 +17,8 @@
     <string name="date_format">EEE, d. MMM</string>
     <string name="dream_date_format">EEEE, d. MMMM</string>
     <string name="walker_hint">alle  ·  %1$d installiert</string>
-    <string name="dream_name">OmarchyTV Uhr</string>
-    <string name="dream_omarchy">OmarchyTV</string>
+    <string name="dream_name">PopcornClaw Uhr</string>
+    <string name="dream_omarchy">PopcornClaw</string>
     <string name="menu_launcher">Launcher-Einstellungen</string>
     <string name="menu_wallpaper">Hintergrund</string>
     <string name="menu_reorder">Apps anordnen</string>
@@ -139,11 +139,11 @@
     <string name="tv_tile_hint">Live-TV · setzt beim letzten Sender fort</string>
     <string name="search_prompt">Sag einen App-Namen</string>
 
-    <string name="keymap_service">OmarchyTV Fernbedienungstasten</string>
+    <string name="keymap_service">PopcornClaw Fernbedienungstasten</string>
     <string name="keymap_service_desc">Führt die Aktionen aus, die du Fernbedienungstasten zuweist, in jeder App. Sieht nur Tastendrücke; liest nichts vom Bildschirm.</string>
-    <string name="home_service">OmarchyTV-Home-Taste</string>
-    <string name="home_service_desc">Öffnet OmarchyTV, wenn die Home-Taste den Startbildschirm des Fernsehers zeigt. Sieht nur, welcher Startbildschirm geöffnet wurde, und liest nichts vom Bildschirm.</string>
-    <string name="set_home_override">Home-Taste öffnet OmarchyTV</string>
+    <string name="home_service">PopcornClaw-Home-Taste</string>
+    <string name="home_service_desc">Öffnet PopcornClaw, wenn die Home-Taste den Startbildschirm des Fernsehers zeigt. Sieht nur, welcher Startbildschirm geöffnet wurde, und liest nichts vom Bildschirm.</string>
+    <string name="set_home_override">Home-Taste öffnet PopcornClaw</string>
     <string name="ai_pc_offline">nicht verbunden</string>
     <string name="ai_offline_row">Wenn nicht verbunden</string>
     <string name="ai_offline_stale">letzte Werte zeigen</string>
@@ -181,16 +181,16 @@
     <string name="set_app_size">App-Größe</string>
     <string name="per_row">%d pro Reihe</string>
     <!-- v2.8.2 reboot check -->
-    <string name="home_check_title">OmarchyTV ist nicht der Startbildschirm</string>
+    <string name="home_check_title">PopcornClaw ist nicht der Startbildschirm</string>
     <string name="home_check_hint">Nach dem Neustart hat der TV einen anderen Launcher gewählt. Nichts wurde geändert.</string>
-    <string name="home_check_restore">OmarchyTV als Startbildschirm</string>
+    <string name="home_check_restore">PopcornClaw als Startbildschirm</string>
     <string name="home_check_later">Nicht jetzt</string>
     <string name="home_check_never">Nicht mehr fragen</string>
-    <string name="home_check_adb">OmarchyTV und Immer wählen, oder: cmd package set-home-activity --user 0 xyz.vvzvlad.popcornclaw/com.omarchytv.home.MainActivity</string>
+    <string name="home_check_adb">popcornclaw und Immer wählen, oder: cmd package set-home-activity --user 0 xyz.vvzvlad.popcornclaw/com.omarchytv.home.MainActivity</string>
     <string name="set_originale">Original (Sony-Startbildschirm)</string>
     <string name="originale_wait">Wird umgeschaltet… ggf. \"Debugging zulassen?\" auf dem TV bestätigen</string>
-    <string name="originale_on">Sony-Startbildschirm und Bildschirmschoner sind zurück. Erneut drücken für OmarchyTV</string>
-    <string name="originale_omarchy">OmarchyTV ist wieder der Startbildschirm</string>
+    <string name="originale_on">Sony-Startbildschirm und Bildschirmschoner sind zurück. Erneut drücken für PopcornClaw</string>
+    <string name="originale_omarchy">PopcornClaw ist wieder der Startbildschirm</string>
     <string name="originale_reverted">Nicht umgeschaltet: der Sony-Startbildschirm bleibt</string>
     <string name="originale_no_adb">Netzwerk-Debugging muss an sein (Entwickleroptionen). Öffne die Startbildschirm-Auswahl; oder tools/restore.sh am PC</string>
     <string name="v29_hints">OK öffnen · ▲ Leiste · Suchtaste: Walker</string>
@@ -224,7 +224,7 @@
     <string name="v29_set_dev">Entwickleroptionen</string>
     <string name="v29_set_about">Info</string>
     <string name="v29_set_android">Android-Einstellungen</string>
-    <string name="v29_set_omarchy">OmarchyTV-Einstellungen</string>
+    <string name="v29_set_omarchy">PopcornClaw-Einstellungen</string>
     <string name="v29_set_network">Netzwerk &amp; Internet</string>
     <string name="v29_set_input">Eingänge</string>
     <string name="v210_tv_hints">OK fernsehen · ▲ Leiste · lang OK: Walker</string>
@@ -234,7 +234,7 @@
     <string name="v210_sys_themes">Themes</string>
     <string name="v210_sys_transparency">Transparenz</string>
     <string name="v210_sys_widgets">Home-Widgets</string>
-    <string name="v210_sys_all">Alle OmarchyTV-Einstellungen</string>
+    <string name="v210_sys_all">Alle PopcornClaw-Einstellungen</string>
     <string name="v210_ss_after">Bildschirmschoner starten nach</string>
     <string name="v210_logo_anim">Animiertes Logo</string>
     <string name="v210_text_tiles">Text-Kacheln (Terminal-Stil)</string>
@@ -298,12 +298,12 @@
     <string name="keys_triple">Dreifacher Druck</string>
     <string name="keys_long">Langer Druck</string>
     <string name="keys_app">App</string>
-    <string name="keys_action">OmarchyTV-Aktion</string>
+    <string name="keys_action">PopcornClaw-Aktion</string>
     <string name="keys_intent">Intent…</string>
     <string name="keys_intent_value">Intent</string>
     <string name="keys_intent_title">Intent-URI</string>
     <string name="keys_intent_bad">Keine gültige Intent-URI</string>
-    <string name="keys_hint">Benötigt den Dienst „OmarchyTV Fernbedienungstasten“ (OK in der ersten Zeile). Nicht belegte Tasten funktionieren wie gewohnt.</string>
+    <string name="keys_hint">Benötigt den Dienst „PopcornClaw Fernbedienungstasten“ (OK in der ersten Zeile). Nicht belegte Tasten funktionieren wie gewohnt.</string>
     <string name="keys_action_walker">Suche (Walker)</string>
     <string name="keys_action_voice">Sprachsuche</string>
     <string name="keys_action_home">Start</string>

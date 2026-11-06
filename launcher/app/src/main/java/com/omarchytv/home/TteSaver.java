@@ -151,12 +151,12 @@ final class TteSaver {
         if (t != null && !t.trim().isEmpty()) return t;
         if ("omarchy".equals(cfg.screensaverArt)) return Art.load(c, "omarchy");
         if ("original".equals(cfg.screensaverArt)) return Art.load(c, "original");
-        try (InputStream in = c.getAssets().open("saver/screensaver-tv.txt")) {
+        try (InputStream in = c.getAssets().open("popcornclaw/wordmark.txt")) {   // popcornclaw: our wordmark
             byte[] b = new byte[in.available()];
             int n = in.read(b);
             return new String(b, 0, Math.max(0, n), StandardCharsets.UTF_8);
         } catch (Exception e) {
-            return "OMARCHY TV";
+            return "POPCORNCLAW";
         }
     }
 

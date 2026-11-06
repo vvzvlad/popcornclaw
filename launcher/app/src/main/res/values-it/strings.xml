@@ -16,8 +16,8 @@
     <string name="cant_open">Impossibile aprire %1$s</string>
     <string name="date_format">EEE d MMM</string>
     <string name="dream_date_format">EEEE  d MMMM</string>
-    <string name="dream_name">OmarchyTV Orologio</string>
-    <string name="dream_omarchy">OmarchyTV</string>
+    <string name="dream_name">PopcornClaw Orologio</string>
+    <string name="dream_omarchy">PopcornClaw</string>
     <string name="walker_hint">tutte  ·  %1$d installate</string>
     <string name="menu_launcher">Impostazioni launcher</string>
     <string name="menu_wallpaper">Sfondo</string>
@@ -139,11 +139,11 @@
     <string name="tv_tile_hint">TV in diretta · riprende l\'ultimo canale</string>
     <string name="search_prompt">Di\' il nome di un\'app</string>
 
-    <string name="keymap_service">OmarchyTV tasti telecomando</string>
+    <string name="keymap_service">PopcornClaw tasti telecomando</string>
     <string name="keymap_service_desc">Esegue le azioni assegnate ai tasti del telecomando, in qualsiasi app. Vede solo la pressione dei tasti; non legge nulla dallo schermo.</string>
-    <string name="home_service">Tasto Home OmarchyTV</string>
-    <string name="home_service_desc">Apre OmarchyTV quando Home mostra la home della TV. Vede solo quale home si è aperta e non legge nulla dallo schermo.</string>
-    <string name="set_home_override">Il tasto Home apre OmarchyTV</string>
+    <string name="home_service">Tasto Home PopcornClaw</string>
+    <string name="home_service_desc">Apre PopcornClaw quando Home mostra la home della TV. Vede solo quale home si è aperta e non legge nulla dallo schermo.</string>
+    <string name="set_home_override">Il tasto Home apre PopcornClaw</string>
     <string name="ai_pc_offline">non connesso</string>
     <string name="ai_offline_row">Quando non connesso</string>
     <string name="ai_offline_stale">mostra ultimi dati</string>
@@ -181,16 +181,16 @@
     <string name="set_app_size">Dimensione app</string>
     <string name="per_row">%d per riga</string>
     <!-- v2.8.2 reboot check -->
-    <string name="home_check_title">OmarchyTV non è la schermata Home</string>
+    <string name="home_check_title">PopcornClaw non è la schermata Home</string>
     <string name="home_check_hint">Dopo il riavvio la TV ha scelto un altro launcher. Non è stato cambiato nulla.</string>
-    <string name="home_check_restore">Rendi OmarchyTV la schermata Home</string>
+    <string name="home_check_restore">Rendi PopcornClaw la schermata Home</string>
     <string name="home_check_later">Non ora</string>
     <string name="home_check_never">Non chiedere più</string>
-    <string name="home_check_adb">Scegli OmarchyTV e Sempre, oppure: cmd package set-home-activity --user 0 xyz.vvzvlad.popcornclaw/com.omarchytv.home.MainActivity</string>
+    <string name="home_check_adb">Scegli popcornclaw e Sempre, oppure: cmd package set-home-activity --user 0 xyz.vvzvlad.popcornclaw/com.omarchytv.home.MainActivity</string>
     <string name="set_originale">Originale (home Sony)</string>
     <string name="originale_wait">Cambio in corso… se richiesto accetta \"Consentire il debug?\" sulla TV</string>
-    <string name="originale_on">Home e salvaschermo Sony ripristinati. Premi di nuovo per tornare a OmarchyTV</string>
-    <string name="originale_omarchy">OmarchyTV è di nuovo la home</string>
+    <string name="originale_on">Home e salvaschermo Sony ripristinati. Premi di nuovo per tornare a PopcornClaw</string>
+    <string name="originale_omarchy">PopcornClaw è di nuovo la home</string>
     <string name="originale_reverted">La home non è cambiata: resta quella Sony</string>
     <string name="originale_no_adb">Serve il Debug di rete attivo (Opzioni sviluppatore). Apro la scelta della home; oppure esegui tools/restore.sh dal PC</string>
     <string name="v29_hints">OK apri · ▲ barra · tasto ricerca: Walker</string>
@@ -224,7 +224,7 @@
     <string name="v29_set_dev">Opzioni sviluppatore</string>
     <string name="v29_set_about">Info</string>
     <string name="v29_set_android">Impostazioni Android</string>
-    <string name="v29_set_omarchy">Impostazioni OmarchyTV</string>
+    <string name="v29_set_omarchy">Impostazioni PopcornClaw</string>
     <string name="v29_set_network">Rete e Internet</string>
     <string name="v29_set_input">Ingressi</string>
     <string name="v210_tv_hints">OK guarda la TV · ▲ barra · OK lungo: Walker</string>
@@ -234,7 +234,7 @@
     <string name="v210_sys_themes">Temi</string>
     <string name="v210_sys_transparency">Trasparenza</string>
     <string name="v210_sys_widgets">Widget della home</string>
-    <string name="v210_sys_all">Tutte le impostazioni OmarchyTV</string>
+    <string name="v210_sys_all">Tutte le impostazioni PopcornClaw</string>
     <string name="v210_ss_after">Avvia salvaschermo dopo</string>
     <string name="v210_logo_anim">Logo animato</string>
     <string name="v210_text_tiles">Tile testuali (stile terminale)</string>
@@ -298,12 +298,12 @@
     <string name="keys_triple">Tripla pressione</string>
     <string name="keys_long">Pressione lunga</string>
     <string name="keys_app">App</string>
-    <string name="keys_action">Azione OmarchyTV</string>
+    <string name="keys_action">Azione PopcornClaw</string>
     <string name="keys_intent">Intent…</string>
     <string name="keys_intent_value">intent</string>
     <string name="keys_intent_title">URI intent</string>
     <string name="keys_intent_bad">URI intent non valido</string>
-    <string name="keys_hint">Richiede il servizio \"OmarchyTV tasti telecomando\" (OK sulla prima riga). I tasti non assegnati funzionano come sempre.</string>
+    <string name="keys_hint">Richiede il servizio \"PopcornClaw tasti telecomando\" (OK sulla prima riga). I tasti non assegnati funzionano come sempre.</string>
     <string name="keys_action_walker">Cerca (Walker)</string>
     <string name="keys_action_voice">Ricerca vocale</string>
     <string name="keys_action_home">Home</string>

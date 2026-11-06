@@ -93,7 +93,7 @@ if(!window.ResizeObserver)window.ResizeObserver=function(){this.observe=function
       run({TextEffect:m.TextEffect,effectNames:m.effectNames},'ufficiale');
     },function(err){loadBundle(err&&err.message||err)});
   }
-  if(!text){fetch('screensaver-tv.txt').then(function(r){return r.text()}).then(function(t){text=t;boot()}).catch(function(){text='OMARCHY TV';boot()})}
+  if(!text){fetch('../popcornclaw/wordmark.txt').then(function(r){return r.text()}).then(function(t){text=t;boot()}).catch(function(){text='POPCORNCLAW';boot()})}
   else boot();
 })();
 </script></body></html>

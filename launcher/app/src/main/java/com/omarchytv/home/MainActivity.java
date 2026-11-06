@@ -1631,7 +1631,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
         e.setSingleLine(true);
         e.setText(host ? cfg.promptHost : cfg.promptUser);
         e.setSelection(e.getText().length());
-        e.setHint(host ? "omarchytv" : "user");
+        e.setHint(host ? "popcornclaw" : "user");
         e.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         e.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(16)});
         String row = str(host ? R.string.set_prompt_host : R.string.set_prompt_name);
@@ -1639,7 +1639,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener, T
                 .setTitle(row)
                 .setView(e)
                 .setPositiveButton(android.R.string.ok, (d, w) -> {
-                    String v = LauncherConfig.promptPart(e.getText().toString(), host ? "omarchytv" : "user");
+                    String v = LauncherConfig.promptPart(e.getText().toString(), host ? "popcornclaw" : "user");
                     applyLive("launcher", row, j -> {
                         org.json.JSONObject p = j.optJSONObject("prompt");
                         if (p == null) j.put("prompt", p = new org.json.JSONObject());

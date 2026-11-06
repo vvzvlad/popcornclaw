@@ -539,7 +539,7 @@ public class AsciiSaverView extends View {
     };
 
     private static final String SECOND_REALITY_SCROLL =
-            "   ★ OMARCHY TV · SECOND REALITY ABYSS 1993//2026 · CODE & PIXELS BY MARCO PORRO · GREETZ TO FUTURE CREW & DHH · 60FPS REALTIME ANSI ENGINE ★   ";
+            "   ★ POPCORNCLAW · SECOND REALITY ABYSS 1993//2026 · CODE & PIXELS BY MARCO PORRO · GREETZ TO FUTURE CREW & DHH · 60FPS REALTIME ANSI ENGINE ★   ";
 
     // Octahedron / Glenz polyhedron vertices & edges for 3D rotating vector object
     private static final float[][] GLENZ_V = {
