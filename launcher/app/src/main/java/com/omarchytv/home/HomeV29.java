@@ -292,6 +292,20 @@ final class HomeV29 extends FrameLayout {
                 feedBox.setLayoutParams(p);
             }
         }));
+
+        // ---- PopcornClaw: always-visible QR to the control panel, left column above the app dock ----
+        xyz.vvzvlad.popcornclaw.SetupQr setupQr = new xyz.vvzvlad.popcornclaw.SetupQr(a);
+        LayoutParams qrl = new LayoutParams(-2, -2, Gravity.START | Gravity.BOTTOM);
+        qrl.leftMargin = qrl.bottomMargin = px(32);
+        addView(setupQr, qrl);
+        // Keep its bottom above the app dock (same tracking as the feed), never over the dock's left tiles.
+        appWin.addOnLayoutChangeListener((v, l, top, r, b, ol, ot, or, ob) -> post(() -> {
+            LayoutParams p = (LayoutParams) setupQr.getLayoutParams();
+            if (p.bottomMargin != getHeight() - top + px(16)) {
+                p.bottomMargin = getHeight() - top + px(16);
+                setupQr.setLayoutParams(p);
+            }
+        }));
     }
 
     /** PopcornClaw: while the agent's feed shows, it takes the widgets' place on the home. */
