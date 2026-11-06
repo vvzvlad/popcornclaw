@@ -775,6 +775,7 @@ public final class ControlServer {
 
     private void serveForm(OutputStream out) throws IOException {
         JSONObject f;
+        JSONObject servers;
         String err = null;
         try {
             f = readConfigFields();
@@ -782,30 +783,60 @@ public final class ControlServer {
             f = new JSONObject();
             err = e.getMessage();
         }
+        try {
+            servers = readServers();
+        } catch (ToolError e) {
+            servers = new JSONObject();
+            if (err == null) err = e.getMessage();
+        }
         StringBuilder b = new StringBuilder();
         b.append(FORM_HEAD);
         if (err != null) b.append("<p class=err>").append(escapeHtml(err)).append("</p>");
         b.append("<form method=post action=/config>");
-        b.append(section("Модель"));
-        b.append(field(f, "model.model", "Модель", "text"));
-        b.append(field(f, "model.api_base", "API base", "text"));
-        b.append(field(f, "model.proxy", "Proxy", "text"));
-        b.append(field(f, "model.api_key", "API-ключ", "password"));
-        b.append(section("ASR"));
-        b.append(field(f, "asr.proxy", "Proxy", "text"));
-        b.append(field(f, "asr.api_key", "API-ключ", "password"));
-        b.append(section("MCP"));
-        b.append(field(f, "mcp.tv.url", "tv url", "text"));
-        b.append(field(f, "mcp.projector.url", "projector url", "text"));
-        b.append(field(f, "mcp.research.url", "research url", "text"));
-        b.append(field(f, "research.auth", "research Authorization", "password"));
+
+        b.append(section("Model"));
+        b.append(field(f, "model.model", "Model", "text", false));
+        b.append(field(f, "model.api_base", "API base", "text", true));
+        b.append(field(f, "model.proxy", "Proxy", "text", true));
+        b.append(field(f, "model.api_key", "API key", "password", true));
+        b.append("</section>");
+
+        b.append(section("STT"));
+        b.append(field(f, "asr.proxy", "Proxy", "text", true));
+        b.append(field(f, "asr.api_key", "API key", "password", true));
+        b.append("</section>");
+
+        b.append(section("MCP servers"));
+        b.append("<div id=srvlist>");
+        int i = 0;
+        for (java.util.Iterator<String> it = servers.keys(); it.hasNext(); i++) {
+            String nm = it.next();
+            JSONObject s = servers.optJSONObject(nm);
+            boolean enabled = s != null && s.optBoolean("enabled", false);
+            String url = s == null ? "" : s.optString("url", "");
+            boolean authSet = false;
+            if (s != null) {
+                JSONObject h = s.optJSONObject("headers");
+                authSet = h != null && !h.optString("Authorization", "").isEmpty();
+            }
+            b.append(serverRowHtml(String.valueOf(i), nm, enabled, url, authSet));
+        }
+        b.append("</div>");
+        b.append("<button type=button class=add onclick=addServer()>Add server</button>");
+        b.append(serverTemplate(i));
+        b.append("</section>");
+
         b.append(section("Telegram"));
-        b.append(field(f, "telegram.token", "bot token", "password"));
-        b.append(section("Web"));
-        b.append(field(f, "brave.api_key", "Brave API-ключ", "password"));
+        b.append(field(f, "telegram.token", "bot token", "password", true));
+        b.append("</section>");
+
+        b.append(section("Web search"));
+        b.append(field(f, "brave.api_key", "Brave API key", "password", true));
+        b.append("</section>");
+
         b.append("<div class=buttons>");
-        b.append("<button name=action value=save>Сохранить</button>");
-        b.append("<button name=action value=save_restart>Сохранить и перезапустить</button>");
+        b.append("<button name=action value=save class=primary>Save</button>");
+        b.append("<button name=action value=save_restart class=secondary>Save &amp; restart</button>");
         b.append("</div></form>");
         b.append(FORM_TAIL);
         respond(out, "200 OK", "text/html; charset=utf-8", b.toString().getBytes(StandardCharsets.UTF_8));
@@ -822,21 +853,26 @@ public final class ControlServer {
         String msg;
         boolean restarted = false;
         try {
-            JSONArray changed = applyConfig(fields);
-            msg = changed.length() == 0 ? "Изменений нет." : "Изменено: " + join(changed);
+            // Fixed model/asr/telegram/brave fields go through the untouched applyConfig path; the dynamic
+            // MCP-server rows go through applyServers. Both write config.json; their changed lists are combined.
+            List<String> changed = new ArrayList<>();
+            JSONArray fixedChanged = applyConfig(fields);
+            for (int i = 0; i < fixedChanged.length(); i++) changed.add(fixedChanged.optString(i));
+            changed.addAll(applyServers(form));
+            msg = changed.isEmpty() ? "No changes." : "Changed: " + join(new JSONArray(changed));
             if ("save_restart".equals(action)) {
                 runRoot("am startservice -a " + AgentService.ACTION_RESTART
                         + " -n xyz.vvzvlad.popcornclaw/xyz.vvzvlad.popcornclaw.AgentService", 10_000);
                 restarted = true;
             }
         } catch (ToolError e) {
-            msg = "Ошибка: " + e.getMessage();
+            msg = "Error: " + e.getMessage();
         }
         StringBuilder b = new StringBuilder();
         b.append(FORM_HEAD);
         b.append("<p>").append(escapeHtml(msg)).append("</p>");
-        if (restarted) b.append("<p>Перезапуск шлюза запущен.</p>");
-        b.append("<p><a href=/>← назад</a></p>");
+        if (restarted) b.append("<p>Gateway restart started.</p>");
+        b.append("<p><a href=/>← back</a></p>");
         b.append(FORM_TAIL);
         respond(out, "200 OK", "text/html; charset=utf-8", b.toString().getBytes(StandardCharsets.UTF_8));
     }
@@ -861,14 +897,182 @@ public final class ControlServer {
         return m;
     }
 
-    private static String field(JSONObject f, String key, String label, String type) {
+    /**
+     * One fixed field. A secret (type "password") renders as an empty input whose placeholder only tells whether
+     * a value is stored -- the value itself is computed server-side but never emitted. A non-secret keeps its
+     * real value. serveForm closes each section's card with the matching {@code </section>}.
+     */
+    private static String field(JSONObject f, String key, String label, String type, boolean mono) {
+        String cls = mono ? " class=mono" : "";
+        String head = "<label><span class=lbl>" + escapeHtml(label) + "</span>"
+                + "<span class=key>" + escapeHtml(key) + "</span>";
+        if ("password".equals(type)) {
+            // A stored secret shows a dot mask (like a filled password field), never its value; empty submit = keep.
+            boolean present = !f.optString(key, "").isEmpty();
+            String ph = present ? "••••••••••" : "";
+            return head + "<input" + cls + " type=password name=\"" + key + "\" placeholder=\""
+                    + escapeHtml(ph) + "\"></label>";
+        }
         String v = f.optString(key, "");
-        return "<label><span>" + escapeHtml(label) + " (" + key + ")</span>"
-                + "<input type=" + type + " name=\"" + key + "\" value=\"" + escapeHtml(v) + "\"></label>";
+        return head + "<input" + cls + " type=text name=\"" + key + "\" value=\""
+                + escapeHtml(v) + "\"></label>";
     }
 
     private static String section(String title) {
-        return "<h2>" + escapeHtml(title) + "</h2>";
+        return "<section class=card><h2>" + escapeHtml(title) + "</h2>";
+    }
+
+    /**
+     * One editable MCP-server row. {@code idx} is the running integer index as a string (or the "__I__" token for
+     * the Add-server template). The Authorization field is a secret: rendered empty, its placeholder only tells
+     * whether a value is stored (authSet), never the value itself.
+     */
+    private static String serverRowHtml(String idx, String name, boolean enabled, String url, boolean authSet) {
+        String p = "srv." + idx + ".";
+        // A stored Authorization shows a dot mask, never its value; empty submit = keep.
+        String ph = authSet ? "••••••••••" : "";
+        return "<div class=srv>"
+                + "<input type=hidden name=\"" + p + "orig\" value=\"" + escapeHtml(name) + "\">"
+                // Disabled so it does not submit while the row is kept; the Remove button enables it to delete on save.
+                + "<input class=rmflag type=hidden name=\"" + p + "remove\" value=1 disabled>"
+                + "<label><span class=lbl>Name</span>"
+                + "<input class=mono type=text name=\"" + p + "name\" value=\"" + escapeHtml(name) + "\"></label>"
+                + "<label><span class=lbl>URL</span>"
+                + "<input class=mono type=text name=\"" + p + "url\" value=\"" + escapeHtml(url) + "\"></label>"
+                + "<label><span class=lbl>Authorization</span>"
+                + "<input class=mono type=password name=\"" + p + "auth\" placeholder=\"" + escapeHtml(ph) + "\"></label>"
+                + "<div class=srvrow>"
+                + "<label class=ck><input type=checkbox name=\"" + p + "enabled\" value=1"
+                + (enabled ? " checked" : "") + "> enabled</label>"
+                + "<button type=button class=rm onclick=rmServer(this)>Remove</button>"
+                + "</div></div>";
+    }
+
+    /**
+     * The hidden template the Add-server button clones, plus the inline JS that does the cloning: it replaces the
+     * "__I__" token with a fresh incrementing index (starting past the last rendered row) and appends the row.
+     */
+    private static String serverTemplate(int start) {
+        return "<template id=srvtpl>" + serverRowHtml("__I__", "", true, "", false) + "</template>"
+                + "<script>var si=" + start + ";function addServer(){"
+                + "var h=document.getElementById('srvtpl').innerHTML.replace(/__I__/g,si);si++;"
+                + "var d=document.createElement('div');d.innerHTML=h;"
+                + "document.getElementById('srvlist').appendChild(d.firstElementChild);}"
+                // Remove: an unsaved (just-added) row is dropped from the DOM; an existing one is marked for
+                // deletion (its hidden rmflag enabled so it submits), dimmed, and the button toggles to Undo.
+                + "function rmServer(btn){var c=btn.closest('.srv');"
+                + "var orig=c.querySelector('input[name$=\".orig\"]');"
+                + "if(!orig.value){c.parentNode.removeChild(c);return;}"
+                + "var h=c.querySelector('input.rmflag');var removing=h.disabled;"
+                + "h.disabled=!removing;c.classList.toggle('removing',removing);"
+                + "btn.textContent=removing?'Undo':'Remove';}</script>";
+    }
+
+    /** The distinct server-row indices present in the posted form, in submission order. */
+    private static List<Integer> serverRowIndices(Map<String, String> form) {
+        List<Integer> order = new ArrayList<>();
+        for (String k : form.keySet()) {
+            if (!k.startsWith("srv.")) continue;
+            int dot = k.indexOf('.', 4);
+            if (dot < 0) continue;
+            Integer i;
+            try {
+                i = Integer.valueOf(k.substring(4, dot));
+            } catch (NumberFormatException e) {
+                continue;
+            }
+            if (!order.contains(i)) order.add(i);
+        }
+        return order;
+    }
+
+    /** The current tools.mcp.servers object from config.json; empty when absent. Throws on a failed read. */
+    private JSONObject readServers() throws ToolError {
+        synchronized (configLock) {
+            JSONObject cfg = parseConfig();
+            JSONObject tools = cfg.optJSONObject("tools");
+            JSONObject mcp = tools == null ? null : tools.optJSONObject("mcp");
+            JSONObject servers = mcp == null ? null : mcp.optJSONObject("servers");
+            return servers == null ? new JSONObject() : servers;
+        }
+    }
+
+    /**
+     * Applies the dynamic MCP-server rows to config.json under configLock. Reads the whole config, folds in the
+     * posted rows (add / edit / rename / remove), and writes config.json only when something actually changed;
+     * returns the changed server names. Each server's "type" and any unknown fields are preserved; a blank
+     * Authorization submit keeps the stored header untouched (never blanks it). parseConfig/readFileRoot throw on
+     * a failed read, so servers are never rewritten from a blank or failed read.
+     */
+    private List<String> applyServers(Map<String, String> form) throws ToolError {
+        List<String> changed = new ArrayList<>();
+        synchronized (configLock) {
+            try {
+                JSONObject cfg = parseConfig();
+                JSONObject tools = cfg.optJSONObject("tools");
+                if (tools == null) { tools = new JSONObject(); cfg.put("tools", tools); }
+                JSONObject mcp = tools.optJSONObject("mcp");
+                if (mcp == null) { mcp = new JSONObject(); tools.put("mcp", mcp); }
+                JSONObject servers = mcp.optJSONObject("servers");
+                if (servers == null) { servers = new JSONObject(); mcp.put("servers", servers); }
+
+                for (int i : serverRowIndices(form)) {
+                    String p = "srv." + i + ".";
+                    String name = form.containsKey(p + "name") ? form.get(p + "name").trim() : "";
+                    String orig = form.containsKey(p + "orig") ? form.get(p + "orig") : "";
+
+                    if (form.containsKey(p + "remove")) {
+                        if (!orig.isEmpty() && servers.has(orig)) {
+                            servers.remove(orig);
+                            if (!changed.contains(orig)) changed.add(orig);
+                        }
+                        continue;
+                    }
+                    if (name.isEmpty()) continue;
+
+                    // The entry to edit: the row's original server, else an existing one of that name, else new.
+                    String originalKey;
+                    JSONObject entry;
+                    if (!orig.isEmpty() && servers.optJSONObject(orig) != null) {
+                        originalKey = orig;
+                        entry = servers.optJSONObject(orig);
+                    } else if (servers.optJSONObject(name) != null) {
+                        originalKey = name;
+                        entry = servers.optJSONObject(name);
+                    } else {
+                        originalKey = null;
+                        entry = new JSONObject();
+                    }
+                    String before = originalKey == null ? null : entry.toString();
+
+                    // Rename: drop the old key; the mutated entry is re-added under the new name below.
+                    if (!orig.isEmpty() && !orig.equals(name)) servers.remove(orig);
+
+                    entry.put("url", form.containsKey(p + "url") ? form.get(p + "url") : "");
+                    entry.put("enabled", form.containsKey(p + "enabled"));
+                    if (!entry.has("type")) entry.put("type", "http");
+
+                    String auth = form.containsKey(p + "auth") ? form.get(p + "auth") : "";
+                    if (!auth.isEmpty()) {
+                        JSONObject h = entry.optJSONObject("headers");
+                        if (h == null) { h = new JSONObject(); entry.put("headers", h); }
+                        h.put("Authorization", auth);
+                    }
+                    // A blank auth leaves any existing headers untouched -- never blank a stored secret.
+
+                    servers.put(name, entry);
+
+                    boolean isChange = originalKey == null || !originalKey.equals(name)
+                            || !entry.toString().equals(before);
+                    if (isChange && !changed.contains(name)) changed.add(name);
+                }
+
+                if (!changed.isEmpty()) writeFileRoot(CONFIG_PATH, cfg.toString(2));
+                return changed;
+            } catch (JSONException e) {
+                throw new ToolError("internal: " + e.getMessage());
+            }
+        }
     }
 
     private static String escapeHtml(String s) {
@@ -1064,20 +1268,51 @@ public final class ControlServer {
     }
 
     private static final String FORM_HEAD = ""
-            + "<!doctype html><html lang=ru><head><meta charset=utf-8>"
+            + "<!doctype html><html lang=en><head><meta charset=utf-8>"
             + "<meta name=viewport content='width=device-width,initial-scale=1'>"
             + "<title>PopcornClaw control</title><style>"
-            + "html,body{margin:0;background:#111;color:#ccc;font:14px system-ui,sans-serif}"
-            + ".wrap{max-width:640px;margin:0 auto;padding:16px}"
-            + "h1{font-size:18px}"
-            + "h2{font-size:13px;color:#8ab;margin:18px 0 6px;border-bottom:1px solid #333;padding-bottom:4px}"
-            + "label{display:block;margin:8px 0}"
-            + "label span{display:block;color:#9aa;font-size:12px;margin-bottom:3px}"
-            + "input{width:100%;box-sizing:border-box;background:#1a1a1a;color:#ddd;border:1px solid #444;border-radius:5px;padding:7px 9px}"
-            + ".buttons{margin-top:20px;display:flex;gap:10px;flex-wrap:wrap}"
-            + "button{background:#2a2a2a;color:#ddd;border:1px solid #444;border-radius:5px;padding:9px 14px;cursor:pointer}"
-            + "button:active{background:#3a3a3a}"
-            + "a{color:#8ab}.err{color:#e88}"
-            + "</style></head><body><div class=wrap><h1>PopcornClaw control</h1>";
+            + ":root{color-scheme:dark}*{box-sizing:border-box}"
+            + "html,body{margin:0;background:#0f1115;color:#d7dae0;"
+            + "font:15px/1.45 system-ui,-apple-system,'Segoe UI',Roboto,sans-serif}"
+            + ".wrap{max-width:680px;margin:0 auto;padding:20px 16px 48px}"
+            + "header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;"
+            + "flex-wrap:wrap;margin-bottom:6px}"
+            + "h1{font-size:19px;font-weight:600;margin:0}"
+            + "header a{color:#7fb2ff;text-decoration:none;font-size:14px;white-space:nowrap}"
+            + "header a:hover{text-decoration:underline}"
+            + ".card{background:#171a21;border:1px solid #262b36;border-radius:12px;padding:14px 16px;margin:14px 0}"
+            + ".card>h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#8a93a6;"
+            + "font-weight:600;margin:0 0 10px}"
+            + "label{display:block;margin:12px 0 0}"
+            + ".card>label:first-of-type{margin-top:0}"
+            + ".lbl{display:block;color:#c3c9d4;font-size:13px;margin-bottom:4px}"
+            + ".key{display:block;color:#5f6b80;font-size:11px;margin-bottom:5px;"
+            + "font-family:ui-monospace,SFMono-Regular,Menlo,monospace}"
+            + "input[type=text],input[type=password]{width:100%;background:#0c0e12;color:#e6e9ef;"
+            + "border:1px solid #2d3340;border-radius:8px;padding:9px 11px;font:14px system-ui,sans-serif}"
+            + "input.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}"
+            + "input:focus{outline:none;border-color:#4b74b8;box-shadow:0 0 0 2px rgba(75,116,184,.25)}"
+            + "input::placeholder{color:#5f6b80}"
+            + ".srv{background:#12151b;border:1px solid #262b36;border-radius:10px;padding:12px;margin:10px 0}"
+            + ".srvrow{display:flex;gap:18px;margin-top:12px;align-items:center}"
+            + ".ck{display:inline-flex;align-items:center;gap:6px;margin:0;color:#c3c9d4;font-size:13px;cursor:pointer}"
+            + ".ck input{width:auto;margin:0}"
+            + "button{font:14px system-ui,sans-serif;border-radius:8px;padding:10px 16px;cursor:pointer;"
+            + "border:1px solid transparent}"
+            + "button.add{background:#1b2230;color:#9fc0ff;border-color:#2d3a52;margin-top:4px}"
+            + "button.add:hover{background:#222b3c}"
+            + "button.rm{background:#2a1618;color:#ff9a9a;border-color:#512a2c;margin-left:auto;padding:7px 13px;font-size:13px}"
+            + "button.rm:hover{background:#3a1e20}"
+            + ".srv.removing{opacity:.5}"
+            + ".buttons{margin-top:22px;display:flex;gap:10px;flex-wrap:wrap}"
+            + "button.primary{background:#3b6fd4;color:#fff}button.primary:hover{background:#4a7ee0}"
+            + "button.secondary{background:#20252f;color:#d7dae0;border-color:#323846}"
+            + "button.secondary:hover{background:#28303c}"
+            + "a{color:#7fb2ff}"
+            + ".err{color:#ff8a8a;background:#2a1618;border:1px solid #512a2c;border-radius:8px;padding:10px 12px}"
+            + "@media(max-width:480px){.srvrow{flex-direction:column;gap:10px}}"
+            + "</style></head><body><div class=wrap>"
+            + "<header><h1>PopcornClaw control</h1><a id=sv>Screen view →</a></header>"
+            + "<script>document.getElementById('sv').href='http://'+location.hostname+':8080/'</script>";
     private static final String FORM_TAIL = "</div></body></html>";
 }
