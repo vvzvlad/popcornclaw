@@ -21,7 +21,8 @@ where his notes are; read it first when it is there.
   `shared-session.patch` (the TV and the Telegram DM or group linked by `session.identity_links` are one dialog:
   a TV (pico) message becomes a message of that chat, every text the chat gets is mirrored to the TV (message
   tool included, files not), each side sees the owner's messages from the other, the TV gets a `turn_end`
-  frame after each turn), `start-to-agent.patch` (`/start` goes to the agent instead of a fixed English line)
+  frame after each turn), `start-to-agent.patch` (`/start` goes to the agent instead of a fixed English line), `pico-audio.patch` (the
+  pico channel takes a voice note from the TV remote, marks it `[voice]` and transcribes it like a Telegram one)
 - `launcher/app/src/main/assets/defaults/` — the `config.json` (PicoClaw config) and `AGENT.md` (facts
   about the box for the agent itself) a fresh box gets; keys go to `.security.yml` on the box, mode 600
 - `launcher/app/src/main/assets/termux/bootstrap.sh` — unpacks Termux's bootstrap without opening the app;
