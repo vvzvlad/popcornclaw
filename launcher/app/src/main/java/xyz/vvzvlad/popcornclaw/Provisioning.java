@@ -1,6 +1,7 @@
 package xyz.vvzvlad.popcornclaw;
 
 import android.content.Context;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.os.SystemClock;
 import android.text.TextUtils;
@@ -41,7 +42,7 @@ import okhttp3.ResponseBody;
 /**
  * Brings a fresh box to the state {@code make install} leaves it in, so the APK alone is the install: the
  * agent's files from neutral defaults inside the APK, the home screen, permissions, HDMI-CEC, resolv.conf,
- * RuTor search in the bundled TorrServer, mpv-android's IPC socket, and Termux with its bootstrap.
+ * RuTor search in the bundled TorrServer, mpv-android's IPC socket, and Termux with its bootstrap and socat.
  * {@link AgentService} calls {@link #run} on its worker thread from its check loop until it returns true; the
  * Termux step, minutes long on a fresh box, runs on a thread of its own. Every step is idempotent. The agent's
  * files are written only while absent, so the owner's boxes keep the files make pushed there; mpv-android's
@@ -127,11 +128,11 @@ final class Provisioning {
     private long lastResolvTry = -NET_GAP_MS;
     private long lastMpvTry = -MPV_GAP_MS;
     // The Termux step runs on its own thread (a download and an unpack take minutes and must not hold the
-    // service's worker): the worker starts it and reads these; the thread writes them, and termuxPrefix after
-    // the survey is the thread's alone.
+    // service's worker): the worker starts it and reads these; the thread writes them, and termuxPrefix and
+    // termuxSocat after the survey are the thread's alone.
     private volatile boolean termuxDone, termuxRunning;
     private volatile long termuxTriedAt = -NET_GAP_MS;
-    private volatile boolean termuxPrefix;
+    private volatile boolean termuxPrefix, termuxSocat;
 
     Provisioning(Context ctx) {
         this.ctx = ctx;
@@ -191,12 +192,13 @@ final class Provisioning {
         return filesDone && setupDone && rutorDone && resolvDone && mpvDone && termuxDone;
     }
 
-    /** What is there already, in one su: the files, RuTor's marker, Termux's prefix, resolv.conf. */
+    /** What is there already, in one su: the files, RuTor's marker, Termux's prefix and socat, resolv.conf. */
     private boolean survey() {
         String script = "D=" + DIR + "\n"
                 + "for f in " + TextUtils.join(" ", FILES) + "; do [ -e \"$D/$f\" ] || echo \"missing $f\"; done\n"
                 + "[ -e $D/.rutor ] && echo rutor\n"
                 + "[ -d " + TERMUX_PREFIX + " ] && echo termux\n"
+                + "[ -x " + TERMUX_PREFIX + "/bin/socat ] && echo socat\n"
                 + "[ -f /system/etc/resolv.conf ] && echo resolv\n"
                 + "exit 0\n";
         Result r = root(script, null, 15_000);
@@ -213,13 +215,15 @@ final class Provisioning {
                 rutorDone = true;
             } else if (line.equals("termux")) {
                 termuxPrefix = true;
+            } else if (line.equals("socat")) {
+                termuxSocat = true;
             } else if (line.equals("resolv")) {
                 resolvDone = true;
             }
         }
         filesDone = missing.isEmpty();
         setupDone = ctx.getSharedPreferences(SETUP_PREFS, Context.MODE_PRIVATE).getLong(SETUP_KEY, 0) == installTime;
-        termuxDone = termuxPrefix && termuxInstalled();
+        termuxDone = termuxPrefix && termuxSocat && termuxInstalled();
         return true;
     }
 
@@ -390,7 +394,8 @@ final class Provisioning {
     }
 
     /**
-     * Termux, the agent's package manager: installed from the pinned GitHub build, then its bootstrap unpacked.
+     * Termux, the agent's package manager: installed from the pinned GitHub build, then its bootstrap unpacked,
+     * then socat, which the control panel's player tool and the agent talk to mpv's IPC socket through.
      * Runs on the "popcornclaw-termux" thread {@link #run} starts, never on the service's worker.
      */
     private boolean termux() {
@@ -408,11 +413,34 @@ final class Provisioning {
             if (r.code != 0) return false;
             if (!apk.delete()) Log.w(TAG, "provisioning: cannot delete " + apk);
         }
+        // Both steps below go through run-as, which works only for a debuggable app: a Termux from F-Droid or
+        // Play would fail them on every try, each try an su toast on the TV.
+        if (!termuxDebuggable()) {
+            Log.w(TAG, "provisioning: Termux is not the GitHub build (not debuggable), bootstrap and socat skipped");
+            return true;
+        }
         if (!termuxPrefix) {
             if (!bootstrap(cache)) return false;
             termuxPrefix = true;
         }
+        if (!termuxSocat) {
+            if (!socat()) return false;
+            termuxSocat = true;
+        }
         return true;
+    }
+
+    /** Installs socat with Termux's apt, run as the Termux uid: apt refuses root, and root's files break it. */
+    private boolean socat() {
+        String t = TERMUX_PREFIX;
+        Result r = root("run-as " + TERMUX + " /system/bin/env -i HOME=/data/data/" + TERMUX + "/files/home PREFIX=" + t
+                + " TMPDIR=" + t + "/tmp PATH=" + t + "/bin:/system/bin LANG=en_US.UTF-8 " + t
+                + "/bin/bash -c 'apt-get update && apt-get -y install socat' && [ -x " + t + "/bin/socat ]\n",
+                null, 10 * 60_000);
+        String out = r.out.trim();
+        Log.i(TAG, "provisioning: socat, su exited with " + r.code + ": "
+                + (out.length() > 2000 ? "…" + out.substring(out.length() - 2000) : out));
+        return r.code == 0;
     }
 
     /**
@@ -457,6 +485,14 @@ final class Provisioning {
         try {
             ctx.getPackageManager().getPackageInfo(TERMUX, 0);
             return true;
+        } catch (PackageManager.NameNotFoundException e) {
+            return false;
+        }
+    }
+
+    private boolean termuxDebuggable() {
+        try {
+            return (ctx.getPackageManager().getApplicationInfo(TERMUX, 0).flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
         } catch (PackageManager.NameNotFoundException e) {
             return false;
         }
