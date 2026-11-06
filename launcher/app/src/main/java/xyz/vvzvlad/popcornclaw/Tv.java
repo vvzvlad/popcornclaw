@@ -1,5 +1,7 @@
 package xyz.vvzvlad.popcornclaw;
 
+import android.util.JsonReader;
+import android.util.JsonToken;
 import android.util.Log;
 
 import org.json.JSONArray;
@@ -32,6 +34,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import okhttp3.Call;
@@ -46,8 +49,9 @@ import okhttp3.ResponseBody;
 
 /**
  * The search and files logic, the Java port of the Python {@code Tv} class (src/tv.py). It drives Jackett
- * (torrent search) and TorrServer (adds a release, lists its files, reads one file with ffprobe) over HTTP,
- * and holds the search results in memory: an id from {@link #search} stays valid until the process restarts.
+ * (torrent search; without a Jackett URL, TorrServer's built-in RuTor search instead) and TorrServer (adds a
+ * release, lists its files, reads one file with ffprobe) over HTTP, and holds the search results in memory:
+ * an id from {@link #search} stays valid until the process restarts.
  *
  * <p>This is chunk 2 of the port: only the {@link #search} and {@link #files} tools and the machinery they
  * need. The play/prepare/follower fields and methods of the Python class are not ported here.
@@ -67,6 +71,11 @@ final class Tv {
     private static final String DEAD = "Раздача мёртвая, пиров нет — выбери другую";
     private static final String PLAYING = "сейчас играет";
     private static final String PROBED_ELSEWHERE = "проверяется другим поиском";
+    private static final String RUTOR_OFF =
+            "Поиск RuTor в TorrServer выключен (его настройка EnableRutorSearch), а Jackett не настроен";
+    // RuTor's sizes are binary: a "2.18 GB" release holds 2345525311 bytes.
+    private static final Pattern RUTOR_SIZE =
+            Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*([KMGT]?)B", Pattern.CASE_INSENSITIVE);
 
     // mpv-android on the box (src/tv.py 45, 51, 56, 61, 65): the activity to start, the REORDER_TO_FRONT intent
     // flag that brings it to the front without reloading, and the play timeouts (seconds).
@@ -145,13 +154,8 @@ final class Tv {
     /** Port of Tv.search. */
     String search(String query, String subtitles, String audio) throws ToolError {
         List<String> langs = TvFormat.languages(subtitles);
-        HttpUrl url = HttpUrl.parse(jackettUrl + "/api/v2.0/indexers/all/results").newBuilder()
-                .addQueryParameter("apikey", jackettApiKey)
-                .addQueryParameter("Query", query)
-                .build();
-        byte[] content = request("Jackett", new Request.Builder().url(url).get().build());
-        JSONObject root = parseObject(content);
-        JSONArray resultsArr = root.optJSONArray("Results");
+        // Jackett when tv_mcp.json names one, else TorrServer's own RuTor search; both give Jackett's shape.
+        JSONArray resultsArr = jackettUrl.isEmpty() ? rutor(query) : jackett(query);
         List<JSONObject> found = new ArrayList<>();
         if (resultsArr != null) {
             for (int i = 0; i < resultsArr.length(); i++) {
@@ -159,7 +163,7 @@ final class Tv {
                 if (r != null && r.optInt("Seeders", 0) != 0) found.add(r);
             }
         }
-        // Stable sort by Seeders, descending; equal seeders keep Jackett's order (Python reverse=True).
+        // Stable sort by Seeders, descending; equal seeders keep the search's order (Python reverse=True).
         Collections.sort(found, (a, b) -> Integer.compare(b.optInt("Seeders", 0), a.optInt("Seeders", 0)));
         Log.i(TAG, "search " + query + ": " + found.size() + " results with seeders");
         List<Item> top = new ArrayList<>();
@@ -849,7 +853,7 @@ final class Tv {
             final long deadline = System.nanoTime() + timeoutMs * 1_000_000L;
             final AtomicBoolean killed = new AtomicBoolean(false);
             Thread wd = new Thread(() -> {
-                while (p.isAlive()) {
+                while (Procs.alive(p)) {
                     if (System.nanoTime() - deadline > 0) {
                         killed.set(true);
                         p.destroy();
@@ -1013,6 +1017,116 @@ final class Tv {
         byte[] content = request("TorrServer", req);
         String text = new String(content, StandardCharsets.UTF_8);
         return text.trim().isEmpty() ? null : parseValue(text);
+    }
+
+    /** Jackett's Results for the query (all its indexers), or null when the answer has none. */
+    private JSONArray jackett(String query) throws ToolError {
+        HttpUrl url = HttpUrl.parse(jackettUrl + "/api/v2.0/indexers/all/results").newBuilder()
+                .addQueryParameter("apikey", jackettApiKey)
+                .addQueryParameter("Query", query)
+                .build();
+        byte[] content = request("Jackett", new Request.Builder().url(url).get().build());
+        JSONObject root = parseObject(content);
+        return root.optJSONArray("Results");
+    }
+
+    /**
+     * TorrServer's built-in RuTor search for the query (GET /search/?query=, server/web/api/rutor.go), each
+     * release mapped into the shape of a Jackett result, so ranking, ids, files and prepare take it as one.
+     * There is no "Link": the release is added to TorrServer by its magnet. TorrServer answers 400 while its
+     * EnableRutorSearch setting is off, and an empty list while it is still loading the RuTor database.
+     *
+     * <p>The answer is read as a stream and only what search keeps of it is kept: the SEARCH_LIMIT releases
+     * with the most seeders, ties in TorrServer's order, as search's stable sort would leave them. A one-word
+     * query brings the whole database's matches (77566 releases, 51 MB for "1080p"), more than the app's heap
+     * takes in one piece.
+     */
+    private JSONArray rutor(String query) throws ToolError {
+        HttpUrl url = HttpUrl.parse(torrserverUrl + "/search/").newBuilder()
+                .addQueryParameter("query", query)
+                .build();
+        List<JSONObject> best = new ArrayList<>();
+        int total = 0;
+        try (Response response = client.newCall(new Request.Builder().url(url).get().build()).execute()) {
+            if (response.code() == 400) throw new ToolError(RUTOR_OFF);
+            if (!response.isSuccessful()) throw new ToolError("TorrServer ответил HTTP " + response.code());
+            ResponseBody body = response.body();
+            if (body == null) return new JSONArray();
+            JsonReader in = new JsonReader(body.charStream());
+            in.beginArray();
+            while (in.hasNext()) {
+                JSONObject release = rutorRelease(in);
+                total++;
+                keepBest(best, release, TvFormat.SEARCH_LIMIT);
+            }
+            in.endArray();
+        } catch (IOException exc) {
+            throw new ToolError("TorrServer не отвечает: " + exc.getClass().getSimpleName() + " " + exc.getMessage());
+        }
+        Log.i(TAG, "rutor " + query + ": " + total + " releases, kept the " + best.size() + " best seeded");
+        return new JSONArray(best);
+    }
+
+    /**
+     * Puts the release into {@code best}, the at most {@code limit} releases with the most seeders so far in
+     * descending order, ties in arrival order; a release with no seeders is dropped.
+     */
+    static void keepBest(List<JSONObject> best, JSONObject release, int limit) {
+        int seeders = release.optInt("Seeders", 0);
+        if (seeders == 0) return;
+        // After every kept release with as many seeders: the stable descending order.
+        int at = best.size();
+        while (at > 0 && best.get(at - 1).optInt("Seeders", 0) < seeders) at--;
+        if (at >= limit) return;
+        best.add(at, release);
+        if (best.size() > limit) best.remove(best.size() - 1);
+    }
+
+    /** One release of the RuTor answer, read off the stream into the shape of a Jackett result. */
+    private static JSONObject rutorRelease(JsonReader in) throws IOException {
+        String title = "";
+        String size = "";
+        String link = "";
+        String magnet = "";
+        int seed = 0;
+        int peer = 0;
+        in.beginObject();
+        while (in.hasNext()) {
+            String name = in.nextName();
+            if (in.peek() == JsonToken.NULL) {
+                in.skipValue();
+                continue;
+            }
+            switch (name) {
+                case "Title": title = in.nextString(); break;
+                case "Size": size = in.nextString(); break;
+                case "Seed": seed = in.nextInt(); break;
+                case "Peer": peer = in.nextInt(); break;
+                case "Link": link = in.nextString(); break;
+                case "Magnet": magnet = in.nextString(); break;
+                default: in.skipValue(); break;
+            }
+        }
+        in.endObject();
+        return obj(
+                "Title", title,
+                "Size", rutorSize(size),
+                "Seeders", seed,
+                // Jackett's Peers counts the seeders too; RuTor's Peer is the leechers alone.
+                "Peers", seed + peer,
+                "TrackerId", "rutor",
+                // RuTor's topic path ("/torrent/<id>/<slug>"), which TvFormat.topic reads off Details.
+                "Details", link,
+                "MagnetUri", magnet);
+    }
+
+    /** RuTor's size text ("18.45 GB", "634.05 MB") in bytes, as Jackett's Size; 0 when it does not parse. */
+    static long rutorSize(String text) {
+        Matcher m = RUTOR_SIZE.matcher(text.trim());
+        if (!m.matches()) return 0;
+        String unit = m.group(2).toUpperCase(Locale.ROOT);
+        int power = unit.isEmpty() ? 0 : "KMGT".indexOf(unit) + 1;
+        return (long) (Double.parseDouble(m.group(1)) * Math.pow(1024, power));
     }
 
     /**

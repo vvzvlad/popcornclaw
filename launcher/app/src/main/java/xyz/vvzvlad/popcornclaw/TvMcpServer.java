@@ -10,6 +10,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -41,7 +42,10 @@ import java.util.concurrent.TimeUnit;
  */
 public final class TvMcpServer {
     private static final String TAG = "PopcornClaw-tv";
-    /** ScreenStreamServer owns 8080, ControlServer 8081; this is the ported tv_mcp. Bound on all interfaces. */
+    /**
+     * ScreenStreamServer owns 8080, ControlServer 8081; this is the ported tv_mcp. Bound on 127.0.0.1 only:
+     * its one client is the gateway on the box ({@code http://127.0.0.1:8082/mcp}).
+     */
     public static final int PORT = 8082;
 
     private static final String MCP_PROTOCOL = "2025-06-18";
@@ -49,9 +53,10 @@ public final class TvMcpServer {
     // --- verbatim tool descriptions (src/server.py) --------------------------------------------------------
     // Copied byte for byte from the Python server, including the spaces that joined its adjacent string
     // literals: every character of these lands in the model's context, so the port must not change them.
+    // One departure: SEARCH's first sentence names no Jackett trackers, as without Jackett it searches RuTor.
 
     private static final String SEARCH =
-            "Найти раздачу фильма или сериала (Jackett: rutor, noname-club, megapeer, rutracker). "
+            "Найти раздачу фильма или сериала (через Jackett или поиск RuTor в TorrServer). "
             + "query — только название, без сезона и серии: со словами «третий сезон», «season 3» трекеры "
             + "ничего не находят; сезон и серию передай в prepare и play. "
             + "У названия с ремейками добавь в запрос год («Сёгун 2024»). "
@@ -127,8 +132,11 @@ public final class TvMcpServer {
     // play's _apply in Tv share one copy; the player calls TvFormat.* for all of them.
 
     // --- tv_mcp settings ----------------------------------------------------------------------------------
-    /** The box file that carries the Jackett and TorrServer endpoints; read lazily on the first search/files. */
+    /** The box file that carries the TorrServer (and optional Jackett) endpoints; read lazily on first use. */
     private static final String TV_SETTINGS_PATH = "/data/local/popcornclaw/tv_mcp.json";
+
+    // The started server, for reloadSettings(); AgentService runs one at a time.
+    private static volatile TvMcpServer current;
 
     private volatile boolean running;
     // Assigned on the accept thread, read by stop() on the caller's thread: volatile for the handoff.
@@ -146,6 +154,7 @@ public final class TvMcpServer {
     public void start() {
         if (running) return;
         running = true;
+        current = this;
         acceptThread = new Thread(this::accept, "pcx-tv-accept");
         acceptThread.start();
         Log.i(TAG, "tv_mcp server starting on port " + PORT);
@@ -153,6 +162,7 @@ public final class TvMcpServer {
 
     public void stop() {
         running = false;
+        if (current == this) current = null;
         try {
             if (serverSocket != null) serverSocket.close();
         } catch (IOException ignored) {
@@ -163,7 +173,9 @@ public final class TvMcpServer {
         try {
             serverSocket = new ServerSocket();
             serverSocket.setReuseAddress(true);
-            serverSocket.bind(new InetSocketAddress(PORT));
+            // IPv4 127.0.0.1, not InetAddress.getLoopbackAddress(): on Android that is always ::1, which does not
+            // take the gateway's connections to 127.0.0.1.
+            serverSocket.bind(new InetSocketAddress(InetAddress.getByAddress(new byte[]{127, 0, 0, 1}), PORT));
         } catch (IOException e) {
             Log.e(TAG, "cannot bind port " + PORT, e);
             running = false;
@@ -405,14 +417,15 @@ public final class TvMcpServer {
 
     /**
      * The {@link Tv} instance, built on first use from TV_SETTINGS_PATH. ToolError when the file is missing,
-     * unparseable or lacks any of the three endpoints, so the server still starts and player works without it.
+     * unparseable or lacks torrserver_url, so the server still starts and player works without it. Without
+     * jackett_url the search goes through TorrServer's own RuTor search.
      */
     private Tv tv() throws ToolError {
         synchronized (tvLock) {
             if (tv != null) return tv;
-            String jackettUrl = null;
+            String jackettUrl = "";
             String torrserverUrl = null;
-            String jackettApiKey = null;
+            String jackettApiKey = "";
             String text = readFileRoot(TV_SETTINGS_PATH);
             if (text != null) {
                 try {
@@ -424,13 +437,32 @@ public final class TvMcpServer {
                     // Unparseable: handled as "not configured" below.
                 }
             }
-            if (isBlank(jackettUrl) || isBlank(torrserverUrl) || isBlank(jackettApiKey)) {
-                throw new ToolError("tv_mcp не настроен: нет " + TV_SETTINGS_PATH
-                        + " или в нём нет jackett_url/torrserver_url/jackett_api_key");
+            if (isBlank(torrserverUrl)) {
+                throw new ToolError("tv_mcp не настроен: нет " + TV_SETTINGS_PATH + " или в нём нет torrserver_url");
             }
-            tv = new Tv(jackettUrl, jackettApiKey, torrserverUrl);
+            tv = new Tv(isBlank(jackettUrl) ? "" : jackettUrl, jackettApiKey, torrserverUrl);
             return tv;
         }
+    }
+
+    /**
+     * Drops the cached {@link Tv} and {@link Subtitles}, so the next tool call reads TV_SETTINGS_PATH anew; the
+     * settings panel calls it after saving that file. The old Tv's follower is stopped (as player stop does);
+     * its search ids and chosen languages go with it, as on a restart. A no-op while no server runs.
+     */
+    public static void reloadSettings() {
+        TvMcpServer server = current;
+        if (server == null) return;
+        Tv old;
+        synchronized (server.tvLock) {
+            old = server.tv;
+            server.tv = null;
+        }
+        if (old != null) old.unfollow();
+        synchronized (server.subtitlesLock) {
+            server.subtitles = null;
+        }
+        Log.i(TAG, "tv_mcp settings dropped; the next tool call reads " + TV_SETTINGS_PATH);
     }
 
     // --- find_subtitles (ported from subtitles.py via Subtitles) -------------------------------------------
@@ -505,7 +537,7 @@ public final class TvMcpServer {
                 int n;
                 while ((n = in.read(buf)) != -1) bos.write(buf, 0, n);
             }
-            if (!p.waitFor(8, TimeUnit.SECONDS)) {
+            if (!Procs.waitFor(p, 8_000)) {
                 p.destroy();
                 return null;
             }
