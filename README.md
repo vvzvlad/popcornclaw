@@ -300,7 +300,7 @@ PicoClaw собирается из исходников v0.3.1 с восемью
 
 Всё тяжёлое собирается в Docker: PicoClaw v0.3.1 с патчами из [picoclaw/](picoclaw/) — целью
 `make build/arm/picoclaw` и `make build/arm64/picoclaw`, APK — Gradle внутри
-[launcher/Dockerfile](launcher/Dockerfile), вместе с бинарниками PicoClaw, TorrServer и ffprobe в
+[launcher/Dockerfile](launcher/Dockerfile), вместе с бинарниками PicoClaw, TorrServer, ffprobe и ffmpeg в
 `lib/armeabi-v7a/` и `lib/arm64-v8a/`. Docker CLI может смотреть на удалённый
 демон: bind mount не используется, артефакты забираются `docker cp`. `make build/popcornclaw.apk`
 собирает всё целиком и подписывает релиз ключом, который выдаёт команда `KEY_CMD`: она получает
@@ -310,7 +310,7 @@ PicoClaw собирается из исходников v0.3.1 с восемью
 
 ## Лицензия
 
-MIT, см. [LICENSE](LICENSE). Внутри APK — PicoClaw (MIT), TorrServer MatriX.149 и ffprobe из FFmpeg
+MIT, см. [LICENSE](LICENSE). Внутри APK — PicoClaw (MIT), TorrServer MatriX.149, ffprobe и ffmpeg из FFmpeg
 6.0.1 (GNU GPL v3, без изменений, отдельными процессами), ZXing и OkHttp (Apache 2.0); тексты лицензий
 и ссылки на исходники — в окне About лаунчера и в
 [launcher/app/src/main/assets/licenses/](launcher/app/src/main/assets/licenses/). Termux в APK не
