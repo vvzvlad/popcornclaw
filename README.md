@@ -9,7 +9,7 @@ them in mpv-android through the bundled TorrServer, picks subtitles and wakes th
 talk to it with the voice remote's microphone button from any screen, during a movie too, and through your
 own Telegram bot, in text and voice notes. Both share one conversation.
 
-![Home screen: the conversation with the agent, the QR code and PIN of the settings panel](docs/screenshots/home.png)
+![Home screen: the conversation with the agent, the QR code and PIN of the settings panel](docs/screenshots/home-en.png)
 
 ## What it looks like
 
