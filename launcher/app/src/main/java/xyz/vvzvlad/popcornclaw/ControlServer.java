@@ -25,6 +25,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -988,6 +989,10 @@ public final class ControlServer {
                 + "<label class=ck><input type=checkbox name=voice_remote value=1"
                 + (AppSettings.getVoiceRemote(ctx) ? " checked" : "")
                 + "> Remote's voice button talks to the agent</label></div>");
+        b.append("<label><span class=lbl>Remote's voice language</span><input class=mono type=text"
+                + " name=voice_language value=\"" + escapeHtml(AppSettings.getStoredSpeechLanguage(ctx))
+                + "\" placeholder=\"" + escapeHtml(Locale.getDefault().toLanguageTag()) + "\"></label>");
+        b.append("<p class=hint>Empty: the system language. A BCP 47 tag, like en-US or ru-RU.</p>");
         b.append("</div>");
 
         b.append(pane("mcp", false));
@@ -1094,7 +1099,7 @@ public final class ControlServer {
         try {
             // Fixed model/asr/telegram/brave fields go through applyConfig; the dynamic MCP-server rows go
             // through applyServers. Both write config.json; their changed lists are combined. Then the files that
-            // are not the gateway's: tv_mcp.json (applyMedia) and the app's own switch.
+            // are not the gateway's: tv_mcp.json (applyMedia) and the app's own settings.
             List<String> changed = new ArrayList<>();
             JSONArray fixedChanged = applyConfig(fields);
             for (int i = 0; i < fixedChanged.length(); i++) changed.add(fixedChanged.optString(i));
@@ -1109,6 +1114,14 @@ public final class ControlServer {
                     // AgentService applies the switch: the voice activities, the helpers, the preferred entries.
                     runRoot("am startservice -a " + AgentService.ACTION_VOICE
                             + " -n xyz.vvzvlad.popcornclaw/xyz.vvzvlad.popcornclaw.AgentService", 10_000);
+                }
+            }
+            if (form.containsKey("voice_language")) {
+                String tag = form.get("voice_language").trim();
+                // Read at each recognition (VoiceSearchActivity): nothing to restart.
+                if (!tag.equals(AppSettings.getStoredSpeechLanguage(ctx))) {
+                    AppSettings.setSpeechLanguage(ctx, tag);
+                    changed.add("voice_language");
                 }
             }
             msg = changed.isEmpty() ? "No changes." : "Changed: " + join(new JSONArray(changed));

@@ -33,8 +33,6 @@ public final class PicoLink {
     public static final String TOKEN = "popcornclaw-tv";
     /** The app carries the agent: the assistant screen asks it instead of a paired PC. */
     public static final boolean ENABLED = true;
-    /** The owner speaks to the agent in Russian. */
-    public static final String SPEECH_LANGUAGE = "ru-RU";
 
     private static final String URL = "ws://127.0.0.1:18790/pico/ws?session_id=tv";
     // Below the screen's 100 s answer timeout; sent only between a turn's start and its end.
