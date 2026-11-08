@@ -289,6 +289,7 @@ PicoClaw собирается из исходников v0.3.1 с восемью
 | `/data/local/popcornclaw/.security.yml` | ключи модели, Groq, Brave Search и токен бота; права 600 |
 | `/data/local/popcornclaw/tv_mcp.json` | настройки поиска и субтитров (TorrServer, Jackett, ключи субтитров); права 600 |
 | `/data/local/popcornclaw/workspace/` | рабочий каталог агента, справка ему — `AGENT.md` (на свежей приставке — из APK) |
+| `/data/local/popcornclaw/subs/` | субтитры, которые агент сам распознаёт из звука серии и подгоняет: распознанная речь `<название>.speech.<язык>.srt` и подогнанные `<имя>.sync.<язык>.srt`; права 644, их читает mpv |
 | `/data/local/popcornclaw/gateway.log` | вывод шлюза в консоль, дописывается с каждого запуска |
 | `/data/local/popcornclaw/logs/gateway.log` | лог PicoClaw в JSON, уровень `info`; `gateway_panic.log` рядом — падения |
 | `/data/local/popcornclaw/workspace/sessions/archive/` | все сообщения каждого разговора по порядку; живой файл разговора рядом PicoClaw при сжатии истории переписывает, архив — никогда |

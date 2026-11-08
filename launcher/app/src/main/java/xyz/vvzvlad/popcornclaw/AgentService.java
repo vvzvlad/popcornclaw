@@ -99,7 +99,7 @@ public final class AgentService extends Service {
         control = new ControlServer(this);
         control.start();
         // The ported tv_mcp (search/files/prepare/play/player/find_subtitles) on 127.0.0.1, for the gateway.
-        tvmcp = new TvMcpServer();
+        tvmcp = new TvMcpServer(this);
         tvmcp.start();
         // The TV's half of the dialog with no screen open: the gateway has somewhere to send it.
         PicoLink.connect();

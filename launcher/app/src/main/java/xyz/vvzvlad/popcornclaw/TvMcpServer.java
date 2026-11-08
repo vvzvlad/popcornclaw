@@ -1,5 +1,6 @@
 package xyz.vvzvlad.popcornclaw;
 
+import android.content.Context;
 import android.util.Log;
 
 import org.json.JSONArray;
@@ -20,6 +21,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The box's own tv_mcp: the Java port of the Python tv_mcp MCP server (src/server.py, src/tv.py), run in the
@@ -28,7 +31,8 @@ import java.util.concurrent.TimeUnit;
  * with their verbatim Russian descriptions -- over JSON-RPC 2.0 on a bound {@link ServerSocket}, shaped exactly
  * like {@link ControlServer}: an accept loop, one thread per connection and raw HTTP parsing.
  *
- * <p>All six tools are ported. mpv is driven locally through {@link MpvIpc} (an Android LocalSocket to mpv's
+ * <p>All six tools are ported; {@code transcribe} and {@code sync_subtitles} ({@link SubTools}) are this server's
+ * own. mpv is driven locally through {@link MpvIpc} (an Android LocalSocket to mpv's
  * abstract IPC, replacing the Python side's adb bridge); TorrServer and Jackett are still reached over the
  * network. Backend endpoints and keys come from {@code tv_mcp.json} on the box, not the gateway's config.
  *
@@ -54,6 +58,7 @@ public final class TvMcpServer {
     // Copied byte for byte from the Python server, including the spaces that joined its adjacent string
     // literals: every character of these lands in the model's context, so the port must not change them.
     // One departure: SEARCH's first sentence names no Jackett trackers, as without Jackett it searches RuTor.
+    // PLAYER's tail from sub_add on, TRANSCRIBE and SYNC_SUBTITLES are this server's own.
 
     private static final String SEARCH =
             "Найти раздачу фильма или сериала (через Jackett или поиск RuTor в TorrServer). "
@@ -116,7 +121,31 @@ public final class TvMcpServer {
             + "seek — перемотка, value: «+N» или «-N» секунд от текущего места («+600» — на 10 минут "
             + "вперёд) либо время от начала «Ч:ММ:СС» или «ММ:СС» («45:00»); episode — другая серия того, "
             + "что играет, без search и id: value «next», «prev» или номер серии в текущем сезоне; ответ и "
-            + "ошибки — как в play, только без проверки пиров за 30 с: мёртвая раздача — ошибка через 2 минуты.";
+            + "ошибки — как в play, только без проверки пиров за 30 с: мёртвая раздача — ошибка через 2 минуты. "
+            + "sub_add — подключить файл субтитров, value — путь, place «top» — верхней строкой (по умолчанию "
+            + "снизу), язык — из имени файла («серия.ru.srt»); sub_delay, top_sub_delay, audio_delay — сдвиг нижних "
+            + "сабов, верхних сабов, звука: value «+N» или «-N» секунд к текущему сдвигу либо число — весь сдвиг "
+            + "(«0»), плюс — позже; ненулевые сдвиги видны в status.";
+
+    private static final String TRANSCRIBE =
+            "Распознать речь того, что играет в mpv, в субтитры .srt (Whisper). at — места начала кусков через "
+            + "запятую: «Ч:ММ:СС», «ММ:СС» или секунды («2:00,7:00,12:00»); seconds — длина куска, по умолчанию "
+            + "60 (10–300); audio — язык или номер звуковой дорожки, как в player status (по умолчанию та, что "
+            + "играет). Минутный кусок — около 10 с рядом с местом, где стоит плеер, и до 2–3 минут там, где "
+            + "торрент ещё не качал. Пишет /data/local/popcornclaw/subs/<название>.speech.<язык>.srt; повторный "
+            + "вызов добавляет куски в тот же файл, распознанное в тех же местах заменяется. Ответ — путь, по куску "
+            + "«ММ:СС–ММ:СС: N фраз» и фразы «ММ:СС.с текст»; не вышедший кусок назван с причиной. Нужен, когда "
+            + "с субтитрами проблема: найти реплику без внешних субтитров, образец для sync_subtitles (для него — "
+            + "куски через каждые ~5 минут по всей серии).";
+
+    private static final String SYNC_SUBTITLES =
+            "Подогнать тайминг субтитров subtitles под образец reference — обычно .srt из transcribe: находит "
+            + "сдвиг каждого участка (он может меняться ступеньками) и пишет "
+            + "/data/local/popcornclaw/subs/<имя>.sync.<язык>.srt. subtitles и reference — путь к файлу или номер "
+            + "внешней дорожки сабов из player status. Ответ — путь, сдвиги по участкам и куски образца, которые "
+            + "не сошлись, и где сдвиг угадан, потому что ни один кусок образца там не сошёлся, — где есть место, "
+            + "с местами для новых кусков transcribe, после которых вызови sync_subtitles заново. mpv не трогает: результат "
+            + "подключает player sub_add.";
 
     private static final String FIND_SUBTITLES =
             "Найти субтитры фильма или серии в базах OpenSubtitles и SubDL. query — оригинальное (обычно "
@@ -150,6 +179,12 @@ public final class TvMcpServer {
     // server starts and the other tools work without the two API keys. subtitlesLock guards the build.
     private Subtitles subtitles;
     private final Object subtitlesLock = new Object();
+    // transcribe and sync_subtitles: the bundled ffmpeg and the app's cache dir for its pieces.
+    private final SubTools subTools;
+
+    public TvMcpServer(Context context) {
+        subTools = new SubTools(context.getApplicationInfo().nativeLibraryDir + "/libffmpeg.so", context.getCacheDir());
+    }
 
     public void start() {
         if (running) return;
@@ -356,9 +391,13 @@ public final class TvMcpServer {
         JSONObject playerProps = new JSONObject();
         JSONObject action = prop("string");
         action.put("enum", new JSONArray().put("status").put("subtext").put("pause").put("stop")
-                .put("subtitles").put("audio").put("seek").put("episode"));
+                .put("subtitles").put("audio").put("seek").put("episode")
+                .put("sub_add").put("sub_delay").put("top_sub_delay").put("audio_delay"));
         playerProps.put("action", action);
         playerProps.put("value", prop("string"));
+        JSONObject place = prop("string");
+        place.put("enum", new JSONArray().put("bottom").put("top"));
+        playerProps.put("place", place);
         tools.put(tool("player", PLAYER, schema(playerProps, "action")));
 
         JSONObject findProps = new JSONObject();
@@ -367,6 +406,17 @@ public final class TvMcpServer {
         findProps.put("season", prop("integer"));
         findProps.put("episode", prop("integer"));
         tools.put(tool("find_subtitles", FIND_SUBTITLES, schema(findProps, "query", "language")));
+
+        JSONObject transcribeProps = new JSONObject();
+        transcribeProps.put("at", prop("string"));
+        transcribeProps.put("seconds", prop("integer"));
+        transcribeProps.put("audio", prop("string"));
+        tools.put(tool("transcribe", TRANSCRIBE, schema(transcribeProps, "at")));
+
+        JSONObject syncProps = new JSONObject();
+        syncProps.put("subtitles", prop("string"));
+        syncProps.put("reference", prop("string"));
+        tools.put(tool("sync_subtitles", SYNC_SUBTITLES, schema(syncProps, "subtitles", "reference")));
 
         return tools;
     }
@@ -385,6 +435,14 @@ public final class TvMcpServer {
                 return toolPlay(args);
             case "find_subtitles":
                 return toolFindSubtitles(args);
+            case "transcribe":
+                return subTools.transcribe(args.optString("at", ""), args.optInt("seconds", 60), optArg(args, "audio"));
+            case "sync_subtitles": {
+                String target = optArg(args, "subtitles");
+                String reference = optArg(args, "reference");
+                if (target == null || reference == null) throw new ToolError("Нужны subtitles и reference");
+                return subTools.sync(target, reference);
+            }
             default:
                 throw new ToolError("unknown tool: " + name);
         }
@@ -525,7 +583,7 @@ public final class TvMcpServer {
      * this app runs as its own uid and cannot open them directly, so it reads them as root -- the same way
      * {@link ControlServer} reads config.json/.security.yml.
      */
-    private static String readFileRoot(String path) {
+    static String readFileRoot(String path) {
         Process p = null;
         try {
             // --mount-master: the same global mount namespace the gateway runs in (parity with AgentService).
@@ -588,6 +646,12 @@ public final class TvMcpServer {
                 if (value.isEmpty()) throw new ToolError("Для " + action + " нужен value");
                 value = value.trim();
                 if ("seek".equals(action)) return seek(ipc, value);
+                if ("sub_add".equals(action)) return subAdd(ipc, value, optArg(args, "place"));
+                if ("sub_delay".equals(action)) return delay(ipc, action, "sub-delay", "Сдвиг сабов", value);
+                if ("top_sub_delay".equals(action)) {
+                    return delay(ipc, action, "secondary-sub-delay", "Сдвиг сабов сверху", value);
+                }
+                if ("audio_delay".equals(action)) return delay(ipc, action, "audio-delay", "Сдвиг звука", value);
                 if ("episode".equals(action)) return tv().episode(ipc, value.toLowerCase(Locale.ROOT));
                 // Before the command sets its own kind, so the follower has the playlist and the other kind.
                 tv().adopt(ipc);
@@ -622,6 +686,101 @@ public final class TvMcpServer {
         lines.add("Дорожки сабов: " + (subLine.isEmpty() ? "нет" : subLine));
         lines.add(aid != null ? "Звук: " + TvFormat.describeAudio(aid) : "Звук: выкл");
         lines.add("Дорожки звука: " + TvFormat.describeAudios(voices));
+        addDelay(lines, ipc, "sub-delay", "Сдвиг сабов");
+        addDelay(lines, ipc, "secondary-sub-delay", "Сдвиг сабов сверху");
+        addDelay(lines, ipc, "audio-delay", "Сдвиг звука");
+        return TvFormat.join(lines);
+    }
+
+    /** A status line «label: +0,5 с» for a delay property that is not zero. */
+    private static void addDelay(List<String> lines, MpvIpc ipc, String prop, String label) throws MpvIpc.MpvError {
+        Object v;
+        try {
+            v = ipc.get(prop);
+        } catch (MpvIpc.IpcClosed e) {
+            throw e;
+        } catch (MpvIpc.MpvError e) {
+            // An mpv without this property (secondary-sub-delay is recent) loses one line, not the whole status.
+            return;
+        }
+        if (v instanceof Number && Math.abs(((Number) v).doubleValue()) >= 0.005) {
+            lines.add(label + ": " + delayText(((Number) v).doubleValue()));
+        }
+    }
+
+    private static final Pattern DELAY = Pattern.compile("([+-]?)(\\d+(?:[.,]\\d+)?)");
+
+    /** sub_delay/top_sub_delay/audio_delay: "+N"/"-N" seconds added to {@code prop}, a plain number set as it. */
+    private static String delay(MpvIpc ipc, String action, String prop, String label, String value)
+            throws MpvIpc.MpvError, ToolError {
+        Matcher m = DELAY.matcher(value);
+        if (!m.matches()) {
+            throw new ToolError("Для " + action + " нужен value «+N» или «-N» секунд к текущему сдвигу либо число — "
+                    + "весь сдвиг, а не «" + value + "»");
+        }
+        double n = Double.parseDouble(m.group(2).replace(',', '.'));
+        double target = n;
+        if (!m.group(1).isEmpty()) {
+            Object now = ipc.get(prop);
+            target = (now instanceof Number ? ((Number) now).doubleValue() : 0) + ("-".equals(m.group(1)) ? -n : n);
+        }
+        ipc.set(prop, target);
+        Object now = ipc.get(prop);
+        return label + ": " + delayText(now instanceof Number ? ((Number) now).doubleValue() : target);
+    }
+
+    /** A delay as «+0,5 с», «-1,25 с», «+3,0 с». */
+    static String delayText(double seconds) {
+        if (Math.abs(seconds) < 0.005) seconds = 0;
+        String s = String.format(Locale.ROOT, "%+.2f", seconds);
+        if (s.endsWith("0")) s = s.substring(0, s.length() - 1);
+        return s.replace('.', ',') + " с";
+    }
+
+    /**
+     * sub_add: mpv loads the subtitle file {@code path} as a new track (its language from the name's «.xx.srt»,
+     * so player subtitles finds it) and shows it at the bottom (sid) or, for {@code place} «top», the top
+     * (secondary-sid). Only the slot asked for changes.
+     */
+    private static String subAdd(MpvIpc ipc, String path, String place) throws MpvIpc.MpvError, ToolError {
+        boolean top;
+        if (place == null || "bottom".equals(place)) top = false;
+        else if ("top".equals(place)) top = true;
+        else throw new ToolError("place — «bottom» или «top», а не «" + place + "»");
+        JSONArray before = TvFormat.asArray(ipc.get("track-list"));
+        JSONObject bottomBefore = TvFormat.selected(before, "sub", 0);
+        int lastId = 0;
+        for (JSONObject t : TvFormat.tracksOfType(before, "sub")) lastId = Math.max(lastId, t.optInt("id"));
+        String lang = SubTools.fileLang(path);
+        try {
+            if (lang != null) ipc.command("sub-add", path, "auto", TvFormat.basename(path), lang);
+            else ipc.command("sub-add", path, "auto");
+        } catch (MpvIpc.IpcClosed e) {
+            throw e;
+        } catch (MpvIpc.MpvError e) {
+            throw new ToolError("mpv не открыл " + path + " (" + e.getMessage() + ")");
+        }
+        JSONObject added = null;
+        for (JSONObject t : TvFormat.tracksOfType(TvFormat.asArray(ipc.get("track-list")), "sub")) {
+            if (t.optInt("id") > lastId && (added == null || t.optInt("id") > added.optInt("id"))) added = t;
+        }
+        if (added == null) throw new ToolError("mpv не добавил дорожку из " + path);
+        int id = added.optInt("id");
+        if (top) {
+            // mpv may pick the new track for the bottom by itself; a slot ignores a track the other one shows.
+            JSONObject bottomNow = TvFormat.selected(TvFormat.asArray(ipc.get("track-list")), "sub", 0);
+            if (bottomNow != null && bottomNow.optInt("id") == id) {
+                ipc.set("sid", bottomBefore != null ? (Object) bottomBefore.optInt("id") : (Object) Boolean.FALSE);
+            }
+        }
+        ipc.set(top ? "secondary-sid" : "sid", id);
+        JSONArray tracks = TvFormat.asArray(ipc.get("track-list"));
+        JSONObject bottom = TvFormat.selected(tracks, "sub", 0);
+        JSONObject upper = TvFormat.selected(tracks, "sub", 1);
+        List<String> lines = new ArrayList<>();
+        lines.add("Подключена дорожка " + TvFormat.describeSubtitle(added));
+        lines.add(bottom != null ? TvFormat.describeEnabled(bottom) : "Сабы: выкл");
+        if (upper != null) lines.add("Сабы сверху: " + TvFormat.describeFull(upper));
         return TvFormat.join(lines);
     }
 

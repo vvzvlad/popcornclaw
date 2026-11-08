@@ -59,8 +59,8 @@ public final class ControlServer {
 
     private static final String MCP_PROTOCOL = "2025-06-18";
     private static final String DIR = "/data/local/popcornclaw";
-    private static final String CONFIG_PATH = DIR + "/config.json";
-    private static final String SECURITY_PATH = DIR + "/.security.yml";
+    static final String CONFIG_PATH = DIR + "/config.json";
+    static final String SECURITY_PATH = DIR + "/.security.yml";
     private static final String TV_MCP_PATH = DIR + "/tv_mcp.json";
     private static final String HEALTH_URL = "http://127.0.0.1:18790/health";
 
@@ -93,7 +93,7 @@ public final class ControlServer {
     // .security.yml has a fixed layout (see buildSecurityYml); each value is pulled with one regex. \s* spans the
     // newlines/indent between the fixed keys, so these match the one value under each key.
     private static final Pattern YML_MAIN = Pattern.compile("main:\\s*api_keys:\\s*-\\s*\"([^\"]*)\"");
-    private static final Pattern YML_ASR = Pattern.compile("groq-asr:\\s*api_keys:\\s*-\\s*\"([^\"]*)\"");
+    static final Pattern YML_ASR = Pattern.compile("groq-asr:\\s*api_keys:\\s*-\\s*\"([^\"]*)\"");
     private static final Pattern YML_TOKEN = Pattern.compile("token:\\s*\"([^\"]*)\"");
     private static final Pattern YML_BRAVE = Pattern.compile("brave:\\s*api_keys:\\s*-\\s*\"([^\"]*)\"");
 
@@ -850,7 +850,7 @@ public final class ControlServer {
         return sb.toString();
     }
 
-    private static JSONObject modelEntry(JSONObject cfg, String name) throws JSONException {
+    static JSONObject modelEntry(JSONObject cfg, String name) throws JSONException {
         JSONArray list = cfg.optJSONArray("model_list");
         if (list == null) return null;
         for (int i = 0; i < list.length(); i++) {
@@ -894,7 +894,7 @@ public final class ControlServer {
         return o;
     }
 
-    private static String ymlExtract(Pattern p, String yml) {
+    static String ymlExtract(Pattern p, String yml) {
         if (yml == null) return "";
         Matcher m = p.matcher(yml);
         return m.find() ? m.group(1) : "";
