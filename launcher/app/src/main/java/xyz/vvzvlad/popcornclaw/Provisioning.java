@@ -71,7 +71,7 @@ final class Provisioning {
             + "      - \"\"\n";
     private static final String TV_MCP_JSON = "{\n"
             + "  \"jackett_url\": \"\",\n"
-            + "  \"torrserver_url\": \"http://127.0.0.1:8090\",\n"
+            + "  \"torrserver_url\": \"http://127.0.0.1:8083\",\n"
             + "  \"jackett_api_key\": \"\",\n"
             + "  \"opensubtitles_api_key\": \"\",\n"
             + "  \"subdl_api_key\": \"\"\n"
@@ -104,7 +104,7 @@ final class Provisioning {
     /** mpv-android may be installed any time after the app: its mpv.conf is looked at this often until it is. */
     private static final long MPV_GAP_MS = 60_000;
 
-    private static final String TORRSERVER_SETTINGS = "http://127.0.0.1:8090/settings";
+    private static final String TORRSERVER_SETTINGS = "http://127.0.0.1:8083/settings";
     private static final MediaType JSON_MEDIA = MediaType.parse("application/json");
     // ControlServer's pattern for the main model's key in .security.yml.
     private static final Pattern YML_MAIN = Pattern.compile("main:\\s*api_keys:\\s*-\\s*\"([^\"]*)\"");

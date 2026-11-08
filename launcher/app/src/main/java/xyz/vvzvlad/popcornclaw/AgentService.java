@@ -358,12 +358,14 @@ public final class AgentService extends Service {
     }
 
     /**
-     * Starts the bundled TorrServer on :8090 (the port tv_mcp uses) the way {@link #start} starts the gateway:
+     * Starts the bundled TorrServer on :8083 (the port tv_mcp uses) the way {@link #start} starts the gateway:
      * a leftover is killed first (SIGTERM, then SIGKILL), then a fresh one is launched under su --mount-master
-     * so it shares the box's mounts. TorrServer finds ffprobe (bundled too, as libffprobe.so) through PATH: a
-     * symlink named "ffprobe" in its data dir points at the extracted library, and the data dir leads PATH. The
-     * binary runs through the shell variable B so the pkill/pgrep pattern "[l]ibtorrserver.so --port 8090" does
-     * not match this script's own command line, only the running server.
+     * so it shares the box's mounts. Not on TorrServer's default 8090: other apps on the box (Reshala TV without
+     * its own TorrServer) take whatever answers there for an external TorrServer. TorrServer finds ffprobe
+     * (bundled too, as libffprobe.so) through PATH: a symlink named "ffprobe" in its data dir points at the
+     * extracted library, and the data dir leads PATH. The pkill/pgrep pattern P finds the leftover by its data
+     * dir, whatever port it was started on; the binary runs through the shell variable B so P does not match
+     * this script's own command line, only the running server.
      */
     private void startTorrServer() {
         String bin = getApplicationInfo().nativeLibraryDir + "/libtorrserver.so";
@@ -375,15 +377,16 @@ public final class AgentService extends Service {
                 + "mkdir -p \"$D\"\n"
                 + "ln -sf " + ffprobe + " \"$D/ffprobe\"\n"
                 + "touch \"$D/torrserver.log\" && chmod 666 \"$D/torrserver.log\"\n"
-                + "pkill -f '[l]ibtorrserver.so --port 8090'\n"
-                + "for i in 1 2 3 4 5 6 7 8 9 10; do pgrep -f '[l]ibtorrserver.so --port 8090' >/dev/null || break; sleep 1; done\n"
-                + "p=$(pgrep -f '[l]ibtorrserver.so --port 8090') && kill -9 $p\n"
+                + "P=\"[l]ibtorrserver.so --port [0-9]* --path $D\"\n"
+                + "pkill -f \"$P\"\n"
+                + "for i in 1 2 3 4 5 6 7 8 9 10; do pgrep -f \"$P\" >/dev/null || break; sleep 1; done\n"
+                + "p=$(pgrep -f \"$P\") && kill -9 $p\n"
                 + "cd \"$D\" || exit 1\n"
                 // Go binaries: CA store for HTTPS tracker lists, a temp dir Android otherwise lacks, and the data
                 // dir on PATH so TorrServer's exec.LookPath finds the ffprobe symlink.
                 + "export HOME=\"$D\" TMPDIR=/data/local/tmp SSL_CERT_DIR=/system/etc/security/cacerts\n"
                 + "export PATH=\"$D:$PATH\"\n"
-                + "setsid \"$B\" --port 8090 --path \"$D\" --logpath \"$D/torrserver.log\" >> \"$D/torrserver.log\" 2>&1 < /dev/null &\n";
+                + "setsid \"$B\" --port 8083 --path \"$D\" --logpath \"$D/torrserver.log\" >> \"$D/torrserver.log\" 2>&1 < /dev/null &\n";
         try {
             Process p = new ProcessBuilder(Su.argv("--mount-master", "-c", script)).redirectErrorStream(true).start();
             p.getOutputStream().close();

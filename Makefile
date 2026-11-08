@@ -15,7 +15,7 @@ TERMUX_APK_SHA256 := 89416397b70f9ff67a0044e8abe6ef82487cd48fcf543e2d23e02688cc5
 TERMUX_BOOTSTRAP_URL := https://github.com/termux/termux-packages/releases/download/bootstrap-2026.11.01-r1%2Bapt.android-7/bootstrap-arm.zip
 TERMUX_BOOTSTRAP_SHA256 := 99660c5a95733765c9967309a0c91c67335e9804b9e2027cfba71926fa4a3140
 # TorrServer and a static ffprobe ride inside the app as native libs (like libpicoclaw.so), so installing the
-# app is enough: AgentService runs TorrServer on :8090 and puts ffprobe on its PATH, no separate TorrServe app.
+# app is enough: AgentService runs TorrServer on :8083 and puts ffprobe on its PATH, no separate TorrServe app.
 # Both are fetched at build time (immutable URLs + sha256), never committed. TorrServer's android build uses
 # Android's own linker; a statically linked GNU/Linux ffprobe needs no shared libraries, so it runs too.
 # One set per ABI, named by its build/ directory: arm (armeabi-v7a) and arm64 (arm64-v8a).
