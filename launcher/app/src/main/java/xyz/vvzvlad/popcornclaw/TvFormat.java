@@ -68,7 +68,8 @@ final class TvFormat {
             ".wmv", ".webm", ".mpg", ".mpeg"};
 
     // ISO 639-2 codes, both the bibliographic and the terminology form, mapped to ISO 639-1 for the
-    // languages known to differ from the first two letters (rum would otherwise read as ru).
+    // languages known to differ from the first two letters (rum would otherwise read as ru), and the
+    // bibliographic codes Locale does not know (fre), which SubTools.iso6391 would reject.
     static final Map<String, String> ISO_639_2 = buildIso6392();
 
     private static Map<String, String> buildIso6392() {
@@ -77,7 +78,7 @@ final class TvFormat {
         m.put("zho", "zh"); m.put("por", "pt"); m.put("dut", "nl"); m.put("nld", "nl"); m.put("cze", "cs");
         m.put("ces", "cs"); m.put("gre", "el"); m.put("ell", "el"); m.put("rum", "ro"); m.put("ron", "ro");
         m.put("est", "et"); m.put("slo", "sk"); m.put("slk", "sk"); m.put("tur", "tr"); m.put("pol", "pl");
-        m.put("swe", "sv"); m.put("per", "fa"); m.put("fas", "fa");
+        m.put("swe", "sv"); m.put("per", "fa"); m.put("fas", "fa"); m.put("fre", "fr");
         return Collections.unmodifiableMap(m);
     }
 

@@ -14,10 +14,11 @@ TERMUX_APK_URL := https://github.com/termux/termux-app/releases/download/v0.118.
 TERMUX_APK_SHA256 := 89416397b70f9ff67a0044e8abe6ef82487cd48fcf543e2d23e02688cc541cf0
 TERMUX_BOOTSTRAP_URL := https://github.com/termux/termux-packages/releases/download/bootstrap-2026.11.01-r1%2Bapt.android-7/bootstrap-arm.zip
 TERMUX_BOOTSTRAP_SHA256 := 99660c5a95733765c9967309a0c91c67335e9804b9e2027cfba71926fa4a3140
-# TorrServer and a static ffprobe ride inside the app as native libs (like libpicoclaw.so), so installing the
-# app is enough: AgentService runs TorrServer on :8083 and puts ffprobe on its PATH, no separate TorrServe app.
-# Both are fetched at build time (immutable URLs + sha256), never committed. TorrServer's android build uses
-# Android's own linker; a statically linked GNU/Linux ffprobe needs no shared libraries, so it runs too.
+# TorrServer and a static ffprobe and ffmpeg ride inside the app as native libs (like libpicoclaw.so), so installing
+# the app is enough: AgentService runs TorrServer on :8083 and puts ffprobe on its PATH, no separate TorrServe app;
+# tv_mcp's transcribe cuts the audio it sends to Whisper with ffmpeg. All are fetched at build time (immutable
+# URLs + sha256), never committed. TorrServer's android build uses Android's own linker; statically linked
+# GNU/Linux ffprobe and ffmpeg need no shared libraries, so they run too. Both come from one tarball.
 # One set per ABI, named by its build/ directory: arm (armeabi-v7a) and arm64 (arm64-v8a).
 TORRSERVER_URL_arm := https://github.com/YouROK/TorrServer/releases/download/MatriX.149/TorrServer-android-arm7
 TORRSERVER_SHA256_arm := 08bb424083de6a56a2f9a6b798d191a8da30407d78758a7533a4f6a24ea47cee
@@ -29,6 +30,8 @@ FFPROBE_MEMBER_arm := ffmpeg-6.0.1-armhf-static/ffprobe
 FFPROBE_URL_arm64 := https://johnvansickle.com/ffmpeg/old-releases/ffmpeg-6.0.1-arm64-static.tar.xz
 FFPROBE_SHA256_arm64 := 7dbd8e2f47bd83de591b9d6ea70e67d32d9aa97e7d47ae402b60c2fe3fd4d0ab
 FFPROBE_MEMBER_arm64 := ffmpeg-6.0.1-arm64-static/ffprobe
+FFMPEG_MEMBER_arm := ffmpeg-6.0.1-armhf-static/ffmpeg
+FFMPEG_MEMBER_arm64 := ffmpeg-6.0.1-arm64-static/ffmpeg
 # Same environment as the app's AgentService gives the gateway.
 ENV := HOME=$(DIR) PICOCLAW_HOME=$(DIR) PICOCLAW_CONFIG=$(DIR)/config.json SSL_CERT_DIR=/system/etc/security/cacerts \
 	PATH=$$PATH:/data/data/com.termux/files/usr/bin PYTHONDONTWRITEBYTECODE=1
@@ -58,21 +61,23 @@ build/arm/picoclaw build/arm64/picoclaw: build/%/picoclaw: picoclaw/Dockerfile p
 	touch $@
 
 # The app (launcher/Dockerfile: the OmarchyTV launcher fork) built on the docker daemon with the PicoClaw,
-# TorrServer and ffprobe binaries inside as lib/{armeabi-v7a,arm64-v8a}/lib{picoclaw,torrserver,ffprobe}.so: an
+# TorrServer, ffprobe and ffmpeg binaries inside as lib/{armeabi-v7a,arm64-v8a}/lib{picoclaw,torrserver,ffprobe,ffmpeg}.so: an
 # unsigned release APK. It is signed with the key KEY_CMD gives: run with a directory as its last argument, KEY_CMD writes
 # release.p12 (PKCS12, key alias popcornclaw) and pass (its store and key password) there. apksigner signs in a
 # throwaway container of the build image, so the key never lands in an image layer; only the signed APK comes back.
 UNSIGNED_APK := app/build/outputs/apk/release/app-release-unsigned.apk
-build/popcornclaw.apk: build/arm/picoclaw build/arm/libtorrserver.so build/arm/libffprobe.so \
-	build/arm64/picoclaw build/arm64/libtorrserver.so build/arm64/libffprobe.so \
+build/popcornclaw.apk: build/arm/picoclaw build/arm/libtorrserver.so build/arm/libffprobe.so build/arm/libffmpeg.so \
+	build/arm64/picoclaw build/arm64/libtorrserver.so build/arm64/libffprobe.so build/arm64/libffmpeg.so \
 	$(shell find launcher -type f -not -path 'launcher/app/src/main/jniLibs/*')
 	mkdir -p launcher/app/src/main/jniLibs/armeabi-v7a launcher/app/src/main/jniLibs/arm64-v8a
 	cp build/arm/picoclaw launcher/app/src/main/jniLibs/armeabi-v7a/libpicoclaw.so
 	cp build/arm/libtorrserver.so launcher/app/src/main/jniLibs/armeabi-v7a/libtorrserver.so
 	cp build/arm/libffprobe.so launcher/app/src/main/jniLibs/armeabi-v7a/libffprobe.so
+	cp build/arm/libffmpeg.so launcher/app/src/main/jniLibs/armeabi-v7a/libffmpeg.so
 	cp build/arm64/picoclaw launcher/app/src/main/jniLibs/arm64-v8a/libpicoclaw.so
 	cp build/arm64/libtorrserver.so launcher/app/src/main/jniLibs/arm64-v8a/libtorrserver.so
 	cp build/arm64/libffprobe.so launcher/app/src/main/jniLibs/arm64-v8a/libffprobe.so
+	cp build/arm64/libffmpeg.so launcher/app/src/main/jniLibs/arm64-v8a/libffmpeg.so
 	$(if $(KEY_CMD),,$(error KEY_CMD is not set: a command that writes release.p12 and pass into the directory given last))
 	docker build -t popcornclaw-app launcher
 	k=$$(mktemp -d) && trap 'rm -rf "$$k"; [ -z "$$id" ] || docker rm -f "$$id" >/dev/null 2>&1' EXIT && \
@@ -101,7 +106,7 @@ build/arm/libtorrserver.so build/arm64/libtorrserver.so: build/%/libtorrserver.s
 	echo "$(TORRSERVER_SHA256_$*)  $@.tmp" | shasum -a 256 -c -
 	mv $@.tmp $@
 
-# Only ffprobe is kept from the static ffmpeg tarball; TorrServer runs it to read a file's media info.
+# ffprobe from the static ffmpeg tarball; TorrServer runs it to read a file's media info.
 build/arm/libffprobe.so build/arm64/libffprobe.so: build/%/libffprobe.so:
 	mkdir -p $(@D)
 	curl -fsSL -o $(@D)/ffprobe.tar.xz '$(FFPROBE_URL_$*)'
@@ -109,6 +114,15 @@ build/arm/libffprobe.so build/arm64/libffprobe.so: build/%/libffprobe.so:
 	tar -xJf $(@D)/ffprobe.tar.xz -C $(@D) --strip-components=1 '$(FFPROBE_MEMBER_$*)'
 	mv $(@D)/ffprobe $@
 	rm -f $(@D)/ffprobe.tar.xz
+
+# ffmpeg from the same tarball: tv_mcp's transcribe cuts a piece of the playing item's audio with it.
+build/arm/libffmpeg.so build/arm64/libffmpeg.so: build/%/libffmpeg.so:
+	mkdir -p $(@D)
+	curl -fsSL -o $(@D)/ffmpeg.tar.xz '$(FFPROBE_URL_$*)'
+	echo "$(FFPROBE_SHA256_$*)  $(@D)/ffmpeg.tar.xz" | shasum -a 256 -c -
+	tar -xJf $(@D)/ffmpeg.tar.xz -C $(@D) --strip-components=1 '$(FFMPEG_MEMBER_$*)'
+	mv $(@D)/ffmpeg $@
+	rm -f $(@D)/ffmpeg.tar.xz
 
 # The boxes have no unzip of their own: the zip is extracted here and the tree pushed (the app extracts it in Java).
 build/termux-bootstrap: build/bootstrap-arm.zip

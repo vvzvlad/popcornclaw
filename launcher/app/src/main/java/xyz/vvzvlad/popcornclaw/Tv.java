@@ -898,7 +898,7 @@ final class Tv {
     }
 
     /** shlex.quote: return {@code s} unchanged when it is all shell-safe chars, else single-quote it. */
-    private static String shellQuote(String s) {
+    static String shellQuote(String s) {
         if (s.isEmpty()) return "''";
         if (SHLEX_SAFE.matcher(s).matches()) return s;
         return "'" + s.replace("'", "'\"'\"'") + "'";

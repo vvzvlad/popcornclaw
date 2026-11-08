@@ -292,6 +292,7 @@ with them Android 9 connects to the remote from a random address, and the remote
 | `/data/local/popcornclaw/.security.yml` | keys for the model, Groq, Brave Search and the bot token; mode 600 |
 | `/data/local/popcornclaw/tv_mcp.json` | search and subtitle settings (TorrServer, Jackett, subtitle keys); mode 600 |
 | `/data/local/popcornclaw/workspace/` | the agent's working directory; its instructions are `AGENT.md` (on a fresh box from the APK) |
+| `/data/local/popcornclaw/subs/` | subtitles the agent recognises from the episode's sound and aligns itself: the recognised speech `<title>.speech.<lang>.srt` and the aligned `<name>.sync.<lang>.srt`; mode 644, mpv reads them |
 | `/data/local/popcornclaw/gateway.log` | the gateway's console output, appended on every start |
 | `/data/local/popcornclaw/logs/gateway.log` | PicoClaw's JSON log, level `info`; `gateway_panic.log` next to it holds crashes |
 | `/data/local/popcornclaw/workspace/sessions/archive/` | every message of every conversation in order; PicoClaw rewrites the live conversation file next to it when it compresses history, the archive never |
@@ -303,7 +304,7 @@ with them Android 9 connects to the remote from a random address, and the remote
 
 Everything heavy builds in Docker: PicoClaw v0.3.1 with the patches from [picoclaw/](picoclaw/) through
 the `make build/arm/picoclaw` and `make build/arm64/picoclaw` targets, the APK with Gradle inside
-[launcher/Dockerfile](launcher/Dockerfile), together with the PicoClaw, TorrServer and ffprobe binaries in
+[launcher/Dockerfile](launcher/Dockerfile), together with the PicoClaw, TorrServer, ffprobe and ffmpeg binaries in
 `lib/armeabi-v7a/` and `lib/arm64-v8a/`. The Docker CLI may point at a remote daemon: no bind mounts are
 used, artifacts come back via `docker cp`. `make build/popcornclaw.apk` builds everything and signs the
 release with the key that the `KEY_CMD` command gives: it gets a directory as its last argument and puts
@@ -313,7 +314,7 @@ release with the key that the `KEY_CMD` command gives: it gets a directory as it
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Inside the APK: PicoClaw (MIT), TorrServer MatriX.149 and ffprobe from FFmpeg
+MIT, see [LICENSE](LICENSE). Inside the APK: PicoClaw (MIT), TorrServer MatriX.149, ffprobe and ffmpeg from FFmpeg
 6.0.1 (GNU GPL v3, unmodified, as separate processes), ZXing and OkHttp (Apache 2.0); the license texts
 and links to the sources are in the launcher's About window and in
 [launcher/app/src/main/assets/licenses/](launcher/app/src/main/assets/licenses/). Termux is not in the

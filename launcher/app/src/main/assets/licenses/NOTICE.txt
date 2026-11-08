@@ -5,8 +5,8 @@ PopcornClaw is a fork of OmarchyTV (below) and bundles these programs:
 - PicoClaw v0.3.1 (sipeed/picoclaw), with PopcornClaw patches - (c) 2026 PicoClaw contributors, MIT (PICOCLAW-MIT.txt)
 - TorrServer MatriX.149 (YouROK/TorrServer), unmodified binary, runs as a separate process - GNU GPL v3 (GPL-3.0.txt);
   source: https://github.com/YouROK/TorrServer/tree/MatriX.149
-- FFmpeg 6.0.1 ffprobe, unmodified static armhf and arm64 builds by John Van Sickle (https://johnvansickle.com/ffmpeg/), runs as a
-  separate process - GNU GPL v3 (GPL-3.0.txt); source: https://ffmpeg.org/releases/ffmpeg-6.0.1.tar.xz
+- FFmpeg 6.0.1 ffprobe and ffmpeg, unmodified static armhf and arm64 builds by John Van Sickle (https://johnvansickle.com/ffmpeg/), run as
+  separate processes - GNU GPL v3 (GPL-3.0.txt); source: https://ffmpeg.org/releases/ffmpeg-6.0.1.tar.xz
 - ZXing core 3.5.3 and OkHttp 4.12.0 - Apache License 2.0 (APACHE-2.0.txt)
 Termux is not bundled: on first start the app downloads the official GitHub build from github.com/termux.
 

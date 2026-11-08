@@ -288,6 +288,7 @@ step at 23:01».
 | `/data/local/popcornclaw/.security.yml` | ключи модели, Groq, Brave Search и токен бота; права 600 |
 | `/data/local/popcornclaw/tv_mcp.json` | настройки поиска и субтитров (TorrServer, Jackett, ключи субтитров); права 600 |
 | `/data/local/popcornclaw/workspace/` | рабочий каталог агента, справка ему — `AGENT.md` (на свежей приставке — из APK) |
+| `/data/local/popcornclaw/subs/` | субтитры, которые агент сам распознаёт из звука серии и подгоняет: распознанная речь `<название>.speech.<язык>.srt` и подогнанные `<имя>.sync.<язык>.srt`; права 644, их читает mpv |
 | `/data/local/popcornclaw/gateway.log` | вывод шлюза в консоль, дописывается с каждого запуска |
 | `/data/local/popcornclaw/logs/gateway.log` | лог PicoClaw в JSON, уровень `info`; `gateway_panic.log` рядом — падения |
 | `/data/local/popcornclaw/workspace/sessions/archive/` | все сообщения каждого разговора по порядку; живой файл разговора рядом PicoClaw при сжатии истории переписывает, архив — никогда |
@@ -299,7 +300,7 @@ step at 23:01».
 
 Всё тяжёлое собирается в Docker: PicoClaw v0.3.1 с патчами из [picoclaw/](picoclaw/) — целью
 `make build/arm/picoclaw` и `make build/arm64/picoclaw`, APK — Gradle внутри
-[launcher/Dockerfile](launcher/Dockerfile), вместе с бинарниками PicoClaw, TorrServer и ffprobe в
+[launcher/Dockerfile](launcher/Dockerfile), вместе с бинарниками PicoClaw, TorrServer, ffprobe и ffmpeg в
 `lib/armeabi-v7a/` и `lib/arm64-v8a/`. Docker CLI может смотреть на удалённый
 демон: bind mount не используется, артефакты забираются `docker cp`. `make build/popcornclaw.apk`
 собирает всё целиком и подписывает релиз ключом, который выдаёт команда `KEY_CMD`: она получает
@@ -309,7 +310,7 @@ step at 23:01».
 
 ## Лицензия
 
-MIT, см. [LICENSE](LICENSE). Внутри APK — PicoClaw (MIT), TorrServer MatriX.149 и ffprobe из FFmpeg
+MIT, см. [LICENSE](LICENSE). Внутри APK — PicoClaw (MIT), TorrServer MatriX.149, ffprobe и ffmpeg из FFmpeg
 6.0.1 (GNU GPL v3, без изменений, отдельными процессами), ZXing и OkHttp (Apache 2.0); тексты лицензий
 и ссылки на исходники — в окне About лаунчера и в
 [launcher/app/src/main/assets/licenses/](launcher/app/src/main/assets/licenses/). Termux в APK не
