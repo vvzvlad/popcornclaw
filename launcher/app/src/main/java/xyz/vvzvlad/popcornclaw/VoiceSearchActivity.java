@@ -21,8 +21,8 @@ import java.util.List;
  * The remote's mic key is KEYCODE_VOICE_ASSIST, for which the system starts android.speech.action.WEB_SEARCH
  * with no extras. At the same moment the TV remote service (com.google.android.tv.remote.service) bridges the
  * remote's mic audio through its AudioPolicy into voice-recognition capture, so the default RecognitionService
- * (katniss) hears it. This activity listens with the in-app {@link SpeechRecognizer} in
- * {@link PicoLink#SPEECH_LANGUAGE} rather than the RECOGNIZE_SPEECH intent, which on Android 9 returned
+ * (katniss) hears it. This activity listens with the in-app {@link SpeechRecognizer} in the language
+ * {@link AppSettings#getSpeechLanguage} gives rather than the RECOGNIZE_SPEECH intent, which on Android 9 returned
  * nothing to onActivityResult, and hands the recognized text to {@link PicoLink#ask} exactly as the assistant
  * screen sends a typed question; CommandPopup shows the question and the answer over whatever is playing.
  *
@@ -67,7 +67,7 @@ public final class VoiceSearchActivity extends Activity {
         });
         recognizer.startListening(new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                 .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, PicoLink.SPEECH_LANGUAGE)
+                .putExtra(RecognizerIntent.EXTRA_LANGUAGE, AppSettings.getSpeechLanguage(this))
                 .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getPackageName()));
     }
 

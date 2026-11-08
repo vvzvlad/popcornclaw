@@ -88,23 +88,23 @@ final class SubTools {
      * CUT_ONSET after the piece's start to the end of its last whole phrase) are replaced, the rest kept.
      */
     String transcribe(String at, int seconds, String audio) throws ToolError {
-        if (seconds < 10 || seconds > 300) throw new ToolError("seconds — от 10 до 300, а не " + seconds);
+        if (seconds < 10 || seconds > 300) throw new ToolError("seconds is 10 to 300, not " + seconds);
         List<Integer> starts = parseStarts(at);
         String media;
         String title;
         int ffIndex;
         String lang;
         MpvIpc ipc = MpvIpc.open();
-        if (ipc == null) throw new ToolError("Ничего не играет");
+        if (ipc == null) throw new ToolError("Nothing is playing");
         try {
             Object path = ipc.get("path");
-            if (path == null) throw new ToolError("Ничего не играет");
+            if (path == null) throw new ToolError("Nothing is playing");
             media = path.toString();
             Object t = ipc.get("media-title");
             title = t != null ? t.toString() : TvFormat.urlPathBasename(media);
             JSONObject track = audioTrack(TvFormat.asArray(ipc.get("track-list")), audio);
             if (!track.has("ff-index")) {
-                throw new ToolError("У дорожки звука " + TvFormat.describeAudio(track) + " нет номера потока в файле");
+                throw new ToolError("The audio track " + TvFormat.describeAudio(track) + " has no stream number in the file");
             }
             ffIndex = track.optInt("ff-index");
             lang = groqLanguage(track.optString("lang", ""));
@@ -114,7 +114,7 @@ final class SubTools {
             ipc.close();
         }
         String key = ControlServer.ymlExtract(ControlServer.YML_ASR, TvMcpServer.readFileRoot(ControlServer.SECURITY_PATH));
-        if (key.isEmpty()) throw new ToolError("Нет ключа Groq: groq-asr в " + ControlServer.SECURITY_PATH);
+        if (key.isEmpty()) throw new ToolError("No Groq key: groq-asr in " + ControlServer.SECURITY_PATH);
         String proxy = asrProxy();
         OkHttpClient client = groqClient(proxy);
         boolean proxied = !proxy.trim().isEmpty();
@@ -129,7 +129,7 @@ final class SubTools {
             try {
                 flac = File.createTempFile("transcribe", ".flac", cacheDir);
             } catch (IOException e) {
-                throw new ToolError("Не создать временный файл в " + cacheDir + ": " + e.getMessage());
+                throw new ToolError("Cannot create a temporary file in " + cacheDir + ": " + e.getMessage());
             }
             try {
                 String failed = cut(media, ffIndex, start, seconds, flac);
@@ -142,7 +142,7 @@ final class SubTools {
                 ranges.add(covered);
                 // Pieces of one call may overlap: the later one replaces what it covers, nothing is written twice.
                 fresh = merge(fresh, cues, Collections.singletonList(covered));
-                lines.add(range + ": " + cues.size() + " " + plural(cues.size(), "фраза", "фразы", "фраз"));
+                lines.add(range + ": " + cues.size() + (cues.size() == 1 ? " phrase" : " phrases"));
                 for (Srt.Cue c : cues) lines.add(clockTenths(c.start) + " " + c.text.replace('\n', ' '));
             } catch (ToolError e) {
                 lines.add(range + ": " + e.getMessage());
@@ -154,7 +154,7 @@ final class SubTools {
         byte[] old = readRoot(file, true);
         List<Srt.Cue> merged = merge(old == null ? Collections.<Srt.Cue>emptyList() : Srt.parse(old), fresh, ranges);
         writeSubs(file, Srt.format(merged));
-        lines.add(0, "Файл: " + file);
+        lines.add(0, "File: " + file);
         return TvFormat.join(lines);
     }
 
@@ -177,19 +177,19 @@ final class SubTools {
         return new double[]{start + CUT_ONSET, until};
     }
 
-    /** The start positions of {@code at}: comma-separated «Ч:ММ:СС», «ММ:СС» or seconds. */
+    /** The start positions of {@code at}: comma-separated "H:MM:SS", "MM:SS" or seconds. */
     static List<Integer> parseStarts(String at) throws ToolError {
         List<Integer> starts = new ArrayList<>();
         for (String part : (at == null ? "" : at).trim().split("[,;\\s]+")) {
             if (part.isEmpty()) continue;
             if (!START.matcher(part).matches()) {
-                throw new ToolError("at — места через запятую: «Ч:ММ:СС», «ММ:СС» или секунды, а не «" + part + "»");
+                throw new ToolError("at is a comma-separated list of places: \"H:MM:SS\", \"MM:SS\" or seconds, not \"" + part + "\"");
             }
             int t = 0;
             for (String p : part.split(":")) t = t * 60 + Integer.parseInt(p);
             starts.add(t);
         }
-        if (starts.isEmpty()) throw new ToolError("Для transcribe нужен at: места через запятую («2:00,10:00»)");
+        if (starts.isEmpty()) throw new ToolError("transcribe needs at: a comma-separated list of places (\"2:00,10:00\")");
         return starts;
     }
 
@@ -198,7 +198,7 @@ final class SubTools {
         List<JSONObject> voices = TvFormat.tracksOfType(tracks, "audio");
         JSONObject playing = TvFormat.selected(tracks, "audio", 0);
         if (audio == null || audio.trim().isEmpty()) {
-            if (playing == null) throw new ToolError("Звук выключен; дорожки звука: " + TvFormat.describeAudios(voices));
+            if (playing == null) throw new ToolError("Audio is off; audio tracks: " + TvFormat.describeAudios(voices));
             return playing;
         }
         String v = audio.trim();
@@ -210,7 +210,7 @@ final class SubTools {
         } else {
             track = TvFormat.pickAudio(voices, v, playing);
         }
-        if (track == null) throw new ToolError("Нет звуковой дорожки «" + v + "»; есть: " + TvFormat.describeAudios(voices));
+        if (track == null) throw new ToolError("No audio track \"" + v + "\"; there are: " + TvFormat.describeAudios(voices));
         return track;
     }
 
@@ -249,16 +249,16 @@ final class SubTools {
                     "-ar", "16000", "-c:a", "flac", out.getPath()).redirectErrorStream(true).start();
             proc.getOutputStream().close();
             Run run = drain(proc, timeoutMs);
-            if (run.timedOut) return "ffmpeg не уложился в " + (timeoutMs / 1000) + " с";
+            if (run.timedOut) return "ffmpeg did not finish in " + (timeoutMs / 1000) + " s";
             if (run.code != 0) {
                 String said = lastLine(new String(run.out, StandardCharsets.UTF_8).trim());
-                return "ffmpeg: код выхода " + run.code + (said.isEmpty() ? "" : ": " + said);
+                return "ffmpeg: exit code " + run.code + (said.isEmpty() ? "" : ": " + said);
             }
-            if (out.length() == 0) return "ffmpeg: в куске нет звука";
+            if (out.length() == 0) return "ffmpeg: no audio in the piece";
             return null;
         } catch (IOException e) {
             if (proc != null) proc.destroy();
-            return "ffmpeg не запустился: " + e.getMessage();
+            return "ffmpeg did not start: " + e.getMessage();
         }
     }
 
@@ -282,11 +282,11 @@ final class SubTools {
             try {
                 return new JSONObject(text);
             } catch (JSONException e) {
-                throw new ToolError("Groq ответил не JSON");
+                throw new ToolError("Groq did not answer with JSON");
             }
         } catch (IOException e) {
             // A failed proxy connection's message names the proxy's host and port: keep it out of the reply.
-            throw new ToolError(proxied ? "Groq: нет связи через прокси groq-asr (" + e.getClass().getSimpleName() + ")"
+            throw new ToolError(proxied ? "Groq: no connection through the groq-asr proxy (" + e.getClass().getSimpleName() + ")"
                     : "Groq: " + e.getMessage());
         }
     }
@@ -411,18 +411,18 @@ final class SubTools {
         String trackLang = null;
         if (targetPath.matches("\\d+") || referencePath.matches("\\d+")) {
             MpvIpc ipc = MpvIpc.open();
-            if (ipc == null) throw new ToolError("Ничего не играет: номер дорожки сабов не к чему отнести");
+            if (ipc == null) throw new ToolError("Nothing is playing: a subtitle track number refers to nothing");
             try {
-                if (ipc.get("path") == null) throw new ToolError("Ничего не играет: номер дорожки сабов не к чему отнести");
+                if (ipc.get("path") == null) throw new ToolError("Nothing is playing: a subtitle track number refers to nothing");
                 JSONArray tracks = TvFormat.asArray(ipc.get("track-list"));
                 if (targetPath.matches("\\d+")) {
-                    JSONObject t = externalTrack(tracks, targetPath, "её подгонять не нужно: возьми внешний файл");
+                    JSONObject t = externalTrack(tracks, targetPath, "it needs no aligning: take an external file");
                     targetPath = t.optString("external-filename");
                     String l = t.optString("lang", "");
                     trackLang = l.isEmpty() ? null : l;
                 }
                 if (referencePath.matches("\\d+")) {
-                    referencePath = externalTrack(tracks, referencePath, "образцом нужен внешний файл")
+                    referencePath = externalTrack(tracks, referencePath, "the reference must be an external file")
                             .optString("external-filename");
                 }
             } catch (MpvIpc.MpvError e) {
@@ -432,9 +432,9 @@ final class SubTools {
             }
         }
         List<Srt.Cue> target = Srt.parse(readRoot(targetPath, false));
-        if (target.isEmpty()) throw new ToolError("В " + targetPath + " нет реплик");
+        if (target.isEmpty()) throw new ToolError("No lines in " + targetPath);
         List<Srt.Cue> ref = Srt.parse(readRoot(referencePath, false));
-        if (ref.isEmpty()) throw new ToolError("В " + referencePath + " нет реплик");
+        if (ref.isEmpty()) throw new ToolError("No lines in " + referencePath);
         SubSync.Result result = SubSync.align(target, ref);
         List<String> rejected = new ArrayList<>();
         boolean accepted = false;
@@ -443,7 +443,7 @@ final class SubTools {
             else rejected.add(clock(p.from) + "–" + clock(p.to) + ": " + p.reason);
         }
         if (!accepted) {
-            throw new ToolError("Ни один кусок образца не сошёлся с субтитрами"
+            throw new ToolError("No reference piece matched the subtitles"
                     + (rejected.isEmpty() ? "" : ": " + join(rejected, "; ")));
         }
         String lang = fileLang(targetPath);
@@ -451,20 +451,20 @@ final class SubTools {
         String file = SUBS_DIR + "/" + srtBase(targetPath) + ".sync." + (lang == null ? "und" : lang) + ".srt";
         writeSubs(file, Srt.format(result.shifted));
         List<String> lines = new ArrayList<>();
-        lines.add("Файл: " + file);
-        lines.add("Сдвиги: " + sections(result.sections));
-        if (!rejected.isEmpty()) lines.add("Не сошлись: " + join(rejected, "; "));
+        lines.add("File: " + file);
+        lines.add("Shifts: " + sections(result.sections));
+        if (!rejected.isEmpty()) lines.add("Did not match: " + join(rejected, "; "));
         List<double[]> guessed = unmeasured(result.pieces, result.shifted);
         if (!guessed.isEmpty()) {
             List<String> spans = new ArrayList<>();
             List<String> at = new ArrayList<>();
             for (double[] g : guessed) {
-                spans.add(clock(g[0]) + "–" + clock(g[1]) + (g[2] != 0 ? " (ступенька где-то здесь)" : ""));
+                spans.add(clock(g[0]) + "–" + clock(g[1]) + (g[2] != 0 ? " (a step somewhere here)" : ""));
                 if (!Double.isNaN(g[3])) at.add(clock(g[3]));
             }
-            lines.add("Участки, где ни один кусок образца не сошёлся и сдвиг угадан: " + join(spans, "; ")
-                    + (at.isEmpty() ? "" : ". Распознай там ещё по куску (transcribe at=" + join(at, ",")
-                    + ") и подгони заново к распознанному; место, где transcribe ничего не распознал, не повторяй"));
+            lines.add("Stretches where no reference piece matched and the shift is a guess: " + join(spans, "; ")
+                    + (at.isEmpty() ? "" : ". Recognise one more piece in each (transcribe at=" + join(at, ",")
+                    + ") and align again to what was recognised; do not repeat a place where transcribe recognised nothing"));
         }
         return TvFormat.join(lines);
     }
@@ -545,31 +545,31 @@ final class SubTools {
         for (JSONObject t : subs) {
             if (!String.valueOf(t.optInt("id")).equals(number)) continue;
             if (!t.optBoolean("external", false) || t.optString("external-filename", "").isEmpty()) {
-                throw new ToolError("Дорожка сабов #" + number + " — из самого видеофайла, " + internal);
+                throw new ToolError("Subtitle track #" + number + " is inside the video file itself, " + internal);
             }
             return t;
         }
-        throw new ToolError("Нет дорожки сабов #" + number + "; есть: " + TvFormat.describeSubtitles(subs));
+        throw new ToolError("No subtitle track #" + number + "; there are: " + TvFormat.describeSubtitles(subs));
     }
 
-    /** "до 12:03 +3,0 с; 12:03–17:12 +1,8 с; с 17:12 -0,4 с", "весь файл +3,0 с" for one section. */
+    /** "until 12:03 +3.0 s; 12:03–17:12 +1.8 s; from 17:12 -0.4 s", "whole file +3.0 s" for one section. */
     static String sections(List<SubSync.Section> sections) {
-        if (sections.size() == 1) return "весь файл " + shift(sections.get(0).shift);
+        if (sections.size() == 1) return "whole file " + shift(sections.get(0).shift);
         List<String> parts = new ArrayList<>();
         for (SubSync.Section s : sections) {
             String where;
-            if (Double.isInfinite(s.from) && Double.isInfinite(s.to)) where = "весь файл";
-            else if (Double.isInfinite(s.from)) where = "до " + clock(s.to);
-            else if (Double.isInfinite(s.to)) where = "с " + clock(s.from);
+            if (Double.isInfinite(s.from) && Double.isInfinite(s.to)) where = "whole file";
+            else if (Double.isInfinite(s.from)) where = "until " + clock(s.to);
+            else if (Double.isInfinite(s.to)) where = "from " + clock(s.from);
             else where = clock(s.from) + "–" + clock(s.to);
             parts.add(where + " " + shift(s.shift));
         }
         return join(parts, "; ");
     }
 
-    /** A shift as «+3,0 с». */
+    /** A shift as "+3.0 s". */
     private static String shift(double seconds) {
-        return String.format(Locale.ROOT, "%+.1f", seconds).replace('.', ',') + " с";
+        return String.format(Locale.ROOT, "%+.1f", seconds) + " s";
     }
 
     // --- names ---------------------------------------------------------------------------------------------
@@ -615,25 +615,17 @@ final class SubTools {
         return s.isEmpty() ? "media" : s;
     }
 
-    /** «ММ:СС», «Ч:ММ:СС» from an hour on. */
+    /** "MM:SS", "H:MM:SS" from an hour on. */
     static String clock(double seconds) {
         long t = (long) Math.floor(Math.max(0, seconds));
         String mmss = String.format(Locale.ROOT, "%02d:%02d", t / 60 % 60, t % 60);
         return t >= 3600 ? (t / 3600) + ":" + mmss : mmss;
     }
 
-    /** «ММ:СС.с»: the clock with tenths of a second. */
+    /** "MM:SS.s": the clock with tenths of a second. */
     static String clockTenths(double seconds) {
         long tenths = Math.round(Math.max(0, seconds) * 10);
         return clock(tenths / 10) + "." + (tenths % 10);
-    }
-
-    private static String plural(int n, String one, String few, String many) {
-        int mod100 = n % 100;
-        int mod10 = n % 10;
-        if (mod10 == 1 && mod100 != 11) return one;
-        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
-        return many;
     }
 
     private static String join(List<String> parts, String sep) {
@@ -655,13 +647,13 @@ final class SubTools {
     /** The groq-asr model's proxy from config.json, "" for none. */
     private static String asrProxy() throws ToolError {
         String text = TvMcpServer.readFileRoot(ControlServer.CONFIG_PATH);
-        if (text == null) throw new ToolError("Не прочитать " + ControlServer.CONFIG_PATH);
+        if (text == null) throw new ToolError("Cannot read " + ControlServer.CONFIG_PATH);
         try {
             JSONObject model = ControlServer.modelEntry(new JSONObject(text), "groq-asr");
             return model == null ? "" : model.optString("proxy", "");
         } catch (JSONException e) {
             // The parser's message quotes the file, which holds MCP headers: say nothing of it.
-            throw new ToolError("Не разобрать " + ControlServer.CONFIG_PATH);
+            throw new ToolError("Cannot parse " + ControlServer.CONFIG_PATH);
         }
     }
 
@@ -680,11 +672,11 @@ final class SubTools {
         try {
             u = new URI(proxy.trim());
         } catch (URISyntaxException e) {
-            throw new ToolError("Прокси groq-asr в config.json не разобрать");
+            throw new ToolError("Cannot parse the groq-asr proxy in config.json");
         }
         String scheme = u.getScheme() == null ? "" : u.getScheme().toLowerCase(Locale.ROOT);
         String host = u.getHost();
-        if (host == null) throw new ToolError("Прокси groq-asr в config.json не разобрать");
+        if (host == null) throw new ToolError("Cannot parse the groq-asr proxy in config.json");
         String user = null;
         String pass = null;
         String info = u.getUserInfo();
@@ -714,7 +706,7 @@ final class SubTools {
                 return b.build();
             }
             default:
-                throw new ToolError("Прокси groq-asr: схема «" + scheme + "://» не поддерживается, только socks5:// и http://");
+                throw new ToolError("groq-asr proxy: the scheme \"" + scheme + "://\" is not supported, only socks5:// and http://");
         }
     }
 
@@ -778,7 +770,7 @@ final class SubTools {
             out.write(user != null ? new byte[]{5, 2, 0, 2} : new byte[]{5, 1, 0});
             out.flush();
             byte[] method = readFully(in, 2);
-            if (method[0] != 5) throw new IOException("SOCKS5: прокси ответил не по SOCKS5");
+            if (method[0] != 5) throw new IOException("SOCKS5: the proxy did not answer in SOCKS5");
             if (method[1] == 2 && user != null) {
                 byte[] u = user.getBytes(StandardCharsets.UTF_8);
                 byte[] p = pass.getBytes(StandardCharsets.UTF_8);
@@ -790,9 +782,9 @@ final class SubTools {
                 auth.write(p, 0, p.length);
                 out.write(auth.toByteArray());
                 out.flush();
-                if (readFully(in, 2)[1] != 0) throw new IOException("SOCKS5: прокси не принял логин и пароль");
+                if (readFully(in, 2)[1] != 0) throw new IOException("SOCKS5: the proxy did not accept the login and password");
             } else if (method[1] != 0) {
-                throw new IOException("SOCKS5: прокси не принял способ входа");
+                throw new IOException("SOCKS5: the proxy did not accept the authentication method");
             }
             byte[] name = target.getHostString().getBytes(StandardCharsets.UTF_8);
             ByteArrayOutputStream req = new ByteArrayOutputStream();
@@ -805,13 +797,13 @@ final class SubTools {
             out.flush();
             byte[] reply = readFully(in, 4);
             if (reply[1] != 0) {
-                throw new IOException("SOCKS5: прокси не соединил с " + target.getHostString() + " (код " + reply[1] + ")");
+                throw new IOException("SOCKS5: the proxy did not connect to " + target.getHostString() + " (code " + reply[1] + ")");
             }
             int skip;
             if (reply[3] == 1) skip = 4;
             else if (reply[3] == 4) skip = 16;
             else if (reply[3] == 3) skip = readFully(in, 1)[0] & 0xff;
-            else throw new IOException("SOCKS5: непонятный ответ прокси");
+            else throw new IOException("SOCKS5: an unknown answer from the proxy");
             readFully(in, skip + 2);
             s.setSoTimeout(oldTimeout);
         }
@@ -821,7 +813,7 @@ final class SubTools {
             int off = 0;
             while (off < n) {
                 int r = in.read(b, off, n - off);
-                if (r < 0) throw new IOException("SOCKS5: прокси закрыл соединение");
+                if (r < 0) throw new IOException("SOCKS5: the proxy closed the connection");
                 off += r;
             }
             return b;
@@ -836,9 +828,9 @@ final class SubTools {
         Run r = root("[ -e " + q + " ] || exit 3\ncat " + q + "\n", null);
         if (r.code == 3) {
             if (missingOk) return null;
-            throw new ToolError("Нет файла " + path);
+            throw new ToolError("No file " + path);
         }
-        if (r.code != 0) throw new ToolError("Не прочитать " + path + ": " + lastLine(new String(r.out, StandardCharsets.UTF_8).trim()));
+        if (r.code != 0) throw new ToolError("Cannot read " + path + ": " + lastLine(new String(r.out, StandardCharsets.UTF_8).trim()));
         return r.out;
     }
 
@@ -849,7 +841,7 @@ final class SubTools {
         String tmp = Tv.shellQuote(path + ".tmp");
         Run r = root("mkdir -p " + SUBS_DIR + " && chmod 755 " + SUBS_DIR + " && cat > " + tmp + " && chmod 644 " + tmp
                 + " && mv " + tmp + " " + q + "\n", content.getBytes(StandardCharsets.UTF_8));
-        if (r.code != 0) throw new ToolError("Не записать " + path + ": " + lastLine(new String(r.out, StandardCharsets.UTF_8).trim()));
+        if (r.code != 0) throw new ToolError("Cannot write " + path + ": " + lastLine(new String(r.out, StandardCharsets.UTF_8).trim()));
     }
 
     /** Runs {@code script} as root through {@code su --mount-master -c}, {@code stdin} fed to it. */
@@ -861,7 +853,7 @@ final class SubTools {
             if (stdin != null) os.write(stdin);
             os.close();
             Run run = drain(proc, ROOT_TIMEOUT_MS);
-            if (run.timedOut) throw new ToolError("su не ответил за " + (ROOT_TIMEOUT_MS / 1000) + " с");
+            if (run.timedOut) throw new ToolError("su did not answer in " + (ROOT_TIMEOUT_MS / 1000) + " s");
             return run;
         } catch (IOException e) {
             if (proc != null) proc.destroy();
@@ -901,7 +893,7 @@ final class SubTools {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             proc.destroy();
-            throw new IOException("прервано");
+            throw new IOException("interrupted");
         } finally {
             wd.interrupt();
         }

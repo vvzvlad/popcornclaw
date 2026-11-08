@@ -31,7 +31,7 @@ import okhttp3.ResponseBody;
  * Subtitle search in OpenSubtitles and SubDL behind the {@code find_subtitles} tool, the Java port of the
  * Python {@code Subtitles} class (src/subtitles.py). Only the search: the reply lists what the two databases
  * have, nothing is downloaded. Like every tool reply it goes into the voice assistant's context, so it is
- * short plain Russian text.
+ * short plain text.
  *
  * <p>Concurrency: the Python side used {@code asyncio.gather} to run the two HTTP searches on one event loop;
  * this side submits both to an {@link ExecutorService} and awaits them, so they run concurrently, and joins
@@ -103,9 +103,9 @@ final class Subtitles {
      *  URL carries the API key. */
     private static String failure(String source, Exception exc) {
         if (exc instanceof HttpStatus) {
-            return source + " не ответил: HTTP " + ((HttpStatus) exc).code;
+            return source + " did not answer: HTTP " + ((HttpStatus) exc).code;
         }
-        return source + " не ответил: " + exc.getClass().getSimpleName();
+        return source + " did not answer: " + exc.getClass().getSimpleName();
     }
 
     // --- find (src/subtitles.py, lines 59-81) ------------------------------------------------------------
@@ -189,7 +189,7 @@ final class Subtitles {
         JSONObject body = get(ub.build(), headers);
         JSONArray data = body.getJSONArray("data");
         if (data.length() == 0) {
-            return Collections.singletonList("OpenSubtitles, " + code + ": ничего не найдено");
+            return Collections.singletonList("OpenSubtitles, " + code + ": nothing found");
         }
         List<String> lines = new ArrayList<>();
         lines.add("OpenSubtitles, " + code + " — " + body.getInt("total_count") + ":");
@@ -227,7 +227,7 @@ final class Subtitles {
             } else {
                 title = titled(feature.getString("title"), feature.opt("year"));
             }
-            String line = title + ": " + attributes.getString("release") + ", загрузок "
+            String line = title + ": " + attributes.getString("release") + ", downloads "
                     + attributes.getInt("download_count");
             lines.add(marked(line, attributes.get("hearing_impaired")));
         }
@@ -262,7 +262,7 @@ final class Subtitles {
         }
         JSONArray results = body.getJSONArray("results");
         if (results.length() == 0) {
-            return Collections.singletonList("SubDL, " + code + ": ничего не найдено");
+            return Collections.singletonList("SubDL, " + code + ": nothing found");
         }
         // `subtitles` are those of the first title in `results`. The season and episode are the ones asked for;
         // the release names tell what each subtitle covers.
@@ -273,7 +273,7 @@ final class Subtitles {
         }
         JSONArray found = body.getJSONArray("subtitles");
         if (found.length() == 0) {
-            return Collections.singletonList("SubDL, " + code + " — " + title + ": ничего не найдено");
+            return Collections.singletonList("SubDL, " + code + " — " + title + ": nothing found");
         }
         List<String> lines = new ArrayList<>();
         lines.add("SubDL, " + code + " — " + title + ", " + found.length() + ":");

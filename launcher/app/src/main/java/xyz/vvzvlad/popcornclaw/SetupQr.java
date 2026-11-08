@@ -55,7 +55,7 @@ public final class SetupQr extends LinearLayout {
         setGravity(Gravity.CENTER_HORIZONTAL);
         int pad = Math.round(12 * density);
         setPadding(pad, pad, pad, pad);
-        // Subtle dark card so the Russian caption stays legible over any wallpaper.
+        // Subtle dark card so the caption stays legible over any wallpaper.
         GradientDrawable card = new GradientDrawable();
         card.setColor(0xCC000000);
         card.setCornerRadius(12 * density);

@@ -1,318 +1,321 @@
 # PopcornClaw
 
-ИИ-агент для Android TV, который сам ищет и включает фильмы. Агент на
-[PicoClaw](https://github.com/sipeed/picoclaw) работает на самой приставке от root: у него есть её shell,
-недостающие программы он ставит себе сам из Termux, чинит мелочи на приставке, ищет раздачи и запускает
-их в mpv-android через встроенный TorrServer, подбирает субтитры и будит телевизор по HDMI-CEC. Писать
-ему можно с экрана ассистента в лаунчере, кнопкой микрофона на пульте с голосом — с любого экрана, во
-время фильма тоже, — и через своего Telegram-бота, текстом и голосовыми. Разговор у всех трёх один.
+English · [Русский](README.ru.md)
 
-![Главный экран: лента разговора с агентом, QR и PIN панели настроек](docs/screenshots/home.png)
+An AI agent for Android TV that finds and plays movies by itself. The agent, built on
+[PicoClaw](https://github.com/sipeed/picoclaw), runs on the box itself as root: it has the box's shell,
+installs missing programs for itself from Termux, fixes small problems on the box, finds torrents and plays
+them in mpv-android through the bundled TorrServer, picks subtitles and wakes the TV over HDMI-CEC. You can
+talk to it with the voice remote's microphone button from any screen, during a movie too, and through your
+own Telegram bot, in text and voice notes. Both share one conversation.
 
-## Как это выглядит
+![Home screen: the conversation with the agent, the QR code and PIN of the settings panel](docs/screenshots/home.png)
 
-Настоящие переписки с Telegram-ботом, из журнала агента: `>` — сообщение агенту, `·` — шаг, о котором бот пишет по
-ходу работы (в скобках инструмент), `→` — что шаг вернул, где это важно, `…` — вырезанные однотипные
-шаги.
+## What it looks like
+
+Real conversations with the Telegram bot from the agent's log, translated from Russian: `>` is a message to
+the agent, `·` is a step the bot reports while it works (the tool in parentheses), `→` is what a step
+returned where it matters, `…` marks cut steps of the same kind.
 
 ```text
-> Включи ту серию, где Рик и Морти попали внутрь мужика
-· Ищу раздачу «Рика и Морти» (mcp_tv_search)
-  Это серия «Парк юрского периода» (Anatomy Park) — 1 сезон, 3 серия. Готовлю её.
-· Готовлю 1 сезон 3 серию «Рика и Морти» (mcp_tv_prepare)
-· Включаю серию на телевизоре (mcp_tv_play)
-  Включил: 1 сезон, 3 серия «Парк юрского периода» (Anatomy Park) — Рик уменьшает Рубена и они
-  с Морти попадают внутрь его тела. Идёт английская озвучка, русские сабы снизу, английские сверху.
+> Play the episode where Rick and Morty got inside a guy
+· Searching for Rick and Morty releases (mcp_tv_search)
+  That's "Anatomy Park", season 1, episode 3. Preparing it.
+· Preparing Rick and Morty season 1 episode 3 (mcp_tv_prepare)
+· Playing the episode on the TV (mcp_tv_play)
+  Playing season 1, episode 3, "Anatomy Park": Rick shrinks Ruben, and he and Morty end up
+  inside his body. English audio, Russian subtitles at the bottom, English ones on top.
 ```
 
 ```text
-> [голосовое] Включи какой-нибудь мультик, но не Шрека.
-· Ищу «Как приручить дракона» с оригинальной озвучкой и русскими субтитрами (mcp_tv_search)
-· Готовлю «Как приручить дракона» (2010) WEB-DL 1080p, 346 сидов (mcp_tv_prepare)
-· Включаю «Как приручить дракона» (mcp_tv_play)
-· Включаю русские субтитры (mcp_tv_player)
-· Переключаю звук на английский оригинал (mcp_tv_player)
-> нет, он скучный
-· Останавливаю дракона, ищу другой мультик (mcp_tv_player)
-· Ищу «Короля Льва» — проверенный весёлый вариант (mcp_tv_search)
-· Готовлю «Короля Льва» (1994) WEB-DL 1080p, 336 сидов (mcp_tv_prepare)
+> [voice] Put on some cartoon, just not Shrek.
+· Searching for How to Train Your Dragon with original audio and Russian subtitles (mcp_tv_search)
+· Preparing How to Train Your Dragon (2010) WEB-DL 1080p, 346 seeders (mcp_tv_prepare)
+· Playing How to Train Your Dragon (mcp_tv_play)
+· Turning on Russian subtitles (mcp_tv_player)
+· Switching the audio to the English original (mcp_tv_player)
+> no, it's boring
+· Stopping the dragon, looking for another cartoon (mcp_tv_player)
+· Searching for The Lion King, a safe fun pick (mcp_tv_search)
+· Preparing The Lion King (1994) WEB-DL 1080p, 336 seeders (mcp_tv_prepare)
 …
-  Включил «Короля Льва» (1994) — WEB-DL 1080p, 336 сидов, оригинальная английская озвучка,
-  русские сабы внизу. Классика, не скучная 🙂
-> а можешь включить то место где гиены поют
-· Ищу сцену с песней гиен «Be Prepared» (mcp_tv_player)
+  Playing The Lion King (1994): WEB-DL 1080p, 336 seeders, original English audio,
+  Russian subtitles at the bottom. A classic, not boring 🙂
+> can you play the part where the hyenas sing
+· Looking for the hyena song scene, "Be Prepared" (mcp_tv_player)
 …
-· Смотрю текст субтитров прямо из mpv (exec)
-  → «Благодаря дотошному планированию»
-· Отматываю к самому началу песни (mcp_tv_player)
-· Проверяю, началась ли песня (exec)
-  → «Да здравствует король! Да здравствует король!»
-· Чуть назад — к первой строчке песни (mcp_tv_player)
-· Проверяю начало сцены (exec)
-  → «Готовьтесь, готовьтесь. К чему готовиться-то?»
-  Включил сцену с песней гиен «Be Prepared» — стоит на 27:20, сейчас как раз заветная строчка
-  «Готовьтесь, готовьтесь». Субтитры русские внизу.
-> а хакуна матата?
-· Смотрю, где сейчас играет (exec)
-· Ищу сцену «Хакуна матата» — примерно на 45-й минуте (mcp_tv_player)
+· Reading the subtitle text right from mpv (exec)
+  → "Meticulous planning"
+· Rewinding to the very start of the song (mcp_tv_player)
+· Checking whether the song has started (exec)
+  → "Long live the king! Long live the king!"
+· A bit back, to the song's first line (mcp_tv_player)
+· Checking the start of the scene (exec)
+  → "Be prepared, be prepared. Prepared for what?"
+  Playing the hyena song scene, "Be Prepared": it's at 27:20, right on the famous line
+  "Be prepared". Russian subtitles at the bottom.
+> and hakuna matata?
+· Checking where playback is now (exec)
+· Looking for the "Hakuna Matata" scene, around minute 45 (mcp_tv_player)
 …
-· Проверяю субтитры на 41:30 (exec)
-· Жду следующей реплики (exec)
-  → «Значит, ты отверженный? Отлично. Мы тоже.»
-  Включил сцену «Хакуна матата» — стоит на 41:30, как раз начало: Тимон и Пумба встречают Симбу
-  («Значит, ты отверженный? Отлично. Мы тоже»). Песня пойдёт следом.
+· Checking the subtitles at 41:30 (exec)
+· Waiting for the next line (exec)
+  → "So you're an outcast? That's great. So are we."
+  Playing the "Hakuna Matata" scene: it's at 41:30, right at the start, where Timon and Pumbaa
+  meet Simba ("So you're an outcast? That's great. So are we."). The song comes next.
 ```
 
 ```text
-> найди серию хауса про грустную смерть пациента
-  Грустных смертей пациента в «Хаусе» несколько, самые известные:
-  - «Wilson's Heart» (4×15–16) — умирает Эмбер, финал 4 сезона, самый знаменитый грустный эпизод
-  - «The C-Word» (7×18) — девочка Эмили с раком
-  - «Holding On» (8×19) — Оливер
-  - «Babies & Bathwater» (1×18) — беременная с раком, оставляет новорождённого
-  Какую включить?
-> про эмили
-· Ищу раздачи «Доктора Хауса» (mcp_tv_search)
-  Эпизод с Эмили — «The C-Word», 7 сезон, 18 серия. Раздача «Хауса» уже стоит в TorrServer
-  (id 275, bd web-dlrip teko, 128.6 ГБ) — беру её. Готовлю 7×18:
-· Готовлю 7×18 «The C-Word» из раздачи, которая уже в TorrServer (mcp_tv_prepare)
-  → Готово к запуску: s07e18_The.Dig.avi
-  Проверил: 7×18 — это «The Dig» (про Тринадцать), а серия с Эмили «The C-Word» — 7×19. Готовлю
-  правильную:
-· Перепутал номер: серия с Эмили — 7×19, готовлю её (mcp_tv_prepare)
-  → Готово к запуску: s07e19_Last.Temptation.avi
-  Стоп, 7×19 — это «Last Temptation», не она. Проверю точный номер серии по интернету:
-· Уточняю номер серии «The C-Word» (mcp_research_web_search)
-  Ошибка была моя: «The C-Word» — 8 сезон, 19 серия. Готовлю её:
-· Серия с Эмили — 8×19, готовлю её (mcp_tv_prepare)
-· Включаю 8×19 «The C-Word» (mcp_tv_play)
+> find the House episode about a sad patient death
+  There are several sad patient deaths in House; the best known:
+  - "Wilson's Heart" (4×15–16): Amber dies, the season 4 finale, the most famous sad episode
+  - "The C-Word" (7×18): Emily, a girl with cancer
+  - "Holding On" (8×19): Oliver
+  - "Babies & Bathwater" (1×18): a pregnant woman with cancer leaves her newborn
+  Which one should I play?
+> the emily one
+· Searching for House releases (mcp_tv_search)
+  The Emily episode is "The C-Word", season 7, episode 18. A House release is already in TorrServer
+  (id 275, bd web-dlrip teko, 128.6 GB), taking it. Preparing 7×18:
+· Preparing 7×18 "The C-Word" from the release already in TorrServer (mcp_tv_prepare)
+  → Ready to play: s07e18_The.Dig.avi
+  Checked: 7×18 is "The Dig" (about Thirteen), and the Emily episode, "The C-Word", is 7×19.
+  Preparing the right one:
+· Got the number wrong: the Emily episode is 7×19, preparing it (mcp_tv_prepare)
+  → Ready to play: s07e19_Last.Temptation.avi
+  Wait, 7×19 is "Last Temptation", not that one. Checking the exact episode number online:
+· Checking the episode number of "The C-Word" (mcp_research_web_search)
+  My mistake: "The C-Word" is season 8, episode 19. Preparing it:
+· The Emily episode is 8×19, preparing it (mcp_tv_prepare)
+· Playing 8×19 "The C-Word" (mcp_tv_play)
 …
 ```
 
 ```text
-> он реально передается в 4к? канала хватает?
-· Смотрю счётчики трафика wlan0 (exec)
-· Замеряю текущую скорость входящего трафика Wi-Fi (exec)
-· Смотрю скорость Wi-Fi-линка и повторно замеряю трафик (exec)
-· Получаю параметры Wi-Fi-соединения (exec)
-· Смотрю RX-скорость линка и третий замер трафика (exec)
-· Ищу в логах, какой поток выбрал SmartTube (exec)
-· Ищу в логах инициализацию видеодекодера (exec)
-· Проверяю формат видео и модель приставки (exec)
-· Ищу точную строку формата видео в полных логах (exec)
-· Смотрю, что сейчас на экране SmartTube (exec)
-  Честно: нет. Декодер работает на 1920×1080, и качается всего ~4 Мбит/с — это 1080p, не 4K.
-  Канал при этом отличный (5 ГГц, сигнал −46 dBm, линк 1080 Мбит/с) — 4K (~20–25 Мбит/с) влез
-  бы легко. SmartTube просто выбрал 1080p. Попробую выставить 4K в меню плеера.
+> is it really coming in 4K? is the bandwidth enough?
+· Reading the wlan0 traffic counters (exec)
+· Measuring the current incoming Wi-Fi traffic (exec)
+· Checking the Wi-Fi link speed and measuring the traffic again (exec)
+· Getting the Wi-Fi connection parameters (exec)
+· Checking the link's RX rate and a third traffic measurement (exec)
+· Searching the logs for the stream SmartTube picked (exec)
+· Searching the logs for the video decoder setup (exec)
+· Checking the video format and the box model (exec)
+· Searching the full logs for the exact video format line (exec)
+· Checking what SmartTube shows on screen (exec)
+  Honestly: no. The decoder runs at 1920×1080, and only ~4 Mbit/s is coming in: that's 1080p, not 4K.
+  The link itself is excellent (5 GHz, signal −46 dBm, link 1080 Mbit/s), so 4K (~20–25 Mbit/s) would
+  fit easily. SmartTube just picked 1080p. I'll try setting 4K in the player menu.
 ```
 
-## Что нужно
+## What you need
 
-- Android TV приставка с Android 7.0 или новее и root. Проверено на Beelink GT-King и GT-King Pro с
-  прошивкой slimBOXtv на Android 9 и SuperSU 2.82; 64-битная сборка и Magisk 26.4 — на эмуляторе
-  Android 14 (arm64). В APK библиотеки для armeabi-v7a и arm64-v8a.
-- [mpv-android](https://github.com/mpv-android/mpv-android) (пакет `is.xyz.mpv`): фильмы агент
-  запускает в нём.
-- API модели: адрес, имя модели и ключ. Проверено с nano-gpt (`https://nano-gpt.com/api/v1`,
-  модель `z-ai/glm-5.3-flash`).
-- По желанию: Telegram-бот, ключ Groq для голосовых из Telegram, ключ Brave Search для поиска в
-  интернете, свой Jackett, ключи OpenSubtitles и SubDL для субтитров.
+- An Android TV box with Android 7.0 or newer and root. Tested on Beelink GT-King and GT-King Pro with
+  slimBOXtv firmware on Android 9 and SuperSU 2.82; the 64-bit build and Magisk 26.4 on an Android 14
+  (arm64) emulator. The APK carries libraries for armeabi-v7a and arm64-v8a.
+- [mpv-android](https://github.com/mpv-android/mpv-android) (package `is.xyz.mpv`): the agent plays
+  movies in it.
+- A model API: its address, model name and key. Tested with nano-gpt (`https://nano-gpt.com/api/v1`,
+  model `z-ai/glm-5.3-flash`).
+- Optional: a Telegram bot, a Groq key for Telegram voice notes, a Brave Search key for web search, your
+  own Jackett, OpenSubtitles and SubDL keys for subtitles.
 
-### На каком железе удобнее всего запускать
+### Which hardware is easiest to run it on
 
-Главное — root, которым может пользоваться приложение: Magisk, KernelSU или SuperSU. Отладочный `su` из
-прошивок userdebug (`/system/xbin/su`) пускает только shell и root, приложению он отвечает
-`not allowed`. Сверху — устройства, где root есть сразу, ниже — где его ставят прошивкой с карты памяти
-или флешки, в конце — прошивкой с компьютера по кабелю USB A–A. Кроме GT-King, PopcornClaw на этих
-устройствах не запускался.
+What matters most is root that an app can use: Magisk, KernelSU or SuperSU. The debug `su` of userdebug
+firmware (`/system/xbin/su`) lets in only shell and root and answers an app with `not allowed`. At the
+top are devices that have root out of the box, below them those that get it from firmware flashed off a
+memory card or USB stick, and at the end those flashed from a computer over a USB A–A cable. Apart from
+the GT-King, PopcornClaw has not been run on these devices.
 
-| Устройство | Чип, Android | Как получить root | Цена на Озоне, ₽ |
+| Device | Chip, Android | How to get root | Price on Ozon, ₽ |
 | --- | --- | --- | --- |
-| Beelink GT-King, GT-King Pro | Amlogic S922X, 9 | прошивка slimBOXtv и SuperSU 2.82, на них PopcornClaw проверен | — |
-| Vontar X5, HK1 RBOX X50 | Amlogic S905X5M, 14 | уже в прошивке, KernelSU ([4PDA](https://4pda.to/forum/index.php?showtopic=1111776)) | ≈5 200–5 700 |
-| Ugoos X5M Pro, SK4 Pro | Amlogic S905X5M, 14 | переключатель Root в настройках Ugoos, Magisk | ≈12 500 |
-| Ugoos AM9 Pro, AM8, SK1 Lite | Amlogic S905X5-J, S928X, 14 | то же | ≈19 500–24 500 |
-| Tanix W2 | Amlogic S905W2, 11 | заводская прошивка Tanix от 24.04.2024 с Magisk, с microSD через Burn Card Maker ([4PDA](https://4pda.to/forum/index.php?showtopic=1051605)) | ≈4 500 |
-| Проектор Magcubic HY350 MAX | Allwinner H726, 14 | прошивка [CleanRom](https://floforge.fr/en/articles/hy350-max-cleanrom/) с Magisk, с флешки | ≈11 000 |
-| X88 Pro X5M, X96 M200, Tanix TX5 Plus | Amlogic S905X5M, 14 | прошивки и инструкции с Magisk или KernelSU из тем на 4PDA ([X88](https://4pda.to/forum/index.php?showtopic=1104876), [X96](https://4pda.to/forum/index.php?showtopic=1105149), [Tanix](https://4pda.to/forum/index.php?showtopic=1106852)), USB Burning Tool по кабелю | ≈5 500–5 700 |
-| H96 Max V56 | Rockchip RK3566, 12 | прошивка с Magisk ([XDA](https://xdaforums.com/t/rk3566-rk3568-tv-boxes-rooting-twrp-and-etcetera.4562613/)), Rockchip Factory Tool по кабелю | ≈5 500 |
-| H96 Max M2 | Rockchip RK3528, 13 | порт Android TV 13 с Magisk ([XDA](https://xdaforums.com/t/rk3528-h96max-androidtv-13-port-by-jwagnervaz.4711555/)), RKDevTool по кабелю | ≈2 900 |
-| Проекторы HY300, HY300 MAX, HY300 Ultra | Allwinner H713, H726, 11–14 | загрузочный раздел, пропатченный Magisk, через fastboot ([инструкция](https://github.com/YuujiLab/HY300-H713-Research/blob/main/Root/MAGISK_GUIDE.md)) или готовые прошивки с root через PhoenixSuit | ≈4 000–6 600 |
+| Beelink GT-King, GT-King Pro | Amlogic S922X, 9 | slimBOXtv firmware and SuperSU 2.82, PopcornClaw is tested on them | — |
+| Vontar X5, HK1 RBOX X50 | Amlogic S905X5M, 14 | already in the firmware, KernelSU ([4PDA](https://4pda.to/forum/index.php?showtopic=1111776)) | ≈5,200–5,700 |
+| Ugoos X5M Pro, SK4 Pro | Amlogic S905X5M, 14 | the Root switch in the Ugoos settings, Magisk | ≈12,500 |
+| Ugoos AM9 Pro, AM8, SK1 Lite | Amlogic S905X5-J, S928X, 14 | the same | ≈19,500–24,500 |
+| Tanix W2 | Amlogic S905W2, 11 | Tanix factory firmware of 2024-04-24 with Magisk, from microSD via Burn Card Maker ([4PDA](https://4pda.to/forum/index.php?showtopic=1051605)) | ≈4,500 |
+| Magcubic HY350 MAX projector | Allwinner H726, 14 | [CleanRom](https://floforge.fr/en/articles/hy350-max-cleanrom/) firmware with Magisk, from a USB stick | ≈11,000 |
+| X88 Pro X5M, X96 M200, Tanix TX5 Plus | Amlogic S905X5M, 14 | firmware and guides with Magisk or KernelSU from 4PDA threads ([X88](https://4pda.to/forum/index.php?showtopic=1104876), [X96](https://4pda.to/forum/index.php?showtopic=1105149), [Tanix](https://4pda.to/forum/index.php?showtopic=1106852)), USB Burning Tool over a cable | ≈5,500–5,700 |
+| H96 Max V56 | Rockchip RK3566, 12 | firmware with Magisk ([XDA](https://xdaforums.com/t/rk3566-rk3568-tv-boxes-rooting-twrp-and-etcetera.4562613/)), Rockchip Factory Tool over a cable | ≈5,500 |
+| H96 Max M2 | Rockchip RK3528, 13 | Android TV 13 port with Magisk ([XDA](https://xdaforums.com/t/rk3528-h96max-androidtv-13-port-by-jwagnervaz.4711555/)), RKDevTool over a cable | ≈2,900 |
+| HY300, HY300 MAX, HY300 Ultra projectors | Allwinner H713, H726, 11–14 | boot partition patched by Magisk, via fastboot ([guide](https://github.com/YuujiLab/HY300-H713-Research/blob/main/Root/MAGISK_GUIDE.md)), or ready rooted firmware via PhoenixSuit | ≈4,000–6,600 |
 
-## Установка
+## Installation
 
-1. Поставить mpv-android.
-2. Поставить APK PopcornClaw ([Releases](https://github.com/vvzvlad/popcornclaw/releases)) и открыть его. Root-менеджер спросит права — разрешить навсегда.
-3. Дальше приложение всё делает само, на свежей приставке около полутора минут: становится домашним
-   экраном, скачивает с GitHub и ставит Termux, а в нём socat, раскладывает свои файлы в `/data/local/popcornclaw`,
-   включает поиск RuTor во встроенном TorrServer, вписывает в `mpv.conf` mpv-android сокет, через
-   который агент управляет плеером (`input-ipc-server=@mpv`, если своего там нет), и даёт себе доступ к
-   микрофону и к окнам поверх других приложений.
-4. На главном экране появится QR с подписью «Scan to configure» и PIN. Отсканировать его телефоном —
-   откроется панель настроек приставки.
-5. Во вкладке Model заполнить Model, API base и API key и нажать Save. Через несколько секунд агент
-   запустится. Пока этих трёх полей нет, агент не запускается, и вкладка Model пишет об этом.
+1. Install mpv-android.
+2. Install the PopcornClaw APK ([Releases](https://github.com/vvzvlad/popcornclaw/releases)) and open it. The root manager asks for permission: allow it forever.
+3. From here the app does everything itself, in about a minute and a half on a fresh box: it becomes the
+   home screen, downloads Termux from GitHub and installs it, and socat in it, lays out its files in
+   `/data/local/popcornclaw`, turns on RuTor search in the bundled TorrServer, adds to mpv-android's
+   `mpv.conf` the socket through which the agent controls the player (`input-ipc-server=@mpv`, unless one
+   is already there), and grants itself the microphone and drawing over other apps.
+4. The home screen shows a QR code captioned "Scan to configure" and a PIN. Scan it with a phone to open
+   the box's settings panel.
+5. On the Model tab fill in Model, API base and API key and press Save. The agent starts a few seconds
+   later. Until these three fields are filled, the agent does not start, and the Model tab says so.
 
-Остальное — в своих вкладках панели: Telegram (токен бота, ID пользователей, которым бот отвечает, и
-адрес Bot API, если `api.telegram.org` не открывается), STT (ключ Groq; голос с пульта распознаёт сама
-приставка, ключ ему не нужен), Web (ключ Brave Search), Media (Jackett и ключи субтитров), MCP
-(сторонние MCP-серверы для агента).
+The rest is on the panel's other tabs: Telegram (the bot token, the IDs of the users the bot answers, and
+the Bot API address if `api.telegram.org` does not open), STT (the Groq key; the box itself recognizes the
+remote's voice and needs no key for it, and the "Remote's voice language" field sets that voice's
+language), Web (the Brave Search key), Media (Jackett and subtitle keys), MCP (third-party MCP servers for
+the agent).
 
-Раздачи агент ищет через поиск RuTor, встроенный в TorrServer: базу около 51 МБ TorrServer скачивает
-при первом поиске, это секунд 20–30. Если во вкладке Media указан Jackett, поиск идёт через него.
+The agent finds torrents through the RuTor search built into TorrServer: TorrServer downloads its database
+of about 51 MB on the first search, which takes 20–30 seconds. If Jackett is set on the Media tab, search
+goes through it.
 
-## Панель, экран приставки и MCP
+## Panel, box screen and MCP
 
-Служба приложения поднимает на приставке два HTTP-сервера в локальной сети. Оба закрыты PIN из шести
-цифр: приложение создаёт его при первом запуске и показывает на главном экране в карточке с QR. QR
-ведёт на `http://<приставка>:8081/?pin=<PIN>`: браузер запоминает PIN в cookie, дальше ссылки
-открываются без него. Без cookie страница спрашивает PIN. Адрес в QR — Ethernet или Wi-Fi, адреса VPN
-туда не попадают.
+The app's service runs two HTTP servers on the box in the local network. Both are locked with a six-digit
+PIN: the app creates it on first start and shows it on the home screen in the QR card. The QR code leads
+to `http://<box>:8081/?pin=<PIN>`: the browser keeps the PIN in a cookie, and later links open without it.
+Without the cookie the page asks for the PIN. The address in the QR code is Ethernet or Wi-Fi; VPN
+addresses never get there.
 
-![Панель настроек, вкладка Model](docs/screenshots/panel-model.png)
+![Settings panel, Model tab](docs/screenshots/panel-model.png)
 
-- **Экран приставки, порт 8080.** `http://<приставка>:8080/` — живой экран (MJPEG) с управлением
-  мышью и клавиатурой; он же — вкладка Screen панели. Поток напрямую — `/screen.mjpeg`.
-- **Управление и настройки, порт 8081** (`ControlServer`). `http://<приставка>:8081/` — панель по
-  вкладкам, с кнопками Save, Save & restart и Reboot box. Ключи в панель обратно не отдаются: на месте
-  сохранённого ключа точки, пустое поле означает «не менять». `http://<приставка>:8081/mcp` —
-  MCP-сервер (stateless Streamable HTTP, protocolVersion 2025-06-18), которым с ПК любым MCP-клиентом
-  можно делать то же, что агент: `exec` (shell от root), `status`, `player` (mpv — пауза, перемотка,
-  дорожки), `config_get`/`config_set` (эндпоинты из `config.json` и ключи из `.security.yml`),
-  `ask_agent` (написать агенту одной строкой — сообщение уходит в тот же общий диалог, что Telegram и
-  пульт, например чтобы внешняя колонка попросила «включи фильм»). MCP-клиент передаёт PIN заголовком
-  `Authorization: Bearer <PIN>`, без него `/mcp` отвечает 401.
+- **Box screen, port 8080.** `http://<box>:8080/` is the live screen (MJPEG) with mouse and keyboard
+  control; it is also the panel's Screen tab. The raw stream is `/screen.mjpeg`.
+- **Control and settings, port 8081** (`ControlServer`). `http://<box>:8081/` is the tabbed panel with
+  Save, Save & restart and Reboot box buttons. Keys never come back to the panel: a stored key shows as
+  dots, and an empty field means "keep". `http://<box>:8081/mcp` is an MCP server (stateless Streamable
+  HTTP, protocolVersion 2025-06-18) through which any MCP client on a PC can do what the agent does:
+  `exec` (a root shell), `status`, `player` (mpv: pause, seek, tracks), `config_get`/`config_set`
+  (endpoints from `config.json` and keys from `.security.yml`), `ask_agent` (write to the agent in one
+  line; the message goes into the same shared dialog as Telegram and the remote, for example so that a
+  smart speaker can ask it to "play a movie"). The MCP client passes the PIN in the
+  `Authorization: Bearer <PIN>` header; without it `/mcp` answers 401.
 
-У агента root и shell, и он выполняет то, что ему пишут из Telegram с разрешённых ID. Панель и MCP
-дают то же самое любому, кто знает PIN и находится в той же локальной сети.
+The agent has root and a shell, and it carries out what it is told from Telegram by the allowed IDs. The
+panel and MCP give the same to anyone who knows the PIN and is on the same local network.
 
-## Если что-то не так
+## Troubleshooting
 
-- **Агент не отвечает.** Проверьте, что во вкладке Model заполнены все три поля. Вывод агента —
-  `/data/local/popcornclaw/gateway.log`.
-- **Root-менеджер показывает окно при каждом обновлении приложения.** В SuperSU выдать приложению
-  право навсегда и выключить повторный запрос после обновления (`reauthenticate`): без ответа окно через
-  10 с отказывает, и приложение остаётся без root.
-- **Кнопка микрофона на пульте должна открывать Google, а не агента.** Снять галочку «Remote's voice
-  button talks to the agent» на вкладке STT и нажать Save. Если голосовых приложений на приставке
-  несколько, Android один раз спросит, каким открывать.
-- **Удалить начисто.** Удаление приложения не трогает `/data/local/popcornclaw` и Termux — их
-  удалить руками.
+- **The agent does not answer.** Check that all three fields on the Model tab are filled. The agent's
+  output is `/data/local/popcornclaw/gateway.log`.
+- **The root manager shows a prompt on every app update.** In SuperSU grant the app permission forever and
+  turn off asking again after an update (`reauthenticate`): unanswered, the prompt refuses after 10 s, and
+  the app is left without root.
+- **The remote's microphone button should open Google, not the agent.** Untick "Remote's voice button
+  talks to the agent" on the STT tab and press Save. If the box has several voice apps, Android asks once
+  which one to open.
+- **Uninstall cleanly.** Uninstalling the app leaves `/data/local/popcornclaw` and Termux alone; remove
+  them by hand.
 
-## Как устроено
+## How it works
 
-PicoClaw собирается из исходников v0.3.1 с восемью патчами:
+PicoClaw is built from v0.3.1 sources with eight patches:
 
-- [picoclaw/tool-status.patch](picoclaw/tool-status.patch) — у каждого инструмента появляется
-  обязательный аргумент `status`: фраза о текущем этапе, которую бот показывает в Telegram вместо
-  команды; перед вызовом инструмента аргумент вырезается.
-- [picoclaw/asr-proxy.patch](picoclaw/asr-proxy.patch) — распознавание голоса ходит через прокси,
-  заданный модели, как и запросы к самим моделям; без патча оно шло напрямую, и Groq отвечал 403.
-- [picoclaw/image-shrink.patch](picoclaw/image-shrink.patch) — картинки уходят модели в JPEG не больше
-  1280 точек по длинной стороне; полноразмерные скриншоты (PNG по 1,6–2,3 МБ) переполняли запрос, и
-  nano-gpt отвечал 413.
-- [picoclaw/tool-feedback.patch](picoclaw/tool-feedback.patch) — шаг в Telegram выглядит как «Смотрю
-  файлы раздачи второго сезона (`mcp_tv_files`)», приходит без звука и без анимации точками; итоговый
-  ответ — со звуком.
-- [picoclaw/keep-logs.patch](picoclaw/keep-logs.patch) — каждое сообщение разговора дописывается ещё и
-  в архив, который PicoClaw не переписывает при сжатии истории, а ответ модели об ошибке пишется в лог
-  до 4 КБ, а не первыми 128 байтами.
-- [picoclaw/shared-session.patch](picoclaw/shared-session.patch) — телевизор и чат с ботом в Telegram —
-  личный чат или группа — один диалог, их связывает `session.identity_links` в конфиге. Вопрос с
-  телевизора (канал pico) агент получает как сообщение этого чата: история у них одна, сообщение с
-  любой стороны посреди хода агент подхватывает, как второе сообщение в Telegram, а в чате вопрос виден
-  строкой от бота «📺 …». Весь текст, который ход отправляет в чат, — шаги, промежуточный текст, ответ,
-  ошибку, сообщения инструмента message — шлюз повторяет на телевизор, файлы — нет; туда же он
-  отправляет сообщения из Telegram и конец каждого хода.
-- [picoclaw/start-to-agent.patch](picoclaw/start-to-agent.patch) — `/start` уходит агенту, и тот
-  отвечает сам — по-русски, как велит ему AGENT.md; без патча бот отвечал строкой «Hello! I am
-  PicoClaw 🦞».
-- [picoclaw/pico-audio.patch](picoclaw/pico-audio.patch) — канал pico принимает голосовое: запись с
-  кнопки микрофона пульта шлюз сохраняет, помечает `[voice]` и распознаёт тем же Groq, что и голосовые
-  из Telegram.
+- [picoclaw/tool-status.patch](picoclaw/tool-status.patch): every tool gets a required `status` argument,
+  a phrase about the current stage that the bot shows in Telegram instead of the command; the argument is
+  stripped before the tool runs. The phrase is in the same language as the replies, which AGENT.md sets.
+- [picoclaw/asr-proxy.patch](picoclaw/asr-proxy.patch): speech recognition goes through the proxy set for
+  the model, like the model requests themselves; without the patch it went direct, and Groq answered 403.
+- [picoclaw/image-shrink.patch](picoclaw/image-shrink.patch): images go to the model as JPEG of at most
+  1280 px on the long side; full-size screenshots (PNG of 1.6–2.3 MB) overflowed the request, and
+  nano-gpt answered 413.
+- [picoclaw/tool-feedback.patch](picoclaw/tool-feedback.patch): a step in Telegram looks like "Looking at
+  the files of the second season's release (`mcp_tv_files`)" and arrives silently, without the dots
+  animation; the final answer comes with sound.
+- [picoclaw/keep-logs.patch](picoclaw/keep-logs.patch): every message of the conversation also goes to
+  an archive that PicoClaw never rewrites when it compresses history, and the model's error response goes
+  to the log up to 4 KB instead of its first 128 bytes.
+- [picoclaw/shared-session.patch](picoclaw/shared-session.patch): the TV and the Telegram chat with the
+  bot, a private chat or a group, are one dialog, linked by `session.identity_links` in the config. The
+  agent gets a question from the TV (the pico channel) as a message of that chat: they share one history,
+  the agent picks up a message from either side in the middle of a turn, like a second message in
+  Telegram, and the chat shows the question as a line from the bot, "📺 …". All text a turn sends to the
+  chat (steps, intermediate text, the answer, an error, messages of the message tool) the gateway repeats
+  to the TV, files excepted; it also sends there the messages from Telegram and the end of every turn.
+- [picoclaw/start-to-agent.patch](picoclaw/start-to-agent.patch): `/start` goes to the agent, which
+  answers itself, in the language AGENT.md sets for it; without the patch the bot answered with the line
+  "Hello! I am PicoClaw 🦞".
+- [picoclaw/pico-audio.patch](picoclaw/pico-audio.patch): the pico channel takes a voice note: the gateway
+  saves the recording from the remote's microphone button, marks it `[voice]` and transcribes it with the
+  same Groq as Telegram voice notes.
 
-Сборок две, обе — статические бинарники: linux/armv7 и linux/arm64, в APK едут обе. 32-битная
-проверена на GT-King и GT-King Pro (Android 9, пространство пользователя 32-битное), 64-битная на
-приставке не проверена.
+There are two builds, both static binaries, linux/armv7 and linux/arm64, and the APK carries both. The
+32-bit one is tested on GT-King and GT-King Pro (Android 9, 32-bit userspace); the 64-bit one has not been
+tested on a box.
 
-Недостающие программы агент ставит себе сам из Termux (сборка с GitHub для той же архитектуры, на
-которой работает приложение: armeabi-v7a или arm64-v8a): пакеты — от пользователя Termux через
-`run-as com.termux`, запуск — от root, каталог программ Termux у агента в PATH.
+The agent installs missing programs for itself from Termux (the GitHub build for the same architecture
+the app runs on: armeabi-v7a or arm64-v8a): packages as the Termux user through `run-as com.termux`,
+running as root, with Termux's program directory on the agent's PATH.
 
-Главный экран — наш форк лаунчера OmarchyTV ([launcher/](launcher/), приложение
-`xyz.vvzvlad.popcornclaw`; исходный лаунчер — <https://gitlab.com/piermark/omarchytv>, MIT). В нём
-живёт агент: бинарник PicoClaw лежит внутри APK, служба приложения запускает его от root через su,
-раз в 10 с спрашивает у шлюза `/health` и после трёх неудач подряд запускает шлюз заново — не чаще раза
-в минуту; при загрузке приставки служба стартует сама. Тема лаунчера — своя, popcorn: тёмно-коричневая,
-с золотым акцентом и неподвижными обоями (ведро попкорна справа), темы и обои сами не меняются.
+The home screen is our fork of the OmarchyTV launcher ([launcher/](launcher/), app
+`xyz.vvzvlad.popcornclaw`; the original launcher is <https://gitlab.com/piermark/omarchytv>, MIT). The
+agent lives in it: the PicoClaw binary sits inside the APK, the app's service starts it as root through
+su, asks the gateway's `/health` every 10 s and after three failures in a row starts the gateway again, no
+more than once a minute; the service starts by itself when the box boots. The launcher's theme is our own,
+popcorn: dark brown with a gold accent and a still wallpaper (a popcorn bucket on the right); themes and
+wallpapers do not change by themselves.
 
-На главном экране справа, на месте виджетов лаунчера, всегда видна лента разговора с агентом в виде
-консоли: сообщение, рассуждения и ответ модели, вызовы инструментов и первая строка их вывода, внизу —
-строка состояния («✻ Работает… 1:23 · последний шаг 4 с назад», между ходами — «ждёт сообщения · ответ
-в 23:01»). Ход, в котором 10 минут не было нового шага, считается оборвавшимся: «ход оборвался ·
-последний шаг в 23:01».
+On the right of the home screen, in place of the launcher's widgets, the conversation with the agent is
+always visible as a console: the message, the model's reasoning and answer, tool calls and the first line
+of their output, and at the bottom a status line ("✻ Working… 1:23 · last step 4 s ago", between turns
+"waiting for a message · replied at 23:01"). A turn with no new step for 10 minutes counts as broken off:
+"turn broke off · last step at 23:01".
 
-Каждое новое сообщение агенту — из Telegram, с телевизора или с командной строки — служба приложения
-показывает окном вверху экрана поверх всего, фильма тоже. Под ним в том же окне идёт последнее сообщение
-агента из тех, что получает чат Telegram, связанный с телевизором: шаг, промежуточный текст, ответ или
-ошибка. Пока ход идёт, перед ним крутится спиннер и окно не пропадает; после конца хода оно уходит через 10 с.
-Сообщение с командной строки, ответов на которое в Telegram нет, висит 10 с.
+Every new message to the agent, from Telegram, the TV or the command line, the app's service shows in a
+window at the top of the screen over everything, a movie too. Below it, in the same window, comes the
+agent's latest message among those the Telegram chat linked to the TV gets: a step, intermediate text,
+the answer or an error. While the turn runs, a spinner turns in front of it and the window stays; after
+the turn ends it goes away in 10 s. A message from the command line, which has no replies in Telegram,
+stays for 10 s.
 
-С телевизора агенту пишут на экране ассистента лаунчера (Grok Bot в исходном OmarchyTV). Вопрос,
-который не узнали встроенные команды лаунчера, уходит агенту через WebSocket канала pico шлюза
-(`ws://127.0.0.1:18790/pico/ws?session_id=tv`, одно соединение на всё приложение: открывается при старте
-службы приложения, без экрана, а после обрыва — снова через 5 с) — в тот же диалог, что и Telegram. Экран
-показывает весь диалог, и ходы, начатые в Telegram: сообщение из Telegram — строкой пользователя, каждый
-шаг агента — строкой, итоговый ответ заменяет шаги. Спросить можно и посреди хода — агент подхватит
-вопрос. Набранный на клавиатуре текст попадает в строку ввода, где бы ни стоял фокус. Голосом — кнопкой
-микрофона или кнопкой поиска на пульте: экран просит у распознавателя приставки русскую речь (`ru-RU`),
-нужен микрофон или пульт с микрофоном.
+A question from the TV goes to the agent over the gateway's pico channel WebSocket
+(`ws://127.0.0.1:18790/pico/ws?session_id=tv`, one connection for the whole app: it opens when the app's
+service starts, and after a drop again in 5 s), into the same dialog as Telegram. The panel MCP server's
+`ask_agent` takes the same path. You can ask in the middle of a turn too, and the agent picks the
+question up.
 
-Кнопка микрофона Bluetooth-пульта с голосом (проверено на Xiaomi XMRM-007) спрашивает агента с любого
-экрана, фильма тоже: система открывает на неё голосовой поиск (`android.speech.action.WEB_SEARCH`), его
-принимает прозрачное окно приложения `VoiceSearchActivity`, распознаватель приставки слушает русскую речь,
-и текст уходит агенту так же, как вопрос с экрана ассистента. Приложение при первом запуске и после
-каждой установки или обновления назначает это окно голосовым поиском по умолчанию и даёт себе доступ к
-микрофону. Галочка «Remote's voice button talks to the agent» на вкладке STT панели выключает перехват
-сразу при сохранении.
+The microphone button of a Bluetooth voice remote (tested on Xiaomi XMRM-007) asks the agent from any
+screen, a movie too: the system opens voice search for it (`android.speech.action.WEB_SEARCH`), the app's
+transparent window `VoiceSearchActivity` takes it, the box's recognizer listens for speech in the language
+from the "Remote's voice language" field on the panel's STT tab (an empty field means the system language,
+for example `en-US`; for Russian, `ru-RU`), and the text goes to the agent over the pico channel. On first
+start and after every install or update the app makes this window the default voice search and grants
+itself the microphone. The "Remote's voice button talks to the agent" checkbox on the panel's STT tab
+turns the interception off as soon as you save.
 
-Чтобы такой пульт переподключался сам, служба приложения при старте и после каждого нового сопряжения
-убирает из настроек Bluetooth два его ключа (`LE_KEY_PID`, `LE_KEY_LID`) и перезапускает Bluetooth: с
-ними Android 9 подключается к пульту со случайного адреса, и пульт не отвечает.
+To make such a remote reconnect by itself, the app's service, on start and after every new pairing,
+removes two of its keys (`LE_KEY_PID`, `LE_KEY_LID`) from the Bluetooth settings and restarts Bluetooth:
+with them Android 9 connects to the remote from a random address, and the remote does not answer.
 
-## Что где на приставке
+## What lives where on the box
 
-| Путь | Что |
+| Path | What |
 | --- | --- |
-| `/data/local/popcornclaw/picoclaw` | ссылка на бинарник PicoClaw из APK (`/data/app/xyz.vvzvlad.popcornclaw-…/lib/arm/libpicoclaw.so`, на 64-битной приставке — `lib/arm64/`; каталог меняется при каждой установке, ссылку обновляет запуск шлюза) |
-| `/data/local/popcornclaw/config.json` | конфиг PicoClaw: на свежей приставке — из APK, дальше его правит панель; права 600 |
-| `/data/local/popcornclaw/.security.yml` | ключи модели, Groq, Brave Search и токен бота; права 600 |
-| `/data/local/popcornclaw/tv_mcp.json` | настройки поиска и субтитров (TorrServer, Jackett, ключи субтитров); права 600 |
-| `/data/local/popcornclaw/workspace/` | рабочий каталог агента, справка ему — `AGENT.md` (на свежей приставке — из APK) |
-| `/data/local/popcornclaw/subs/` | субтитры, которые агент сам распознаёт из звука серии и подгоняет: распознанная речь `<название>.speech.<язык>.srt` и подогнанные `<имя>.sync.<язык>.srt`; права 644, их читает mpv |
-| `/data/local/popcornclaw/gateway.log` | вывод шлюза в консоль, дописывается с каждого запуска |
-| `/data/local/popcornclaw/logs/gateway.log` | лог PicoClaw в JSON, уровень `info`; `gateway_panic.log` рядом — падения |
-| `/data/local/popcornclaw/workspace/sessions/archive/` | все сообщения каждого разговора по порядку; живой файл разговора рядом PicoClaw при сжатии истории переписывает, архив — никогда |
-| `/data/data/com.termux/files/usr` | Termux: менеджер пакетов агента. Termux внесён в белый список режима сна (`dumpsys deviceidle whitelist +com.termux`): ни разу не открытое приложение Android держит в режиме ожидания и отклоняет всю его сеть |
-| приложение `xyz.vvzvlad.popcornclaw` | форк лаунчера OmarchyTV с агентом, главный экран (`cmd package set-home-activity`). Служба `AgentService` держит шлюз запущенным; приложение в белом списке режима сна (`dumpsys deviceidle whitelist`), иначе Android останавливает службу, когда лаунчер уходит с экрана. Право рисовать поверх других приложений (`appops set xyz.vvzvlad.popcornclaw SYSTEM_ALERT_WINDOW allow`) нужно окну с командой агенту и его сообщениями. Заставка лаунчера выключена: `"screensaver": {"idleSec": 0}` в `/sdcard/Android/data/xyz.vvzvlad.popcornclaw/files/omarchytv.json`, приложение кладёт этот файл, если его нет |
-| `/system/etc/resolv.conf` | в Android этого файла нет, а статический Go-бинарник без него ищет DNS на 127.0.0.1:53. Приложение пишет туда шлюз сети приставки, а если его не узнать — `net.dns1` или 1.1.1.1. Go не знает и где в Android хранилище CA, поэтому шлюз запускается с `SSL_CERT_DIR=/system/etc/security/cacerts` |
+| `/data/local/popcornclaw/picoclaw` | link to the PicoClaw binary from the APK (`/data/app/xyz.vvzvlad.popcornclaw-…/lib/arm/libpicoclaw.so`, on a 64-bit box `lib/arm64/`; the directory changes with every install, and the gateway's start updates the link) |
+| `/data/local/popcornclaw/config.json` | PicoClaw config: on a fresh box from the APK, then the panel edits it; mode 600 |
+| `/data/local/popcornclaw/.security.yml` | keys for the model, Groq, Brave Search and the bot token; mode 600 |
+| `/data/local/popcornclaw/tv_mcp.json` | search and subtitle settings (TorrServer, Jackett, subtitle keys); mode 600 |
+| `/data/local/popcornclaw/workspace/` | the agent's working directory; its instructions are `AGENT.md` (on a fresh box from the APK) |
+| `/data/local/popcornclaw/subs/` | subtitles the agent recognises from the episode's sound and aligns itself: the recognised speech `<title>.speech.<lang>.srt` and the aligned `<name>.sync.<lang>.srt`; mode 644, mpv reads them |
+| `/data/local/popcornclaw/gateway.log` | the gateway's console output, appended on every start |
+| `/data/local/popcornclaw/logs/gateway.log` | PicoClaw's JSON log, level `info`; `gateway_panic.log` next to it holds crashes |
+| `/data/local/popcornclaw/workspace/sessions/archive/` | every message of every conversation in order; PicoClaw rewrites the live conversation file next to it when it compresses history, the archive never |
+| `/data/data/com.termux/files/usr` | Termux, the agent's package manager. Termux is on the doze whitelist (`dumpsys deviceidle whitelist +com.termux`): Android keeps an app that was never opened in standby and refuses all its network |
+| app `xyz.vvzvlad.popcornclaw` | the OmarchyTV launcher fork with the agent, the home screen (`cmd package set-home-activity`). The `AgentService` service keeps the gateway running; the app is on the doze whitelist (`dumpsys deviceidle whitelist`), otherwise Android stops the service when the launcher leaves the screen. The right to draw over other apps (`appops set xyz.vvzvlad.popcornclaw SYSTEM_ALERT_WINDOW allow`) is needed by the window with the command to the agent and its messages. The launcher's screensaver is off: `"screensaver": {"idleSec": 0}` in `/sdcard/Android/data/xyz.vvzvlad.popcornclaw/files/omarchytv.json`; the app puts this file there if it is missing |
+| `/system/etc/resolv.conf` | Android has no such file, and a static Go binary without it looks for DNS at 127.0.0.1:53. The app writes the box's network gateway there, or `net.dns1` or 1.1.1.1 if the gateway is unknown. Go does not know where Android keeps its CA store either, so the gateway runs with `SSL_CERT_DIR=/system/etc/security/cacerts` |
 
-## Сборка
+## Building
 
-Всё тяжёлое собирается в Docker: PicoClaw v0.3.1 с патчами из [picoclaw/](picoclaw/) — целью
-`make build/arm/picoclaw` и `make build/arm64/picoclaw`, APK — Gradle внутри
-[launcher/Dockerfile](launcher/Dockerfile), вместе с бинарниками PicoClaw, TorrServer, ffprobe и ffmpeg в
-`lib/armeabi-v7a/` и `lib/arm64-v8a/`. Docker CLI может смотреть на удалённый
-демон: bind mount не используется, артефакты забираются `docker cp`. `make build/popcornclaw.apk`
-собирает всё целиком и подписывает релиз ключом, который выдаёт команда `KEY_CMD`: она получает
-каталог последним аргументом и кладёт туда `release.p12` (PKCS12, алиас `popcornclaw`) и `pass` с
-паролем. `make install TV=<адрес приставки>:5555` собирает APK и ставит его на приставку по adb.
-Тесты — `./gradlew testDebugUnitTest` в `launcher/`.
+Everything heavy builds in Docker: PicoClaw v0.3.1 with the patches from [picoclaw/](picoclaw/) through
+the `make build/arm/picoclaw` and `make build/arm64/picoclaw` targets, the APK with Gradle inside
+[launcher/Dockerfile](launcher/Dockerfile), together with the PicoClaw, TorrServer, ffprobe and ffmpeg binaries in
+`lib/armeabi-v7a/` and `lib/arm64-v8a/`. The Docker CLI may point at a remote daemon: no bind mounts are
+used, artifacts come back via `docker cp`. `make build/popcornclaw.apk` builds everything and signs the
+release with the key that the `KEY_CMD` command gives: it gets a directory as its last argument and puts
+`release.p12` (PKCS12, alias `popcornclaw`) and `pass` with the password there.
+`make install TV=<box address>:5555` builds the APK and installs it on the box over adb. Tests:
+`./gradlew testDebugUnitTest` in `launcher/`.
 
-## Лицензия
+## License
 
-MIT, см. [LICENSE](LICENSE). Внутри APK — PicoClaw (MIT), TorrServer MatriX.149, ffprobe и ffmpeg из FFmpeg
-6.0.1 (GNU GPL v3, без изменений, отдельными процессами), ZXing и OkHttp (Apache 2.0); тексты лицензий
-и ссылки на исходники — в окне About лаунчера и в
-[launcher/app/src/main/assets/licenses/](launcher/app/src/main/assets/licenses/). Termux в APK не
-входит: приложение скачивает официальную сборку с GitHub при первом запуске.
+MIT, see [LICENSE](LICENSE). Inside the APK: PicoClaw (MIT), TorrServer MatriX.149, ffprobe and ffmpeg from FFmpeg
+6.0.1 (GNU GPL v3, unmodified, as separate processes), ZXing and OkHttp (Apache 2.0); the license texts
+and links to the sources are in the launcher's About window and in
+[launcher/app/src/main/assets/licenses/](launcher/app/src/main/assets/licenses/). Termux is not in the
+APK: the app downloads the official build from GitHub on first start.

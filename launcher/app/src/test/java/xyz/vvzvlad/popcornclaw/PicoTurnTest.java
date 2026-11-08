@@ -183,15 +183,15 @@ public class PicoTurnTest {
         turn.ask("q1");
         record(turn.lost("closed 1001"));
         assertNull(turn.id());
-        assertScreen("answer_error q1 нет связи с агентом: closed 1001");
+        assertScreen("answer_error q1 no connection to the agent: closed 1001");
     }
 
     @Test
     public void questionThatDidNotLeave() {
         turn.ask("q1");
-        record(turn.failed("вопрос не ушёл агенту: соединение закрывается"));
+        record(turn.failed("the question did not reach the agent: the connection is closing"));
         assertNull(turn.id());
-        assertScreen("answer_error q1 вопрос не ушёл агенту: соединение закрывается");
+        assertScreen("answer_error q1 the question did not reach the agent: the connection is closing");
     }
 
     @Test

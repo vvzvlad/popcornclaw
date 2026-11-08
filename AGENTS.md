@@ -67,7 +67,10 @@ remote daemon: no bind mounts, artefacts come back via `docker cp`.
 
 ## Conventions
 
-- Code comments, commit messages (subject and body) — English. README and agent texts — Russian.
+- Code comments, commit messages (subject and body) — English. README in two languages kept in step:
+  `README.md` English, `README.ru.md` Russian. What the app ships — screen strings, tv_mcp tool texts, the
+  default `AGENT.md` — English; the language of the agent's replies is set in `AGENT.md` (English by
+  default), not in code or patches.
 - Routine through `make` targets.
 - Default branch `main`.
 - The repository is public: no maintainer infrastructure in tracked files or commit messages — his

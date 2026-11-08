@@ -117,10 +117,10 @@ public class SubToolsTest {
     public void unmeasuredStretchesAreNamed() {
         // House 4x16 sampled at 2:00, 10:00, 25:00, 40:00: the first and the last piece were ambiguous.
         List<SubSync.Piece> pieces = Arrays.asList(
-                new SubSync.Piece(120, 150, 6, 8, 4.24, false, "неоднозначно"),
+                new SubSync.Piece(120, 150, 6, 8, 4.24, false, "ambiguous"),
                 new SubSync.Piece(601, 657, 16, 20, 4.2, true, null),
                 new SubSync.Piece(1517, 1559, 10, 13, 1.2, true, null),
-                new SubSync.Piece(2402, 2456, 4, 11, -0.29, false, "неоднозначно"));
+                new SubSync.Piece(2402, 2456, 4, 11, -0.29, false, "ambiguous"));
         List<Srt.Cue> shifted = Arrays.asList(new Srt.Cue(4.9, 6.1, "a"), new Srt.Cue(2585, 2590, "z"));
         List<double[]> gaps = SubTools.unmeasured(pieces, shifted);
         assertEquals(3, gaps.size());
@@ -132,10 +132,10 @@ public class SubToolsTest {
         // The piece offered at 17:37 was rejected (it fell on the step): the next offer is elsewhere, and once
         // rejected pieces leave no room the stretch is named without a place.
         List<SubSync.Piece> retried = new ArrayList<>(pieces);
-        retried.add(2, new SubSync.Piece(1058, 1116, 5, 12, 2.5, false, "неоднозначно"));
+        retried.add(2, new SubSync.Piece(1058, 1116, 5, 12, 2.5, false, "ambiguous"));
         assertArrayEquals(new double[]{657, 1517, 1, 827.5}, SubTools.unmeasured(retried, shifted).get(1), 1e-9);
         List<SubSync.Piece> full = new ArrayList<>(pieces);
-        for (double t = 700; t < 1517; t += 150) full.add(2, new SubSync.Piece(t, t + 60, 2, 9, 0, false, "мало"));
+        for (double t = 700; t < 1517; t += 150) full.add(2, new SubSync.Piece(t, t + 60, 2, 9, 0, false, "too few"));
         full.sort((x, y) -> Double.compare(x.from, y.from));
         assertTrue(Double.isNaN(SubTools.unmeasured(full, shifted).get(1)[3]));
 
@@ -300,10 +300,10 @@ public class SubToolsTest {
 
     @Test
     public void delays() {
-        assertEquals("+0,5 с", TvMcpServer.delayText(0.5));
-        assertEquals("-1,25 с", TvMcpServer.delayText(-1.25));
-        assertEquals("+3,0 с", TvMcpServer.delayText(3));
-        assertEquals("+0,0 с", TvMcpServer.delayText(-0.001));
+        assertEquals("+0.5 s", TvMcpServer.delayText(0.5));
+        assertEquals("-1.25 s", TvMcpServer.delayText(-1.25));
+        assertEquals("+3.0 s", TvMcpServer.delayText(3));
+        assertEquals("+0.0 s", TvMcpServer.delayText(-0.001));
     }
 
     private static JSONObject seg(double start, double end, String text) throws Exception {

@@ -105,7 +105,7 @@ public final class MpvIpc {
      * answers with an error, {@link IpcClosed} on timeout or a closed connection.
      */
     public Object command(Object... args) throws MpvError {
-        if (closed) throw new IpcClosed("mpv закрыл соединение");
+        if (closed) throw new IpcClosed("mpv closed the connection");
         int id = ids.incrementAndGet();
         byte[] bytes = encode(args, id);
         Waiter waiter = new Waiter();
@@ -116,11 +116,11 @@ public final class MpvIpc {
                 out.flush();
             }
             boolean got = waiter.latch.await(IPC_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-            if (!got) throw new IpcClosed("mpv не ответил за " + (IPC_TIMEOUT_MS / 1000) + " с");
+            if (!got) throw new IpcClosed("mpv did not answer within " + (IPC_TIMEOUT_MS / 1000) + " s");
             // A delivered reply wins over a concurrent close: when mpv answers and then shuts the socket, the
             // reader may set waiter.closed on the same waiter before this thread wakes, but the reply is still
             // valid and must be returned (mirrors the Python reader's "if not reply.done()" guard).
-            if (waiter.reply == null) throw new IpcClosed("mpv закрыл соединение");
+            if (waiter.reply == null) throw new IpcClosed("mpv closed the connection");
             JSONObject reply = waiter.reply;
             String error = reply.optString("error", "");
             if (!"success".equals(error)) throw new MpvError(cmdName(args), error);

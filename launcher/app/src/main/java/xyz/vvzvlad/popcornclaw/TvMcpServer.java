@@ -28,7 +28,7 @@ import java.util.regex.Pattern;
  * The box's own tv_mcp: the Java port of the Python tv_mcp MCP server (src/server.py, src/tv.py), run in the
  * launcher app so the box no longer has to carry a Python service. It speaks the same MCP surface -- the six
  * tools {@code search}, {@code files}, {@code prepare}, {@code play}, {@code player}, {@code find_subtitles}
- * with their verbatim Russian descriptions -- over JSON-RPC 2.0 on a bound {@link ServerSocket}, shaped exactly
+ * with their descriptions -- over JSON-RPC 2.0 on a bound {@link ServerSocket}, shaped exactly
  * like {@link ControlServer}: an accept loop, one thread per connection and raw HTTP parsing.
  *
  * <p>All six tools are ported; {@code transcribe} and {@code sync_subtitles} ({@link SubTools}) are this server's
@@ -54,106 +54,113 @@ public final class TvMcpServer {
 
     private static final String MCP_PROTOCOL = "2025-06-18";
 
-    // --- verbatim tool descriptions (src/server.py) --------------------------------------------------------
-    // Copied byte for byte from the Python server, including the spaces that joined its adjacent string
-    // literals: every character of these lands in the model's context, so the port must not change them.
-    // One departure: SEARCH's first sentence names no Jackett trackers, as without Jackett it searches RuTor.
+    // --- tool descriptions (translated from src/server.py) ------------------------------------------------
+    // Every character of these lands in the model's context. One departure from the Python server: SEARCH's
+    // first sentence names no Jackett trackers, as without Jackett it searches RuTor.
     // PLAYER's tail from sub_add on, TRANSCRIBE and SYNC_SUBTITLES are this server's own.
 
     private static final String SEARCH =
-            "Найти раздачу фильма или сериала (через Jackett или поиск RuTor в TorrServer). "
-            + "query — только название, без сезона и серии: со словами «третий сезон», «season 3» трекеры "
-            + "ничего не находят; сезон и серию передай в prepare и play. "
-            + "У названия с ремейками добавь в запрос год («Сёгун 2024»). "
-            + "Первые строки «id N: в TorrServer, размер: название» — раздачи, которые уже стоят на сервере "
-            + "(то, что пользователь смотрит), с «последний просмотренный файл — K» (номер файла, как в "
-            + "files), если он есть: когда нужный сериал там есть, бери его id, а не другую раздачу. "
-            + "Дальше до 10 строк «id N: сиды, размер, трекер: название»; для play бери id из строки, "
-            + "а не её место в списке. id — служебный номер, пользователю его не называй: говори о раздаче "
-            + "по сути (качество, озвучка или субтитры, размер, сезон). subtitles — код языка субтитров "
-            + "(«ru») или два через запятую («ru,en»), audio — код языка озвучки («en»): с любым из них "
-            + "первые 5 раздач с 5 и больше сидами проверяются на дорожки этих языков (обычно 1–2 минуты; "
-            + "если раздачи не читаются — до 12 минут), раздачи, где есть всё запрошенное, поднимаются "
-            + "наверх, их id не меняются; «надписи» — надписи на экране, песни или комментарии, это не "
-            + "полные субтитры.";
+            "Find a release of a movie or series (through Jackett or TorrServer's RuTor search). "
+            + "query is the title only, without season or episode: with words like \"third season\" or "
+            + "\"season 3\" the trackers find nothing; pass the season and episode to prepare and play. "
+            + "For a title that has remakes, add the year to the query (\"Shogun 2024\"). "
+            + "The first lines \"id N: in TorrServer, size: title\" are releases already on the server "
+            + "(what the user watches), with \"last watched file — K\" (the file number, as in files) when "
+            + "there is one: when the series asked for is there, take its id, not another release. "
+            + "Then up to 10 lines \"id N: seeders, size, tracker: title\"; for play take the id from the "
+            + "line, not its place in the list. The id is an internal number, never tell it to the user: "
+            + "describe the release by what it is (quality, audio or subtitles, size, season). subtitles is "
+            + "a subtitle language code (\"en\") or two separated by a comma (\"en,ru\"), audio is an audio "
+            + "language code (\"en\"): with either of them the first 5 releases with 5 or more seeders are "
+            + "checked for tracks in those languages (usually 1–2 minutes; up to 12 minutes when releases "
+            + "cannot be read), releases that have everything asked for move to the top, their ids do not "
+            + "change; \"signs\" means on-screen signs, songs or commentary, not full subtitles.";
 
     private static final String FILES =
-            "Видеофайлы раздачи id из search по порядку: «N: путь, размер». Нужен, когда серию не найти "
-            + "по season и episode (в названиях файлов нет номеров вида S01E05): выбери файл по названию и "
-            + "передай его N в prepare и play как file. Ставит раздачу в TorrServer, телевизор не трогает.";
+            "The video files of release id from search, in order: \"N: path, size\". Needed when the episode "
+            + "cannot be found by season and episode (the file names carry no numbers like S01E05): pick the "
+            + "file by its name and pass its N to prepare and play as file. Adds the release to TorrServer, "
+            + "does not touch the TV.";
 
     private static final String PREPARE =
-            "Подготовить серию раздачи id из search к play, телевизор не трогает: ставит её в TorrServer "
-            + "на скачивание с прелоадом (season, episode или file — как в play) и до 90 с проверяет, "
-            + "успевает ли раздача. Готово, когда скорость за 10 с в 1,5 раза выше, чем нужно серии, или "
-            + "прелоад серии докачан или уже лежит в кэше: ответ называет серию и скорость (или что прелоад уже в кэше) и, если кэш был "
-            + "неполным, сколько в нём — тогда play с теми же id, season, episode или file. Не успевает или "
-            + "нет пиров 30 с — ошибка с цифрами: скажи их и предложи другую раздачу. Перед prepare и перед "
-            + "play скажи пользователю, что делаешь.";
+            "Prepare an episode of release id from search for play, without touching the TV: adds it to "
+            + "TorrServer for download with a preload (season, episode or file — as in play) and for up to "
+            + "90 s checks whether the release keeps up. Ready when the speed over 10 s is 1.5 times what the "
+            + "episode needs, or the episode's preload is downloaded or already in the cache: the reply names "
+            + "the episode and the speed (or that the preload is already cached) and, if the cache was "
+            + "incomplete, how much is in it — then call play with the same id, season, episode or file. Does "
+            + "not keep up, or no peers for 30 s — an error with the numbers: tell them and offer another "
+            + "release. Before prepare and before play, tell the user what you are doing.";
 
     private static final String PLAY =
-            "Включить на телевизоре (mpv на приставке) раздачу id из search; mpv выводится на экран (и "
-            + "запускается, если не запущен). season и episode — номер сезона и серии; указана только "
-            + "серия — сезон 1; серия не указана — первый видеофайл (или первый файл сезона season). file — "
-            + "номер видеофайла из files вместо season и episode. mpv "
-            + "получает все серии раздачи плейлистом и дальше идёт по порядку. subtitles — код языка "
-            + "(«ru») или два через запятую («ru,en»): полные субтитры первого языка внизу, второго — "
-            + "сверху (только текстовые); audio — код языка озвучки («en»). Выбор держится за раздачей — "
-            + "той же темой трекера (и когда в ней вышла новая серия) или тем же торрентом с другого "
-            + "трекера: на следующих сериях, после stop и при play её серии без subtitles или audio, до "
-            + "перезапуска сервиса; субтитры сбрасывают только player subtitles off, выбор по номеру "
-            + "дорожки, которая не полные субтитры или без языка, и play другой раздачи без subtitles, "
-            + "озвучку — player audio с дорожкой без языка и play другой раздачи без audio. "
-            + "Обычно после prepare. Ждёт начала воспроизведения до 2 минут; если за 30 с к раздаче не "
-            + "подключился ни один пир, останавливает mpv и отвечает, что раздача мёртвая; если mpv не "
-            + "смог открыть серию или не включил её за 2 минуты, останавливает его и отвечает ошибкой с "
-            + "пирами и скоростью раздачи.";
+            "Play release id from search on the TV (mpv on the box); mpv is brought to the screen (and "
+            + "started if it is not running). season and episode are the season and episode numbers; only "
+            + "episode given — season 1; no episode given — the first video file (or the first file of the "
+            + "given season). file is a video file number from files instead of season and episode. mpv "
+            + "gets all the release's episodes as a playlist and goes on through them in order. subtitles is "
+            + "a language code (\"en\") or two separated by a comma (\"en,ru\"): full subtitles of the first "
+            + "language at the bottom, of the second on top (text ones only); audio is an audio language code "
+            + "(\"en\"). The choice sticks to the release — the same tracker topic (also when a new episode "
+            + "came out in it) or the same torrent from another tracker: on the following episodes, after "
+            + "stop and on a play of its episodes without subtitles or audio, until the service restarts; "
+            + "subtitles are reset only by player subtitles off, a choice by number of a track that is not "
+            + "full subtitles or has no language, and a play of another release without subtitles; audio "
+            + "only by player audio with a track that has no language and a play of another release without "
+            + "audio. Usually after prepare. Waits up to 2 minutes for playback to start; if no peer "
+            + "connected to the release within 30 s, stops mpv and replies that the release is dead; if mpv "
+            + "could not open the episode or did not start it within 2 minutes, stops it and replies with an "
+            + "error giving the release's peers and speed.";
 
     private static final String PLAYER =
-            "Управление тем, что играет в mpv. status — что играет, время, дорожки субтитров и звука с "
-            + "номерами и разрешение видео (ширина×высота, кадры/с: так видно, реально ли это 4К); "
-            + "subtext — субтитры, которые сейчас на экране (строка снизу и, если стоят два языка, верхняя): "
-            + "прочитать реплику, не перематывая вслепую; "
-            + "pause — пауза или продолжить; stop — остановить (mpv закрывается); subtitles — "
-            + "value: код языка или два через запятую, как в play, «off» или номер дорожки (она внизу, "
-            + "верхние выключаются); audio — value: код языка, часть названия дорожки или её номер, язык "
-            + "выбранной дорожки держится за раздачей, как audio в play; "
-            + "seek — перемотка, value: «+N» или «-N» секунд от текущего места («+600» — на 10 минут "
-            + "вперёд) либо время от начала «Ч:ММ:СС» или «ММ:СС» («45:00»); episode — другая серия того, "
-            + "что играет, без search и id: value «next», «prev» или номер серии в текущем сезоне; ответ и "
-            + "ошибки — как в play, только без проверки пиров за 30 с: мёртвая раздача — ошибка через 2 минуты. "
-            + "sub_add — подключить файл субтитров, value — путь, place «top» — верхней строкой (по умолчанию "
-            + "снизу), язык — из имени файла («серия.ru.srt»); sub_delay, top_sub_delay, audio_delay — сдвиг нижних "
-            + "сабов, верхних сабов, звука: value «+N» или «-N» секунд к текущему сдвигу либо число — весь сдвиг "
-            + "(«0»), плюс — позже; ненулевые сдвиги видны в status.";
+            "Control what plays in mpv. status — what plays, the time, the subtitle and audio tracks with "
+            + "their numbers and the video resolution (width×height, frames/s: shows whether it really is "
+            + "4K); subtext — the subtitles on screen now (the bottom line and, when two languages are on, "
+            + "the top one): to read a line without seeking blindly; "
+            + "pause — pause or resume; stop — stop (mpv closes); subtitles — "
+            + "value: a language code or two separated by a comma, as in play, \"off\" or a track number (it "
+            + "goes to the bottom, the top ones are turned off); audio — value: a language code, part of a "
+            + "track name or its number, the chosen track's language sticks to the release, like audio in "
+            + "play; seek — value: \"+N\" or \"-N\" seconds from the current position (\"+600\" is 10 "
+            + "minutes forward) or a time from the start \"H:MM:SS\" or \"MM:SS\" (\"45:00\"); episode — "
+            + "another episode of what plays, without search and id: value \"next\", \"prev\" or an episode "
+            + "number in the current season; the reply and errors are as in play, only without the 30 s "
+            + "peer check: a dead release is an error after 2 minutes. "
+            + "sub_add — load a subtitle file, value: its path, place \"top\" puts it on the top line (the bottom "
+            + "by default), the language comes from the file name (\"episode.ru.srt\"); sub_delay, top_sub_delay, "
+            + "audio_delay — the delay of the bottom subtitles, the top subtitles, the audio: value \"+N\" or "
+            + "\"-N\" seconds added to the current delay, or a number as the whole delay (\"0\"); plus is later; "
+            + "non-zero delays show in status.";
 
     private static final String TRANSCRIBE =
-            "Распознать речь того, что играет в mpv, в субтитры .srt (Whisper). at — места начала кусков через "
-            + "запятую: «Ч:ММ:СС», «ММ:СС» или секунды («2:00,7:00,12:00»); seconds — длина куска, по умолчанию "
-            + "60 (10–300); audio — язык или номер звуковой дорожки, как в player status (по умолчанию та, что "
-            + "играет). Минутный кусок — около 10 с рядом с местом, где стоит плеер, и до 2–3 минут там, где "
-            + "торрент ещё не качал. Пишет /data/local/popcornclaw/subs/<название>.speech.<язык>.srt; повторный "
-            + "вызов добавляет куски в тот же файл, распознанное в тех же местах заменяется. Ответ — путь, по куску "
-            + "«ММ:СС–ММ:СС: N фраз» и фразы «ММ:СС.с текст»; не вышедший кусок назван с причиной. Нужен, когда "
-            + "с субтитрами проблема: найти реплику без внешних субтитров, образец для sync_subtitles (для него — "
-            + "куски через каждые ~5 минут по всей серии).";
+            "Recognise the speech of what plays in mpv into .srt subtitles (Whisper). at — where the pieces start, "
+            + "separated by commas: \"H:MM:SS\", \"MM:SS\" or seconds (\"2:00,7:00,12:00\"); seconds — the length "
+            + "of a piece, 60 by default (10–300); audio — the language or number of the audio track, as in player "
+            + "status (by default the one playing). A one-minute piece takes about 10 s near where the player is, "
+            + "and up to 2–3 minutes where the torrent has not downloaded yet. Writes "
+            + "/data/local/popcornclaw/subs/<title>.speech.<lang>.srt; a repeated call adds pieces to the same "
+            + "file, what was recognised at the same places is replaced. The reply is the path, per piece "
+            + "\"MM:SS–MM:SS: N phrases\" and the phrases \"MM:SS.s text\"; a piece that failed is named with the "
+            + "reason. Needed when something is wrong with the subtitles: to find a line without external "
+            + "subtitles, or as the reference for sync_subtitles (for it, pieces every ~5 minutes across the whole "
+            + "episode).";
 
     private static final String SYNC_SUBTITLES =
-            "Подогнать тайминг субтитров subtitles под образец reference — обычно .srt из transcribe: находит "
-            + "сдвиг каждого участка (он может меняться ступеньками) и пишет "
-            + "/data/local/popcornclaw/subs/<имя>.sync.<язык>.srt. subtitles и reference — путь к файлу или номер "
-            + "внешней дорожки сабов из player status. Ответ — путь, сдвиги по участкам и куски образца, которые "
-            + "не сошлись, и где сдвиг угадан, потому что ни один кусок образца там не сошёлся, — где есть место, "
-            + "с местами для новых кусков transcribe, после которых вызови sync_subtitles заново. mpv не трогает: результат "
-            + "подключает player sub_add.";
+            "Align the timing of subtitles to the reference — usually the .srt from transcribe: finds the shift "
+            + "of each stretch (it can change in steps) and writes "
+            + "/data/local/popcornclaw/subs/<name>.sync.<lang>.srt. subtitles and reference are a file path or "
+            + "the number of an external subtitle track from player status. The reply is the path, the shifts by "
+            + "stretch, the reference pieces that did not match, and where the shift is a guess because no "
+            + "reference piece matched there — where there is room, with places for new transcribe pieces, after "
+            + "which call sync_subtitles again. Does not touch mpv: player sub_add loads the result.";
 
     private static final String FIND_SUBTITLES =
-            "Найти субтитры фильма или серии в базах OpenSubtitles и SubDL. query — оригинальное (обычно "
-            + "английское) название без сезона и серии: по русскому названию базы находят не всё. language — "
-            + "код языка («ru»). season и episode — для серии; указана только серия — сезон 1. Ответ — до 5 "
-            + "субтитров от каждой базы: какое название (и год, у серии — SxxEyy) нашлось, имена релизов, у "
-            + "OpenSubtitles — число загрузок, SDH — для слабослышащих. Это только список найденного: скачать "
-            + "и включить такие субтитры пока нельзя.";
+            "Find subtitles for a movie or an episode in the OpenSubtitles and SubDL databases. query is the "
+            + "original (usually English) title without season or episode: by a translated title the "
+            + "databases do not find everything. language is a language code (\"en\"). season and episode "
+            + "are for an episode; only episode given — season 1. The reply is up to 5 subtitles from each "
+            + "database: which title (and year, for an episode SxxEyy) was found, the release names, for "
+            + "OpenSubtitles the download count, SDH — for the hearing impaired. This is only a list of what "
+            + "was found: such subtitles cannot be downloaded and turned on yet.";
 
     // --- track machinery (src/tv.py) ----------------------------------------------------------------------
     // The subtitle-kind machinery and the track/describe formatters (describe*, selected, trackName, bitmap,
@@ -440,7 +447,7 @@ public final class TvMcpServer {
             case "sync_subtitles": {
                 String target = optArg(args, "subtitles");
                 String reference = optArg(args, "reference");
-                if (target == null || reference == null) throw new ToolError("Нужны subtitles и reference");
+                if (target == null || reference == null) throw new ToolError("subtitles and reference are required");
                 return subTools.sync(target, reference);
             }
             default:
@@ -496,7 +503,7 @@ public final class TvMcpServer {
                 }
             }
             if (isBlank(torrserverUrl)) {
-                throw new ToolError("tv_mcp не настроен: нет " + TV_SETTINGS_PATH + " или в нём нет torrserver_url");
+                throw new ToolError("tv_mcp is not set up: no " + TV_SETTINGS_PATH + " or no torrserver_url in it");
             }
             tv = new Tv(isBlank(jackettUrl) ? "" : jackettUrl, jackettApiKey, torrserverUrl);
             return tv;
@@ -552,8 +559,8 @@ public final class TvMcpServer {
                 }
             }
             if (isBlank(opensubtitlesApiKey) || isBlank(subdlApiKey)) {
-                throw new ToolError("tv_mcp не настроен: нет " + TV_SETTINGS_PATH
-                        + " или в нём нет opensubtitles_api_key/subdl_api_key");
+                throw new ToolError("tv_mcp is not set up: no " + TV_SETTINGS_PATH
+                        + " or no opensubtitles_api_key/subdl_api_key in it");
             }
             subtitles = new Subtitles(opensubtitlesApiKey, subdlApiKey);
             return subtitles;
@@ -625,33 +632,33 @@ public final class TvMcpServer {
                 }
             }
             if (ipc == null || playingPath == null) {
-                if ("status".equals(action) || "subtext".equals(action)) return "Ничего не играет";
-                throw new ToolError("Ничего не играет");
+                if ("status".equals(action) || "subtext".equals(action)) return "Nothing is playing";
+                throw new ToolError("Nothing is playing");
             }
             try {
                 if ("status".equals(action)) return status(ipc);
                 if ("subtext".equals(action)) return subtext(ipc);
                 if ("pause".equals(action)) {
                     ipc.command("cycle", "pause");
-                    return TvFormat.truthy(ipc.get("pause")) ? "Пауза" : "Играет";
+                    return TvFormat.truthy(ipc.get("pause")) ? "Paused" : "Playing";
                 }
                 if ("stop".equals(action)) {
                     // The languages stay chosen: a play of this release's next episode puts them on again
                     // (Python player stop: _unfollow then _stop).
                     unfollow();
                     stop(ipc);
-                    return "Остановлено";
+                    return "Stopped";
                 }
                 String value = args.optString("value", "");
-                if (value.isEmpty()) throw new ToolError("Для " + action + " нужен value");
+                if (value.isEmpty()) throw new ToolError(action + " needs a value");
                 value = value.trim();
                 if ("seek".equals(action)) return seek(ipc, value);
                 if ("sub_add".equals(action)) return subAdd(ipc, value, optArg(args, "place"));
-                if ("sub_delay".equals(action)) return delay(ipc, action, "sub-delay", "Сдвиг сабов", value);
+                if ("sub_delay".equals(action)) return delay(ipc, action, "sub-delay", "Subtitle delay", value);
                 if ("top_sub_delay".equals(action)) {
-                    return delay(ipc, action, "secondary-sub-delay", "Сдвиг сабов сверху", value);
+                    return delay(ipc, action, "secondary-sub-delay", "Top subtitle delay", value);
                 }
-                if ("audio_delay".equals(action)) return delay(ipc, action, "audio-delay", "Сдвиг звука", value);
+                if ("audio_delay".equals(action)) return delay(ipc, action, "audio-delay", "Audio delay", value);
                 if ("episode".equals(action)) return tv().episode(ipc, value.toLowerCase(Locale.ROOT));
                 // Before the command sets its own kind, so the follower has the playlist and the other kind.
                 tv().adopt(ipc);
@@ -667,7 +674,7 @@ public final class TvMcpServer {
 
     /** Port of Tv._status: the playing item, position, tracks and video resolution. */
     private static String status(MpvIpc ipc) throws MpvIpc.MpvError {
-        String paused = TvFormat.truthy(ipc.get("pause")) ? ", пауза" : "";
+        String paused = TvFormat.truthy(ipc.get("pause")) ? ", paused" : "";
         Object fps = ipc.get("container-fps");
         if (!TvFormat.truthy(fps)) fps = ipc.get("estimated-vf-fps");
         String video = TvFormat.describeVideo(TvFormat.asObject(ipc.get("video-params")), fps);
@@ -678,21 +685,21 @@ public final class TvMcpServer {
         JSONObject top = TvFormat.selected(tracks, "sub", 1);
         JSONObject aid = TvFormat.selected(tracks, "audio", 0);
         List<String> lines = new ArrayList<>();
-        lines.add("Играет: " + String.valueOf(ipc.get("media-title")) + paused + ", "
-                + TvFormat.clock(ipc.get("time-pos")) + " из " + TvFormat.clock(ipc.get("duration")) + video);
-        lines.add(sid != null ? TvFormat.describeEnabled(sid) : "Сабы: выкл");
-        if (top != null) lines.add("Сабы сверху: " + TvFormat.describeFull(top));
+        lines.add("Playing: " + String.valueOf(ipc.get("media-title")) + paused + ", "
+                + TvFormat.clock(ipc.get("time-pos")) + " of " + TvFormat.clock(ipc.get("duration")) + video);
+        lines.add(sid != null ? TvFormat.describeEnabled(sid) : "Subtitles: off");
+        if (top != null) lines.add("Top subtitles: " + TvFormat.describeFull(top));
         String subLine = joinSubtitles(subs);
-        lines.add("Дорожки сабов: " + (subLine.isEmpty() ? "нет" : subLine));
-        lines.add(aid != null ? "Звук: " + TvFormat.describeAudio(aid) : "Звук: выкл");
-        lines.add("Дорожки звука: " + TvFormat.describeAudios(voices));
-        addDelay(lines, ipc, "sub-delay", "Сдвиг сабов");
-        addDelay(lines, ipc, "secondary-sub-delay", "Сдвиг сабов сверху");
-        addDelay(lines, ipc, "audio-delay", "Сдвиг звука");
+        lines.add("Subtitle tracks: " + (subLine.isEmpty() ? "none" : subLine));
+        lines.add(aid != null ? "Audio: " + TvFormat.describeAudio(aid) : "Audio: off");
+        lines.add("Audio tracks: " + TvFormat.describeAudios(voices));
+        addDelay(lines, ipc, "sub-delay", "Subtitle delay");
+        addDelay(lines, ipc, "secondary-sub-delay", "Top subtitle delay");
+        addDelay(lines, ipc, "audio-delay", "Audio delay");
         return TvFormat.join(lines);
     }
 
-    /** A status line «label: +0,5 с» for a delay property that is not zero. */
+    /** A status line "label: +0.5 s" for a delay property that is not zero. */
     private static void addDelay(List<String> lines, MpvIpc ipc, String prop, String label) throws MpvIpc.MpvError {
         Object v;
         try {
@@ -715,8 +722,8 @@ public final class TvMcpServer {
             throws MpvIpc.MpvError, ToolError {
         Matcher m = DELAY.matcher(value);
         if (!m.matches()) {
-            throw new ToolError("Для " + action + " нужен value «+N» или «-N» секунд к текущему сдвигу либо число — "
-                    + "весь сдвиг, а не «" + value + "»");
+            throw new ToolError(action + " needs value \"+N\" or \"-N\" seconds added to the current delay, or a "
+                    + "number as the whole delay, not \"" + value + "\"");
         }
         double n = Double.parseDouble(m.group(2).replace(',', '.'));
         double target = n;
@@ -729,24 +736,24 @@ public final class TvMcpServer {
         return label + ": " + delayText(now instanceof Number ? ((Number) now).doubleValue() : target);
     }
 
-    /** A delay as «+0,5 с», «-1,25 с», «+3,0 с». */
+    /** A delay as "+0.5 s", "-1.25 s", "+3.0 s". */
     static String delayText(double seconds) {
         if (Math.abs(seconds) < 0.005) seconds = 0;
         String s = String.format(Locale.ROOT, "%+.2f", seconds);
         if (s.endsWith("0")) s = s.substring(0, s.length() - 1);
-        return s.replace('.', ',') + " с";
+        return s + " s";
     }
 
     /**
-     * sub_add: mpv loads the subtitle file {@code path} as a new track (its language from the name's «.xx.srt»,
-     * so player subtitles finds it) and shows it at the bottom (sid) or, for {@code place} «top», the top
+     * sub_add: mpv loads the subtitle file {@code path} as a new track (its language from the name's ".xx.srt",
+     * so player subtitles finds it) and shows it at the bottom (sid) or, for {@code place} "top", the top
      * (secondary-sid). Only the slot asked for changes.
      */
     private static String subAdd(MpvIpc ipc, String path, String place) throws MpvIpc.MpvError, ToolError {
         boolean top;
         if (place == null || "bottom".equals(place)) top = false;
         else if ("top".equals(place)) top = true;
-        else throw new ToolError("place — «bottom» или «top», а не «" + place + "»");
+        else throw new ToolError("place is \"bottom\" or \"top\", not \"" + place + "\"");
         JSONArray before = TvFormat.asArray(ipc.get("track-list"));
         JSONObject bottomBefore = TvFormat.selected(before, "sub", 0);
         int lastId = 0;
@@ -758,13 +765,13 @@ public final class TvMcpServer {
         } catch (MpvIpc.IpcClosed e) {
             throw e;
         } catch (MpvIpc.MpvError e) {
-            throw new ToolError("mpv не открыл " + path + " (" + e.getMessage() + ")");
+            throw new ToolError("mpv could not open " + path + " (" + e.getMessage() + ")");
         }
         JSONObject added = null;
         for (JSONObject t : TvFormat.tracksOfType(TvFormat.asArray(ipc.get("track-list")), "sub")) {
             if (t.optInt("id") > lastId && (added == null || t.optInt("id") > added.optInt("id"))) added = t;
         }
-        if (added == null) throw new ToolError("mpv не добавил дорожку из " + path);
+        if (added == null) throw new ToolError("mpv added no track from " + path);
         int id = added.optInt("id");
         if (top) {
             // mpv may pick the new track for the bottom by itself; a slot ignores a track the other one shows.
@@ -778,9 +785,9 @@ public final class TvMcpServer {
         JSONObject bottom = TvFormat.selected(tracks, "sub", 0);
         JSONObject upper = TvFormat.selected(tracks, "sub", 1);
         List<String> lines = new ArrayList<>();
-        lines.add("Подключена дорожка " + TvFormat.describeSubtitle(added));
-        lines.add(bottom != null ? TvFormat.describeEnabled(bottom) : "Сабы: выкл");
-        if (upper != null) lines.add("Сабы сверху: " + TvFormat.describeFull(upper));
+        lines.add("Loaded track " + TvFormat.describeSubtitle(added));
+        lines.add(bottom != null ? TvFormat.describeEnabled(bottom) : "Subtitles: off");
+        if (upper != null) lines.add("Top subtitles: " + TvFormat.describeFull(upper));
         return TvFormat.join(lines);
     }
 
@@ -788,12 +795,12 @@ public final class TvMcpServer {
     private static String subtext(MpvIpc ipc) throws MpvIpc.MpvError {
         String bottom = strip(ipc.get("sub-text"));
         String top = strip(ipc.get("secondary-sub-text"));
-        if (bottom.isEmpty() && top.isEmpty()) return "Субтитров на экране сейчас нет";
+        if (bottom.isEmpty() && top.isEmpty()) return "No subtitles on screen now";
         if (!bottom.isEmpty() && !top.isEmpty()) {
-            return "Субтитры снизу: «" + bottom + "»\nСубтитры сверху: «" + top + "»";
+            return "Bottom subtitles: \"" + bottom + "\"\nTop subtitles: \"" + top + "\"";
         }
-        if (!top.isEmpty()) return "Субтитры сверху: «" + top + "»";
-        return "Субтитры: «" + bottom + "»";
+        if (!top.isEmpty()) return "Top subtitles: \"" + top + "\"";
+        return "Subtitles: \"" + bottom + "\"";
     }
 
     /** Port of Tv._seek: "+N"/"-N" seconds from the current time, or "H:MM:SS"/"MM:SS" from the start. */
@@ -802,15 +809,15 @@ public final class TvMcpServer {
         Object total = ipc.get("duration");
         double target;
         if (value.matches("[+-]\\d+")) {
-            if (now == null) throw new ToolError("Серия ещё открывается — перемотать нельзя");
+            if (now == null) throw new ToolError("The episode is still opening — cannot seek yet");
             target = ((Number) now).doubleValue() + Integer.parseInt(value);
         } else if (value.matches("\\d+(:\\d{1,2}){1,2}")) {
             long t = 0;
             for (String part : value.split(":")) t = t * 60 + Integer.parseInt(part);
             target = t;
         } else {
-            throw new ToolError("Для seek нужен value «+N» или «-N» секунд либо время «Ч:ММ:СС», а не «"
-                    + value + "»");
+            throw new ToolError("seek needs value \"+N\" or \"-N\" seconds or a time \"H:MM:SS\", not \""
+                    + value + "\"");
         }
         if (total instanceof Number && ((Number) total).doubleValue() != 0) {
             target = Math.min(target, ((Number) total).doubleValue());
@@ -818,7 +825,7 @@ public final class TvMcpServer {
         target = Math.max(0, target);
         int targetInt = (int) target;
         ipc.command("seek", targetInt, "absolute");
-        return "Перемотано: " + TvFormat.clock(targetInt) + " из " + TvFormat.clock(total);
+        return "Seeked to " + TvFormat.clock(targetInt) + " of " + TvFormat.clock(total);
     }
 
     private static void stop(MpvIpc ipc) {
@@ -844,8 +851,8 @@ public final class TvMcpServer {
 
     // --- player-only helpers (the track/describe formatters now live in TvFormat) --------------------------
 
-    /** The subtitle tracks joined with ", ", or "" when none — the Python _status inline join whose `or 'нет'`
-     *  the caller applies, distinct from TvFormat.describeSubtitles' "никаких" fallback. */
+    /** The subtitle tracks joined with ", ", or "" when none — the Python _status inline join whose `or 'none'`
+     *  the caller applies, distinct from TvFormat.describeSubtitles' own "none" fallback. */
     private static String joinSubtitles(List<JSONObject> subs) {
         StringBuilder sb = new StringBuilder();
         for (JSONObject t : subs) {

@@ -227,7 +227,7 @@ final class SubSync {
             if (att == null || timingReason == null) att = timing;
             reason = timingReason == null ? null
                     : textReason == null ? timingReason
-                    : "по тексту: " + textReason + "; по времени: " + timingReason;
+                    : "by text: " + textReason + "; by timing: " + timingReason;
         }
         m.piece = new Piece(from, to, att.matched, total, att.shift, reason == null, reason);
         m.spanFrom = att.spanFrom;
@@ -237,16 +237,16 @@ final class SubSync {
 
     // Why the attempt cannot be trusted, null when it can.
     private static String doubt(Attempt att, int total) {
-        if (att.best == 0) return "ни одно начало реплики не совпало ни при каком сдвиге";
+        if (att.best == 0) return "no line start matched at any shift";
         if (att.matched < MIN_MATCHED) {
-            return String.format(Locale.ROOT, "совпало %d реплик, нужно хотя бы %d", att.matched, MIN_MATCHED);
+            return String.format(Locale.ROOT, "%d lines matched, at least %d needed", att.matched, MIN_MATCHED);
         }
         if (att.matched < MIN_SHARE * total) {
-            return String.format(Locale.ROOT, "совпало %d из %d реплик образца, нужно хотя бы %d%%",
+            return String.format(Locale.ROOT, "%d of %d reference lines matched, at least %d%% needed",
                     att.matched, total, Math.round(MIN_SHARE * 100));
         }
         if (att.best < PEAK_RATIO * att.runnerUp) {
-            return String.format(Locale.ROOT, "неоднозначно: при сдвиге %+.2f с совпало %d, при %+.2f с — %d",
+            return String.format(Locale.ROOT, "ambiguous: at a shift of %+.2f s, %d matched; at %+.2f s, %d",
                     att.shift, att.best, att.runnerUpShift, att.runnerUp);
         }
         return null;
@@ -357,7 +357,7 @@ final class SubSync {
         for (Measure m : wrong) {
             Piece p = m.piece;
             m.piece = new Piece(p.from, p.to, p.matched, p.total, p.shift, false, String.format(Locale.ROOT,
-                    "сдвиг %+.2f с далёк от соседних кусков", p.shift));
+                    "the shift %+.2f s is far from the neighbouring pieces", p.shift));
         }
     }
 

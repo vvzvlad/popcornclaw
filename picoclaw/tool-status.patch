@@ -334,7 +334,7 @@ index e90d683..ff0363c 100644
 +// status; it is stripped from the arguments before the tool runs.
 +const ToolStatusArg = "status"
 +
-+const toolStatusDescription = "Одна короткая фраза по-русски для пользователя: что ты сейчас делаешь и зачем, на каком ты этапе. Показывается в чате как статус. Не команда и не аргументы."
++const toolStatusDescription = "One short phrase for the user, in the language your instructions set for replies: what you are doing now and why, which stage you are at. Shown in chat as the status. Not the command and not its arguments."
 +
 +// withToolStatusParam returns a copy of params with the required status argument
 +// added, leaving the tool's own schema untouched.
