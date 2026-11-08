@@ -102,7 +102,7 @@ public final class PicoLink {
         }
         // OkHttp queues it until the connection is open; false means the connection is already going away.
         if (!socket.send(frame)) {
-            show(turn.failed("вопрос не ушёл агенту: соединение закрывается"));
+            show(turn.failed("the question did not reach the agent: the connection is closing"));
             return;
         }
         keepAlive();

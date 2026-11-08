@@ -92,8 +92,8 @@ public class PopupStateTest {
     public void errorEndsTheTurn() {
         assertTrue(question("а сабы?"));
         assertTrue(step("Ищу субтитры (`exec`)"));
-        assertTrue(error("нет связи с агентом: closed 1001"));
-        assertShown("а сабы?", "нет связи с агентом: closed 1001", false);
+        assertTrue(error("no connection to the agent: closed 1001"));
+        assertShown("а сабы?", "no connection to the agent: closed 1001", false);
     }
 
     @Test

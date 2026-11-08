@@ -68,11 +68,11 @@ import okhttp3.ResponseBody;
 final class Tv {
     private static final String TAG = "PopcornClaw-tv";
 
-    private static final String DEAD = "Раздача мёртвая, пиров нет — выбери другую";
-    private static final String PLAYING = "сейчас играет";
-    private static final String PROBED_ELSEWHERE = "проверяется другим поиском";
+    private static final String DEAD = "The release is dead, no peers — pick another one";
+    private static final String PLAYING = "playing now";
+    private static final String PROBED_ELSEWHERE = "being checked by another search";
     private static final String RUTOR_OFF =
-            "Поиск RuTor в TorrServer выключен (его настройка EnableRutorSearch), а Jackett не настроен";
+            "TorrServer's RuTor search is off (its EnableRutorSearch setting), and Jackett is not set up";
     // RuTor's sizes are binary: a "2.18 GB" release holds 2345525311 bytes.
     private static final Pattern RUTOR_SIZE =
             Pattern.compile("(\\d+(?:\\.\\d+)?)\\s*([KMGT]?)B", Pattern.CASE_INSENSITIVE);
@@ -178,7 +178,7 @@ final class Tv {
         List<String> saved = saved();
         if (found.isEmpty()) {
             List<String> lines = new ArrayList<>(saved);
-            lines.add("По запросу «" + query + "» ничего с сидами не нашлось");
+            lines.add("Nothing with seeders found for \"" + query + "\"");
             return join(lines);
         }
         // `top` is sorted by seeders, so this is the best PROBE_LIMIT of the well-seeded ones.
@@ -270,22 +270,22 @@ final class Tv {
                 long target = Math.min(torrent.optLong("preload_size", 0), fileLength);
                 // Named only while the fill is this episode's: see the docstring.
                 String cached = firstFill < target
-                        ? TvFormat.fmt0(preloaded / TvFormat.MIB) + " из " + TvFormat.fmt0(target / TvFormat.MIB) + " МБ"
+                        ? TvFormat.fmt0(preloaded / TvFormat.MIB) + " of " + TvFormat.fmt0(target / TvFormat.MIB) + " MB"
                         : null;
                 if ((target != 0 && firstFill < target && target <= preloaded)
                         || (rate != null && rate != 0.0 && elapsed >= TvFormat.SPEED_WINDOW
                                 && speed >= TvFormat.SPEED_MARGIN * rate)) {
-                    return "Готово к запуску: " + TvFormat.basename(picked.optString("path")) + " — "
-                            + TvFormat.describeSpeed(speed, rate) + (cached != null ? "; в кэше " + cached : "");
+                    return "Ready to play: " + TvFormat.basename(picked.optString("path")) + " — "
+                            + TvFormat.describeSpeed(speed, rate) + (cached != null ? "; in the cache " + cached : "");
                 }
                 if (!busy && preload.isDone() && Boolean.TRUE.equals(settle(preload))) {
-                    return "Готово к запуску: " + TvFormat.basename(picked.optString("path"))
-                            + " — прелоад серии в кэше TorrServer";
+                    return "Ready to play: " + TvFormat.basename(picked.optString("path"))
+                            + " — the episode's preload is in TorrServer's cache";
                 }
                 if ((!peered && elapsed >= TvFormat.DEAD_TIMEOUT) || elapsed >= TvFormat.PREPARE_TIMEOUT) {
-                    throw new ToolError("Раздача не успеет: пиров " + torrent.optInt("active_peers", 0) + ", "
-                            + TvFormat.describeSpeed(speed, rate) + (cached != null ? "; скачано " + cached : "")
-                            + " — выбери другую");
+                    throw new ToolError("The release will not keep up: " + torrent.optInt("active_peers", 0) + " peers, "
+                            + TvFormat.describeSpeed(speed, rate) + (cached != null ? "; downloaded " + cached : "")
+                            + " — pick another one");
                 }
                 sleep(TvFormat.POLL_INTERVAL);
             }
@@ -361,7 +361,7 @@ final class Tv {
                 waitPlaying(ipc, torrentHash, position, since, true);
                 save(torrentHash);
                 List<String> lines = new ArrayList<>();
-                lines.add("Играет: " + TvFormat.basename(picked.optString("path")));
+                lines.add("Playing: " + TvFormat.basename(picked.optString("path")));
                 lines.addAll(apply(ipc));
                 // Also when this item has none of them: the languages are chosen for the following ones.
                 Object playingPath = ipc.get("path");
@@ -418,31 +418,31 @@ final class Tv {
             if (TvFormat.fullTrack(track, bottom)) {
                 lines.add(TvFormat.describeEnabled(track));
             } else if (track != null) {
-                lines.add("Полных сабов " + bottom + " нет; включены: " + TvFormat.describeSubtitle(track));
+                lines.add("No full " + bottom + " subtitles; on: " + TvFormat.describeSubtitle(track));
             } else {
                 lines.add(TvFormat.noFullSubtitles(subs, bottom));
             }
             if (top != null) {
                 track = wantedSecondary;
                 if (track != null) {
-                    lines.add("Сабы сверху: " + TvFormat.describeFull(track));
+                    lines.add("Top subtitles: " + TvFormat.describeFull(track));
                 } else {
-                    lines.add("Текстовых сабов " + top + " для верха нет; есть: " + TvFormat.describeSubtitles(subs));
+                    lines.add("No text " + top + " subtitles for the top; available: " + TvFormat.describeSubtitles(subs));
                 }
             }
         } else if (wantSubs) {
-            lines.add(curSid != null ? TvFormat.describeEnabled(curSid) : "Сабы: выкл");
+            lines.add(curSid != null ? TvFormat.describeEnabled(curSid) : "Subtitles: off");
             if (curSecondary != null) {
-                lines.add("Сабы сверху: " + TvFormat.describeFull(curSecondary));
+                lines.add("Top subtitles: " + TvFormat.describeFull(curSecondary));
             }
         }
         if (wantAudio && audioChoice != null) {
             JSONObject track = TvFormat.pickAudio(voices, audioChoice, curAid);
             if (track != null) wanted.put("aid", track);
-            lines.add(track != null ? "Звук: " + TvFormat.describeAudio(track)
-                    : "Звука " + audioChoice + " нет; есть: " + TvFormat.describeAudios(voices));
+            lines.add(track != null ? "Audio: " + TvFormat.describeAudio(track)
+                    : "No " + audioChoice + " audio; available: " + TvFormat.describeAudios(voices));
         } else if (wantAudio) {
-            lines.add(curAid != null ? "Звук: " + TvFormat.describeAudio(curAid) : "Звук: выкл");
+            lines.add(curAid != null ? "Audio: " + TvFormat.describeAudio(curAid) : "Audio: off");
         }
         switchTracks(ipc, current, wanted);
         return lines;
@@ -497,7 +497,7 @@ final class Tv {
         Object posObj = ipc.get("playlist-pos");
         Integer position = posObj instanceof Number ? ((Number) posObj).intValue() : null;
         if (position == null || !(position >= 0 && position < playlist.size())) {
-            throw new ToolError("Сейчас играет не плейлист раздачи — серию включает play");
+            throw new ToolError("What plays now is not a release's playlist — play starts an episode");
         }
         // Read before the switch, from the item that plays.
         adopt(ipc, playlist);
@@ -516,7 +516,7 @@ final class Tv {
         waitPlaying(ipc, torrentHash, target, targetEntry.optInt("id", 0), false);
         save(torrentHash);
         List<String> lines = new ArrayList<>();
-        lines.add("Играет: " + labels.get(target));
+        lines.add("Playing: " + labels.get(target));
         lines.addAll(apply(ipc));
         Object path = ipc.get("path");
         follow(path == null ? null : path.toString());
@@ -544,7 +544,7 @@ final class Tv {
             // Goes on only for a chosen audio language.
             Object path = ipc.get("path");
             follow(path == null ? null : path.toString());
-            return "Сабы: выкл";
+            return "Subtitles: off";
         }
         if (isDigits(value)) {
             int want = Integer.parseInt(value);
@@ -553,7 +553,7 @@ final class Tv {
                 if (t.optInt("id") == want) { track = t; break; }
             }
             if (track == null) {
-                throw new ToolError("Нет дорожки сабов #" + value + "; есть: " + TvFormat.describeSubtitles(subs));
+                throw new ToolError("No subtitle track #" + value + "; available: " + TvFormat.describeSubtitles(subs));
             }
             Map<String, JSONObject> current = new HashMap<>();
             current.put("sid", TvFormat.selected(tracks, "sub", 0));
@@ -612,7 +612,7 @@ final class Tv {
             }
         }
         if (matches.isEmpty()) {
-            return "Нет звуковой дорожки «" + value + "»; есть: " + TvFormat.describeAudios(voices);
+            return "No audio track \"" + value + "\"; available: " + TvFormat.describeAudios(voices);
         }
         JSONObject track = matches.get(0);
         ipc.set("aid", track.optInt("id"));
@@ -622,7 +622,7 @@ final class Tv {
         }
         Object path = ipc.get("path");
         follow(path == null ? null : path.toString());
-        return "Звук: " + TvFormat.describeAudio(track);
+        return "Audio: " + TvFormat.describeAudio(track);
     }
 
     /**
@@ -807,7 +807,7 @@ final class Tv {
                 if (ipc == null) ipc = MpvIpc.open();
                 if (ipc != null && TvFormat.truthy(ipc.get("playlist-count"))) return ipc;
                 if (System.nanoTime() - deadline >= 0) {
-                    throw new ToolError("mpv не запустился за " + MPV_START_TIMEOUT + " с");
+                    throw new ToolError("mpv did not start within " + MPV_START_TIMEOUT + " s");
                 }
                 sleep(TvFormat.POLL_INTERVAL);
             }
@@ -876,19 +876,19 @@ final class Tv {
             }
             int code = proc.waitFor();
             wd.interrupt();
-            if (killed.get()) throw new ToolError("adb не ответил за " + (timeoutMs / 1000) + " с");
+            if (killed.get()) throw new ToolError("adb did not answer within " + (timeoutMs / 1000) + " s");
             String output = new String(bos.toByteArray(), StandardCharsets.UTF_8).trim();
             if (code != 0) {
-                throw new ToolError("adb: " + (output.isEmpty() ? "код выхода " + code : lastLine(output)));
+                throw new ToolError("adb: " + (output.isEmpty() ? "exit code " + code : lastLine(output)));
             }
             return output;
         } catch (IOException e) {
             if (proc != null) proc.destroy();
-            throw new ToolError("adb не запустился: " + e.getMessage());
+            throw new ToolError("adb did not start: " + e.getMessage());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             if (proc != null) proc.destroy();
-            throw new ToolError("adb: прервано");
+            throw new ToolError("adb: interrupted");
         }
     }
 
@@ -928,7 +928,7 @@ final class Tv {
                         && e.optInt("playlist_entry_id", since) >= since) {
                     Log.i(TAG, torrentHash + ": mpv failed to open entry " + e.optInt("playlist_entry_id")
                             + ": " + e.optString("file_error"));
-                    abortOpen(ipc, torrentHash, "mpv не смог открыть серию");
+                    abortOpen(ipc, torrentHash, "mpv could not open the episode");
                 }
             }
             Object atObj = ipc.get("playlist-pos");
@@ -946,7 +946,7 @@ final class Tv {
                 throw new ToolError(DEAD);
             }
             if (elapsed >= PLAYER_TIMEOUT) {
-                abortOpen(ipc, torrentHash, "mpv не включил серию за " + PLAYER_TIMEOUT + " с");
+                abortOpen(ipc, torrentHash, "mpv did not start the episode within " + PLAYER_TIMEOUT + " s");
             }
             sleep(TvFormat.POLL_INTERVAL);
         }
@@ -976,8 +976,8 @@ final class Tv {
         }
         int peers = torrent.optInt("active_peers", 0);
         double speed = torrent.optDouble("download_speed", 0);
-        throw new ToolError(why + ": пиров " + peers + ", раздача качается "
-                + TvFormat.fmt0(speed / 1024.0) + " КБ/с");
+        throw new ToolError(why + ": " + peers + " peers, the release downloads at "
+                + TvFormat.fmt0(speed / 1024.0) + " KB/s");
     }
 
     // --- TorrServer / Jackett --------------------------------------------------------------------------
@@ -1001,12 +1001,12 @@ final class Tv {
         if (callOut != null) callOut.set(call);
         try (Response response = call.execute()) {
             if (!response.isSuccessful()) {
-                throw new ToolError(service + " ответил HTTP " + response.code());
+                throw new ToolError(service + " answered HTTP " + response.code());
             }
             ResponseBody body = response.body();
             return body == null ? new byte[0] : body.bytes();
         } catch (IOException exc) {
-            throw new ToolError(service + " не отвечает: " + exc.getClass().getSimpleName() + " " + exc.getMessage());
+            throw new ToolError(service + " does not answer: " + exc.getClass().getSimpleName() + " " + exc.getMessage());
         }
     }
 
@@ -1049,7 +1049,7 @@ final class Tv {
         int total = 0;
         try (Response response = client.newCall(new Request.Builder().url(url).get().build()).execute()) {
             if (response.code() == 400) throw new ToolError(RUTOR_OFF);
-            if (!response.isSuccessful()) throw new ToolError("TorrServer ответил HTTP " + response.code());
+            if (!response.isSuccessful()) throw new ToolError("TorrServer answered HTTP " + response.code());
             ResponseBody body = response.body();
             if (body == null) return new JSONArray();
             JsonReader in = new JsonReader(body.charStream());
@@ -1061,7 +1061,7 @@ final class Tv {
             }
             in.endArray();
         } catch (IOException exc) {
-            throw new ToolError("TorrServer не отвечает: " + exc.getClass().getSimpleName() + " " + exc.getMessage());
+            throw new ToolError("TorrServer does not answer: " + exc.getClass().getSimpleName() + " " + exc.getMessage());
         }
         Log.i(TAG, "rutor " + query + ": " + total + " releases, kept the " + best.size() + " best seeded");
         return new JSONArray(best);
@@ -1141,11 +1141,11 @@ final class Tv {
             try {
                 return new Source(TvFormat.torrentInfoHash(content), content);
             } catch (TvFormat.BencodeException | StackOverflowError exc) {
-                throw new ToolError("Jackett отдал не .torrent: " + exc.getMessage());
+                throw new ToolError("Jackett did not return a .torrent: " + exc.getMessage());
             }
         }
         String hash = TvFormat.magnetHash(optStr(result, "MagnetUri"));
-        if (hash == null) throw new ToolError("У раздачи нет ни .torrent, ни magnet-ссылки с хешем");
+        if (hash == null) throw new ToolError("The release has neither a .torrent nor a magnet link with a hash");
         return new Source(hash, null);
     }
 
@@ -1273,7 +1273,7 @@ final class Tv {
      */
     private FilesResult resolveFiles(int resultId) throws ToolError {
         JSONObject result = results.get(resultId);
-        if (result == null) throw new ToolError("Нет результата " + resultId + ": сначала search");
+        if (result == null) throw new ToolError("No result " + resultId + ": run search first");
         Source src = source(result);
         String torrentHash = src.hash;
         List<JSONObject> files;
@@ -1329,9 +1329,9 @@ final class Tv {
             }
             try {
                 files = waitFiles(torrentHash, files);
-                if (files.isEmpty()) return new TvFormat.Note(false, "мёртвая");
+                if (files.isEmpty()) return new TvFormat.Note(false, "dead");
                 List<JSONObject> videos = TvFormat.videoFiles(files);
-                if (videos.isEmpty()) return new TvFormat.Note(false, "нет видеофайлов");
+                if (videos.isEmpty()) return new TvFormat.Note(false, "no video files");
                 JSONObject probe = ffprobe(torrentHash, videos.get(0).optInt("id"));
                 List<JSONObject> streams = probe == null ? null : toList(probe.optJSONArray("streams"));
                 return TvFormat.describeProbe(streams, langs, audio);
@@ -1395,7 +1395,7 @@ final class Tv {
             Object outcome = (s instanceof Source) ? byHash.get(((Source) s).hash) : s;
             notes.put(items.get(i).id, outcome instanceof TvFormat.Note
                     ? (TvFormat.Note) outcome
-                    : new TvFormat.Note(false, "не проверилась: " + describeThrowable(outcome)));
+                    : new TvFormat.Note(false, "not checked: " + describeThrowable(outcome)));
         }
         return notes;
     }

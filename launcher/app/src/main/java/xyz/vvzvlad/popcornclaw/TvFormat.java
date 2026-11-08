@@ -99,17 +99,17 @@ final class TvFormat {
 
     // --- subtitle-kind machinery (src/tv.py, lines 85-97, 135-149) --------------------------------------
     // NOT_FULL: subtitle kinds that are never full subtitles, by markers in the (lowercased) title; the keys
-    // are the kind names describe_subtitle prints, and their iteration order (надписи, песни, комментарии)
+    // are the kind names describe_subtitle prints, and their iteration order (signs, songs, commentary)
     // decides ties.
     private static final String[] NOT_FULL_SIGNS = {"forc", "forsed", "форс", "надпис", "sign"};
     private static final String[] NOT_FULL_SONGS = {"песн", "song", "lyric", "текст"};
     private static final String[] NOT_FULL_COMMENTARY = {"коммент", "comment"};
-    private static final String KIND_SIGNS = "надписи";
-    private static final String KIND_SONGS = "песни";
-    private static final String KIND_COMMENTARY = "комментарии";
+    private static final String KIND_SIGNS = "signs";
+    private static final String KIND_SONGS = "songs";
+    private static final String KIND_COMMENTARY = "commentary";
     private static final String[] FULL_MARKERS = {"full", "полн"};
     private static final String[] SDH_MARKERS = {"sdh", "слабослыш", "hearing"};
-    private static final String FULL = "полные";
+    private static final String FULL = "full";
     private static final String PLAIN = "";
     private static final String SDH = "SDH";
     // Among the full/plain/SDH kinds a subtitle slot prefers the full one, then the plain one, then SDH
@@ -179,7 +179,7 @@ final class TvFormat {
             if (!dup) codes.add(code);
         }
         if (codes.size() > 2) {
-            throw new ToolError("Субтитров — один или два языка («ru» или «ru,en»), а не «" + value + "»");
+            throw new ToolError("Subtitles take one or two languages (\"en\" or \"en,ru\"), not \"" + value + "\"");
         }
         return codes;
     }
@@ -244,7 +244,7 @@ final class TvFormat {
     /** Port of describe_files. */
     static String describeFiles(List<JSONObject> files) throws ToolError {
         List<JSONObject> videos = videoFiles(files);
-        if (videos.isEmpty()) throw new ToolError("В раздаче нет видеофайлов");
+        if (videos.isEmpty()) throw new ToolError("The release has no video files");
         List<String[]> paths = new ArrayList<>();
         for (JSONObject f : videos) paths.add(f.optString("path", "").split("/", -1));
         boolean shared = true;
@@ -259,7 +259,7 @@ final class TvFormat {
             String joined = joinPath(p, shared ? 1 : 0);
             if (sb.length() > 0) sb.append('\n');
             sb.append(f.optInt("id")).append(": ").append(joined).append(", ")
-                    .append(gib(f.optLong("length", 0) / GIB)).append(" ГБ");
+                    .append(gib(f.optLong("length", 0) / GIB)).append(" GB");
         }
         return sb.toString();
     }
@@ -267,12 +267,12 @@ final class TvFormat {
     /** Port of pick_file (src/tv.py, lines 199-225): the file `file`, else the one of the episode asked for. */
     static JSONObject pickFile(List<JSONObject> files, Integer season, Integer episode, Integer file) throws ToolError {
         List<JSONObject> videos = videoFiles(files);
-        if (videos.isEmpty()) throw new ToolError("В раздаче нет видеофайлов");
+        if (videos.isEmpty()) throw new ToolError("The release has no video files");
         if (file != null) {
             for (JSONObject f : videos) {
                 if (f.optInt("id") == file) return f;
             }
-            throw new ToolError("Видеофайла " + file + " в раздаче нет; номера файлов — в files");
+            throw new ToolError("The release has no video file " + file + "; file numbers are in files");
         }
         if (season == null && episode == null) return videos.get(0);
         int seasonNum = season == null ? 1 : season;
@@ -304,14 +304,14 @@ final class TvFormat {
         });
         StringBuilder have = new StringBuilder();
         for (Map.Entry<Integer, List<Integer>> e : entries) {
-            String label = e.getKey() == null ? "без сезона" : String.format(Locale.ROOT, "S%02d", e.getKey());
+            String label = e.getKey() == null ? "no season" : String.format(Locale.ROOT, "S%02d", e.getKey());
             if (have.length() > 0) have.append(", ");
             have.append(label).append(": ").append(Collections.min(e.getValue()))
                     .append("–").append(Collections.max(e.getValue()));
         }
-        String haveStr = have.length() > 0 ? have.toString() : "только файлы без номеров";
-        throw new ToolError("Серии " + wanted + " в раздаче нет; есть " + haveStr
-                + ". Список файлов с номерами — files, нужный файл — параметром file");
+        String haveStr = have.length() > 0 ? have.toString() : "only files without numbers";
+        throw new ToolError("The release has no episode " + wanted + "; it has " + haveStr
+                + ". The file list with numbers is files; pass the file needed as file");
     }
 
     // --- result lines (src/tv.py, lines 271-294) --------------------------------------------------------
@@ -324,17 +324,17 @@ final class TvFormat {
     /** Port of format_result. */
     static String formatResult(int resultId, JSONObject result) {
         // "id N:", not "N.": results with the languages asked for move up, so the lines are not numbered in order.
-        return "id " + resultId + ": " + result.optInt("Seeders") + " сид, "
-                + gib(result.optLong("Size", 0) / GIB) + " ГБ, "
+        return "id " + resultId + ": " + result.optInt("Seeders") + " seeders, "
+                + gib(result.optLong("Size", 0) / GIB) + " GB, "
                 + result.optString("TrackerId") + ": " + shortTitle(result.optString("Title"));
     }
 
     /** Port of format_saved. */
     static String formatSaved(int resultId, JSONObject result, Integer lastViewed) {
         long sizeBytes = result.optLong("Size", 0);
-        String size = sizeBytes != 0 ? ", " + gib(sizeBytes / GIB) + " ГБ" : "";
-        return "id " + resultId + ": в TorrServer" + size + ": " + shortTitle(result.optString("Title"))
-                + (lastViewed == null ? "" : "; последний просмотренный файл — " + lastViewed);
+        String size = sizeBytes != 0 ? ", " + gib(sizeBytes / GIB) + " GB" : "";
+        return "id " + resultId + ": in TorrServer" + size + ": " + shortTitle(result.optString("Title"))
+                + (lastViewed == null ? "" : "; last watched file — " + lastViewed);
     }
 
     /** Port of topic: the result's tracker topic, with rutor/megapeer's title slug stripped. */
@@ -432,7 +432,7 @@ final class TvFormat {
 
     /** Port of describe_probe: (has every language asked for, note) for one video file's ffprobe streams. */
     static Note describeProbe(List<JSONObject> streams, List<String> langs, String audio) {
-        if (streams == null || streams.isEmpty()) return new Note(false, "дорожки не прочитались");
+        if (streams == null || streams.isEmpty()) return new Note(false, "tracks could not be read");
         List<Note> parts = new ArrayList<>();
         for (String lang : langs) parts.add(subtitlesNote(streams, lang));
         if (audio != null && !audio.isEmpty()) parts.add(audioNote(streams, audio));
@@ -452,14 +452,14 @@ final class TvFormat {
         for (JSONObject s : streams) if ("audio".equals(optStr(s, "codec_type"))) voices.add(s);
         int mine = 0;
         for (JSONObject s : voices) if (sameLanguage(tagLanguage(s), lang)) mine++;
-        if (mine > 0) return new Note(true, "звук " + lang + ": " + mine);
+        if (mine > 0) return new Note(true, "audio " + lang + ": " + mine);
         TreeSet<String> others = new TreeSet<>();
         for (JSONObject s : voices) others.add(languageOrQuestion(s));
-        String extra = others.isEmpty() ? "" : " (есть: " + joinComma(others) + ")";
-        return new Note(false, "звука " + lang + " нет" + extra);
+        String extra = others.isEmpty() ? "" : " (available: " + joinComma(others) + ")";
+        return new Note(false, "no " + lang + " audio" + extra);
     }
 
-    /** Port of subtitles_note: (has full subtitles in `lang`, note); «надписи» counts every never-full kind. */
+    /** Port of subtitles_note: (has full subtitles in `lang`, note); "signs" counts every never-full kind. */
     static Note subtitlesNote(List<JSONObject> streams, String lang) {
         List<JSONObject> subs = new ArrayList<>();
         for (JSONObject s : streams) if ("subtitle".equals(optStr(s, "codec_type"))) subs.add(s);
@@ -482,15 +482,15 @@ final class TvFormat {
             TreeSet<String> others = new TreeSet<>();
             for (JSONObject s : subs) others.add(languageOrQuestion(s));
             return others.isEmpty()
-                    ? new Note(false, "нет " + lang + " (сабов нет)")
-                    : new Note(false, "нет " + lang + " (есть: " + joinComma(others) + ")");
+                    ? new Note(false, "no " + lang + " subtitles (no subtitles at all)")
+                    : new Note(false, "no " + lang + " subtitles (available: " + joinComma(others) + ")");
         }
         if (full == 0) {
-            return new Note(false, "сабы " + lang + ": только надписи (" + never + ")");
+            return new Note(false, "subtitles " + lang + ": signs only (" + never + ")");
         }
         String titlePart = titles.isEmpty() ? "" : " (" + joinComma(titles) + ")";
-        String neverPart = never > 0 ? ", надписи: " + never : "";
-        return new Note(true, "сабы " + lang + ": " + full + titlePart + neverPart);
+        String neverPart = never > 0 ? ", signs: " + never : "";
+        return new Note(true, "subtitles " + lang + ": " + full + titlePart + neverPart);
     }
 
     // --- prepare helpers (src/tv.py, lines 459-475) -----------------------------------------------------
@@ -525,9 +525,9 @@ final class TvFormat {
     /** Port of describe_speed. */
     static String describeSpeed(double speed, Double rate) {
         String need = (rate != null && rate != 0.0)
-                ? "серии нужно около " + fmt0(rate / KIB) + " КБ/с"
-                : "сколько нужно серии, не узнал";
-        return "качается " + fmt0(speed / KIB) + " КБ/с, " + need;
+                ? "the episode needs about " + fmt0(rate / KIB) + " KB/s"
+                : "what the episode needs is unknown";
+        return "downloading at " + fmt0(speed / KIB) + " KB/s, " + need;
     }
 
     /** A rounded whole number, matching the Python {@code f"{x:.0f}"}. */
@@ -576,15 +576,15 @@ final class TvFormat {
     /** Port of describe_subtitle. */
     static String describeSubtitle(JSONObject track) {
         String name = trackName(track);
-        String nameStr = name != null ? " «" + name + "»" : "";
+        String nameStr = name != null ? " \"" + name + "\"" : "";
         String kind = trackKind(track);
-        String marks = (isNotFull(kind) ? " (" + kind + ")" : "") + (bitmap(track) ? " (картинка)" : "");
+        String marks = (isNotFull(kind) ? " (" + kind + ")" : "") + (bitmap(track) ? " (image)" : "");
         return "#" + track.optInt("id") + " " + lang(track) + nameStr + marks;
     }
 
-    /** Port of describe_subtitles: the tracks joined with ", ", or "никаких" when none. */
+    /** Port of describe_subtitles: the tracks joined with ", ", or "none" when none. */
     static String describeSubtitles(List<JSONObject> tracks) {
-        if (tracks.isEmpty()) return "никаких";
+        if (tracks.isEmpty()) return "none";
         StringBuilder sb = new StringBuilder();
         for (JSONObject t : tracks) {
             if (sb.length() > 0) sb.append(", ");
@@ -595,18 +595,18 @@ final class TvFormat {
 
     /** Port of describe_full: a subtitle track, saying whether it is full. */
     static String describeFull(JSONObject track) {
-        return describeSubtitle(track) + (isNotFull(trackKind(track)) ? "" : " (полные)");
+        return describeSubtitle(track) + (isNotFull(trackKind(track)) ? "" : " (full)");
     }
 
     /** Port of describe_enabled. */
     static String describeEnabled(JSONObject track) {
-        return "Сабы включены: " + describeFull(track);
+        return "Subtitles on: " + describeFull(track);
     }
 
     /** Port of describe_audio. */
     static String describeAudio(JSONObject track) {
         String name = trackName(track);
-        String nameStr = name != null ? " «" + name + "»" : "";
+        String nameStr = name != null ? " \"" + name + "\"" : "";
         int ch = track.optInt("demux-channel-count", 0);
         String channels = ch != 0 ? " " + ch + "ch" : "";
         return "#" + track.optInt("id") + " " + lang(track) + " " + track.optString("codec") + channels + nameStr;
@@ -614,7 +614,7 @@ final class TvFormat {
 
     /** Port of describe_audios. */
     static String describeAudios(List<JSONObject> tracks) {
-        if (tracks.isEmpty()) return "никаких";
+        if (tracks.isEmpty()) return "none";
         StringBuilder sb = new StringBuilder();
         for (JSONObject t : tracks) {
             if (sb.length() > 0) sb.append(", ");
@@ -637,14 +637,14 @@ final class TvFormat {
         return null;
     }
 
-    /** Port of describe_video: "; видео W×H<, FPS fps>", "" when mpv has decoded no frame yet. */
+    /** Port of describe_video: "; video W×H<, FPS fps>", "" when mpv has decoded no frame yet. */
     static String describeVideo(JSONObject params, Object fps) {
         if (params == null) return "";
         int w = params.optInt("w", 0);
         int h = params.optInt("h", 0);
         if (w == 0 || h == 0) return "";
         String rate = truthy(fps) ? ", " + stripFps(((Number) fps).doubleValue()) + " fps" : "";
-        return "; видео " + w + "×" + h + rate;
+        return "; video " + w + "×" + h + rate;
     }
 
     /** fps with its trailing zeros stripped (Python f'{fps:.3f}'.rstrip('0').rstrip('.')). */
@@ -677,8 +677,8 @@ final class TvFormat {
         for (JSONObject t : subs) {
             if (sameLanguage(optStr(t, "lang"), lang)) { any = true; break; }
         }
-        String what = any ? "Полных сабов" : "Сабов";
-        return what + " " + lang + " нет; есть: " + describeSubtitles(subs);
+        String what = any ? "No full " : "No ";
+        return what + lang + " subtitles; available: " + describeSubtitles(subs);
     }
 
     /** Port of pick_subtitle: the track a subtitle slot shows for `lang` (`textOnly` for the top one). */
@@ -731,7 +731,7 @@ final class TvFormat {
             List<String> index = queryValues(urls.get(position), "index");
             if (index.size() == 1 && index.get(0).equals(want)) return position;
         }
-        throw new ToolError("Файла " + fileId + " нет в плейлисте TorrServer");
+        throw new ToolError("File " + fileId + " is not in TorrServer's playlist");
     }
 
     /** Port of entry_label: an mpv playlist item by name — its #EXTINF title, the file name, else the URL name. */
@@ -777,11 +777,11 @@ final class TvFormat {
                 }
             }
         } else {
-            throw new ToolError("Для episode нужен value: номер серии, «next» или «prev», а не «" + value + "»");
+            throw new ToolError("episode needs value: an episode number, \"next\" or \"prev\", not \"" + value + "\"");
         }
         if (target == null) {
-            throw new ToolError("Такой серии в плейлисте нет; в нём " + videos.size() + " видеофайлов. "
-                    + "Серию по файлу включает play с file, номера файлов — в files");
+            throw new ToolError("No such episode in the playlist; it has " + videos.size() + " video files. "
+                    + "play with file plays an episode by its file; file numbers are in files");
         }
         return target;
     }

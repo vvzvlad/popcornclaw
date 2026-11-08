@@ -135,7 +135,7 @@ final class PicoTurn {
 
     /** The connection to the gateway dropped; the running turn's frames are lost with it. */
     List<Event> lost(String why) {
-        return id == null ? Collections.emptyList() : end(new Event("answer_error", error("нет связи с агентом: " + why)));
+        return id == null ? Collections.emptyList() : end(new Event("answer_error", error("no connection to the agent: " + why)));
     }
 
     /** The empty answer that keeps the screen's own timeout from firing; null between turns. */

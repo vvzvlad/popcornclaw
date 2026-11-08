@@ -180,13 +180,13 @@ public final class HomeFeed extends LinearLayout {
         } else if (working) {
             long step = Math.max(0, (now - transcript.lastEntryMs()) / 1000);
             String running = transcript.lastUserMs() > 0 ? clock(now - transcript.lastUserMs()) + " · " : "";
-            line = "✻ Работает… " + running + "последний шаг " + step + " с назад";
+            line = "✻ Working… " + running + "last step " + step + " s ago";
             color = p.accent;
         } else if (transcript.inProgress()) {
-            line = "ход оборвался · последний шаг в " + hhmm.format(new Date(transcript.lastEntryMs()));
+            line = "turn broke off · last step at " + hhmm.format(new Date(transcript.lastEntryMs()));
             color = p.dim;
         } else {
-            line = "ждёт сообщения · ответ в " + hhmm.format(new Date(transcript.lastEntryMs()));
+            line = "waiting for a message · replied at " + hhmm.format(new Date(transcript.lastEntryMs()));
             color = p.dim;
         }
         main.post(() -> show(visible, text, line, color));
