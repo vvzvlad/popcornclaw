@@ -128,18 +128,18 @@ top are devices that have root out of the box, below them those that get it from
 memory card or USB stick, and at the end those flashed from a computer over a USB A–A cable. Apart from
 the GT-King, PopcornClaw has not been run on these devices.
 
-| Device | Chip, Android | How to get root | Price on Ozon, ₽ |
+| Device | Chip, Android | How to get root | Price, $ |
 | --- | --- | --- | --- |
 | Beelink GT-King, GT-King Pro | Amlogic S922X, 9 | slimBOXtv firmware and SuperSU 2.82, PopcornClaw is tested on them | — |
-| Vontar X5, HK1 RBOX X50 | Amlogic S905X5M, 14 | already in the firmware, KernelSU ([4PDA](https://4pda.to/forum/index.php?showtopic=1111776)) | ≈5,200–5,700 |
-| Ugoos X5M Pro, SK4 Pro | Amlogic S905X5M, 14 | the Root switch in the Ugoos settings, Magisk | ≈12,500 |
-| Ugoos AM9 Pro, AM8, SK1 Lite | Amlogic S905X5-J, S928X, 14 | the same | ≈19,500–24,500 |
-| Tanix W2 | Amlogic S905W2, 11 | Tanix factory firmware of 2024-04-24 with Magisk, from microSD via Burn Card Maker ([4PDA](https://4pda.to/forum/index.php?showtopic=1051605)) | ≈4,500 |
-| Magcubic HY350 MAX projector | Allwinner H726, 14 | [CleanRom](https://floforge.fr/en/articles/hy350-max-cleanrom/) firmware with Magisk, from a USB stick | ≈11,000 |
-| X88 Pro X5M, X96 M200, Tanix TX5 Plus | Amlogic S905X5M, 14 | firmware and guides with Magisk or KernelSU from 4PDA threads ([X88](https://4pda.to/forum/index.php?showtopic=1104876), [X96](https://4pda.to/forum/index.php?showtopic=1105149), [Tanix](https://4pda.to/forum/index.php?showtopic=1106852)), USB Burning Tool over a cable | ≈5,500–5,700 |
-| H96 Max V56 | Rockchip RK3566, 12 | firmware with Magisk ([XDA](https://xdaforums.com/t/rk3566-rk3568-tv-boxes-rooting-twrp-and-etcetera.4562613/)), Rockchip Factory Tool over a cable | ≈5,500 |
-| H96 Max M2 | Rockchip RK3528, 13 | Android TV 13 port with Magisk ([XDA](https://xdaforums.com/t/rk3528-h96max-androidtv-13-port-by-jwagnervaz.4711555/)), RKDevTool over a cable | ≈2,900 |
-| HY300, HY300 MAX, HY300 Ultra projectors | Allwinner H713, H726, 11–14 | boot partition patched by Magisk, via fastboot ([guide](https://github.com/YuujiLab/HY300-H713-Research/blob/main/Root/MAGISK_GUIDE.md)), or ready rooted firmware via PhoenixSuit | ≈4,000–6,600 |
+| Vontar X5, HK1 RBOX X50 | Amlogic S905X5M, 14 | already in the firmware, KernelSU ([4PDA](https://4pda.to/forum/index.php?showtopic=1111776)) | ≈63–69 |
+| Ugoos X5M Pro, SK4 Pro | Amlogic S905X5M, 14 | the Root switch in the Ugoos settings, Magisk | ≈152 |
+| Ugoos AM9 Pro, AM8, SK1 Lite | Amlogic S905X5-J, S928X, 14 | the same | ≈237–298 |
+| Tanix W2 | Amlogic S905W2, 11 | Tanix factory firmware of 2024-04-24 with Magisk, from microSD via Burn Card Maker ([4PDA](https://4pda.to/forum/index.php?showtopic=1051605)) | ≈55 |
+| Magcubic HY350 MAX projector | Allwinner H726, 14 | [CleanRom](https://floforge.fr/en/articles/hy350-max-cleanrom/) firmware with Magisk, from a USB stick | ≈134 |
+| X88 Pro X5M, X96 M200, Tanix TX5 Plus | Amlogic S905X5M, 14 | firmware and guides with Magisk or KernelSU from 4PDA threads ([X88](https://4pda.to/forum/index.php?showtopic=1104876), [X96](https://4pda.to/forum/index.php?showtopic=1105149), [Tanix](https://4pda.to/forum/index.php?showtopic=1106852)), USB Burning Tool over a cable | ≈67–69 |
+| H96 Max V56 | Rockchip RK3566, 12 | firmware with Magisk ([XDA](https://xdaforums.com/t/rk3566-rk3568-tv-boxes-rooting-twrp-and-etcetera.4562613/)), Rockchip Factory Tool over a cable | ≈67 |
+| H96 Max M2 | Rockchip RK3528, 13 | Android TV 13 port with Magisk ([XDA](https://xdaforums.com/t/rk3528-h96max-androidtv-13-port-by-jwagnervaz.4711555/)), RKDevTool over a cable | ≈35 |
+| HY300, HY300 MAX, HY300 Ultra projectors | Allwinner H713, H726, 11–14 | boot partition patched by Magisk, via fastboot ([guide](https://github.com/YuujiLab/HY300-H713-Research/blob/main/Root/MAGISK_GUIDE.md)), or ready rooted firmware via PhoenixSuit | ≈49–80 |
 
 ## Installation
 

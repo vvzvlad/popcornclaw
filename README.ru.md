@@ -128,7 +128,7 @@
 или флешки, в конце — прошивкой с компьютера по кабелю USB A–A. Кроме GT-King, PopcornClaw на этих
 устройствах не запускался.
 
-| Устройство | Чип, Android | Как получить root | Цена на Озоне, ₽ |
+| Устройство | Чип, Android | Как получить root | Цена, ₽ |
 | --- | --- | --- | --- |
 | Beelink GT-King, GT-King Pro | Amlogic S922X, 9 | прошивка slimBOXtv и SuperSU 2.82, на них PopcornClaw проверен | — |
 | Vontar X5, HK1 RBOX X50 | Amlogic S905X5M, 14 | уже в прошивке, KernelSU ([4PDA](https://4pda.to/forum/index.php?showtopic=1111776)) | ≈5 200–5 700 |
