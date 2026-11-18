@@ -1,0 +1,87 @@
+diff --git a/docs/channels/telegram/README.md b/docs/channels/telegram/README.md
+index 0af6a1e..fdf16dc 100644
+--- a/docs/channels/telegram/README.md
++++ b/docs/channels/telegram/README.md
+@@ -30,6 +30,7 @@ The Telegram channel uses long polling via the Telegram Bot API for bot-based co
+ | proxy            | string | No       | Proxy URL for connecting to the Telegram API (e.g. http://127.0.0.1:7890) |
+ | use_markdown_v2 | bool   | No       | Enable Telegram MarkdownV2 formatting                              |
+ | media_group_delay_ms | int | No       | Idle delay before processing Telegram media groups/albums. Defaults to 500 ms |
++| answer_as_new_message | bool | No      | With tool feedback in one message (`agents.defaults.tool_feedback.separate_messages: false`), send the reply as a new message and delete the progress message instead of editing it into the reply. A new message notifies the chat, an edit does not. The placeholder message is still edited into a reply that came without tool steps |
+ 
+ ## Setup
+ 
+diff --git a/pkg/channels/telegram/telegram.go b/pkg/channels/telegram/telegram.go
+index 54d528e..bcf99e7 100644
+--- a/pkg/channels/telegram/telegram.go
++++ b/pkg/channels/telegram/telegram.go
+@@ -272,7 +272,10 @@ func (c *TelegramChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]
+ 		}
+ 	}
+ 	trackedMsgID, hasTrackedMsg := c.currentToolFeedbackMessage(trackedChatID)
+-	if !isToolFeedback {
++	// By default the reply takes the place of the tracked progress message. With
++	// answer_as_new_message it is sent as a new message, which notifies the chat
++	// where an edit does not, and the progress message is deleted after it.
++	if !isToolFeedback && !c.tgCfg.AnswerAsNewMessage {
+ 		if msgIDs, handled := c.finalizeToolFeedbackMessageForChat(ctx, trackedChatID, msg); handled {
+ 			return msgIDs, nil
+ 		}
+diff --git a/pkg/channels/telegram/telegram_test.go b/pkg/channels/telegram/telegram_test.go
+index 71f420c..cd79edf 100644
+--- a/pkg/channels/telegram/telegram_test.go
++++ b/pkg/channels/telegram/telegram_test.go
+@@ -610,6 +610,40 @@ func TestSend_NonToolFeedbackDeletesTrackedProgressMessage(t *testing.T) {
+ 	assert.False(t, ok, "tracked tool feedback should be cleared after final reply")
+ }
+ 
++func TestSend_AnswerAsNewMessageSendsReplyAndDeletesProgressMessage(t *testing.T) {
++	caller := &stubCaller{
++		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
++			switch {
++			case strings.Contains(url, "sendMessage"):
++				return successResponseWithMessageID(t, 2), nil
++			case strings.Contains(url, "deleteMessage"):
++				return &ta.Response{Ok: true, Result: json.RawMessage("true")}, nil
++			default:
++				t.Fatalf("unexpected API call: %s", url)
++				return nil, nil
++			}
++		},
++	}
++	ch := newTestChannel(t, caller)
++	ch.tgCfg.AnswerAsNewMessage = true
++	ch.RecordToolFeedbackMessage("12345", "1", "🔧 `read_file`")
++
++	ids, err := ch.Send(context.Background(), bus.OutboundMessage{
++		ChatID:  "12345",
++		Content: "final reply",
++	})
++
++	require.NoError(t, err)
++	assert.Equal(t, []string{"2"}, ids)
++	require.Len(t, caller.calls, 2)
++	assert.Contains(t, caller.calls[0].URL, "sendMessage")
++	assert.NotContains(t, string(caller.calls[0].Data.BodyRaw), `"disable_notification"`)
++	assert.Contains(t, caller.calls[1].URL, "deleteMessage")
++	assert.Contains(t, string(caller.calls[1].Data.BodyRaw), `"message_id":1`)
++	_, ok := ch.currentToolFeedbackMessage("12345")
++	assert.False(t, ok, "tracked tool feedback should be cleared after final reply")
++}
++
+ func TestSend_ToolFeedbackTrackingIsTopicScoped(t *testing.T) {
+ 	nextMessageID := 0
+ 	caller := &stubCaller{
+diff --git a/pkg/config/config.go b/pkg/config/config.go
+index 713079b..b986d39 100644
+--- a/pkg/config/config.go
++++ b/pkg/config/config.go
+@@ -591,6 +591,9 @@ type TelegramSettings struct {
+ 	Streaming         StreamingConfig `json:"streaming,omitzero"   yaml:"-"`
+ 	UseMarkdownV2     bool            `json:"use_markdown_v2"      yaml:"-"               env:"PICOCLAW_CHANNELS_TELEGRAM_USE_MARKDOWN_V2"`
+ 	MediaGroupDelayMS int             `json:"media_group_delay_ms" yaml:"-"               env:"PICOCLAW_CHANNELS_TELEGRAM_MEDIA_GROUP_DELAY_MS"`
++	// AnswerAsNewMessage sends the reply as a new message and deletes the tool
++	// feedback progress message, instead of editing that message into the reply.
++	AnswerAsNewMessage bool `json:"answer_as_new_message" yaml:"-" env:"PICOCLAW_CHANNELS_TELEGRAM_ANSWER_AS_NEW_MESSAGE"`
+ }
+ 
+ type FeishuSettings struct {

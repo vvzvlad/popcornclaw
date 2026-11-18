@@ -1,0 +1,62 @@
+diff --git a/pkg/tools/shell.go b/pkg/tools/shell.go
+index 6d54e94..496f829 100644
+--- a/pkg/tools/shell.go
++++ b/pkg/tools/shell.go
+@@ -1199,6 +1199,14 @@ func (t *ExecTool) guardCommand(command, cwd string) string {
+ 		for _, loc := range matchIndices {
+ 			raw := cmd[loc[0]:loc[1]]
+ 
++			// Skip matches made only of slashes, such as jq's alternative operator in
++			// `.name // "none"`. The guard would resolve them to "/", and a lone "/" is
++			// never matched by absolutePathPattern, so checking them only blocks
++			// commands that the same command with a single "/" already gets through.
++			if strings.Trim(raw, "/") == "" {
++				continue
++			}
++
+ 			// Skip URL path components that look like they're from web URLs.
+ 			// When a URL like "https://github.com" is parsed, the regex captures
+ 			// "//github.com" as a match (the path portion after "https:").
+diff --git a/pkg/tools/shell_test.go b/pkg/tools/shell_test.go
+index a3399ed..492a55d 100644
+--- a/pkg/tools/shell_test.go
++++ b/pkg/tools/shell_test.go
+@@ -787,6 +787,38 @@ func TestShellTool_URLBypassPrevented(t *testing.T) {
+ 	}
+ }
+ 
++// TestShellTool_BareSlashesNotBlocked verifies that a token made only of
++// slashes, such as jq's alternative operator "//", is not taken for a path
++// outside the workspace, while a real path in the same command still is.
++func TestShellTool_BareSlashesNotBlocked(t *testing.T) {
++	tmpDir := t.TempDir()
++	tool, err := NewExecTool(tmpDir, true)
++	if err != nil {
++		t.Fatalf("unable to configure exec tool: %s", err)
++	}
++
++	allowedCommands := []string{
++		`jq -r '.records[] | .fields.Name // "none"' data.json`,
++		`jq -r '.records[] | (.fields.Type // "")' data.json`,
++		`jq -r 'split("//")' data.json`,
++	}
++	for _, cmd := range allowedCommands {
++		if got := tool.guardCommand(cmd, tmpDir); got != "" {
++			t.Errorf("command should not be blocked: %q\n  got: %s", cmd, got)
++		}
++	}
++
++	blockedCommands := []string{
++		`jq -r '.name // "none"' /etc/passwd`,
++		"cat //etc/passwd",
++	}
++	for _, cmd := range blockedCommands {
++		if got := tool.guardCommand(cmd, tmpDir); !strings.Contains(got, "path outside working dir") {
++			t.Errorf("command should be blocked: %q\n  got: %q", cmd, got)
++		}
++	}
++}
++
+ // TestWindows_TildeBypassPrevented verifies that ~ (home directory) cannot be
+ // used to escape workspace restrictions on Windows.
+ func TestWindows_TildeBypassPrevented(t *testing.T) {

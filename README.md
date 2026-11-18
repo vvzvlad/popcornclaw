@@ -206,7 +206,7 @@ panel and MCP give the same to anyone who knows the PIN and is on the same local
 ## How it works
 
 PicoClaw is built from upstream main at a pinned commit (`PICOCLAW_COMMIT` in
-[picoclaw/Dockerfile](picoclaw/Dockerfile)) with twelve patches:
+[picoclaw/Dockerfile](picoclaw/Dockerfile)) with fourteen patches:
 
 - [picoclaw/tool-status.patch](picoclaw/tool-status.patch): every tool gets a required `status` argument,
   a phrase about the current stage that the bot shows in Telegram instead of the command; the argument is
@@ -248,6 +248,15 @@ PicoClaw is built from upstream main at a pinned commit (`PICOCLAW_COMMIT` in
   whether a message is addressed to the bot, from the message, the one it replies to, the bot's last
   message and the recent chat; a mention or the bot's own command skips it, and an error or a timeout
   means silence. Its configuration is in `docs/channels/telegram/README.md` of the patched tree.
+- [picoclaw/exec-bare-slashes.patch](picoclaw/exec-bare-slashes.patch): with `restrict_to_workspace`
+  the `exec` guard no longer takes a token made only of slashes for a path outside the workspace. Such a
+  token resolves to the root, which a bare `/` already reaches unchecked, and blocking it blocked any
+  `jq` filter where the alternative operator stands apart, as in `.name // "none"`.
+- [picoclaw/telegram-answer-as-new-message.patch](picoclaw/telegram-answer-as-new-message.patch): with the
+  progress status in one message (`tool_feedback.separate_messages: false`) and `answer_as_new_message`
+  in the Telegram settings, the reply comes as a new message and the status is deleted after it. Upstream
+  edits the status into the reply, and an edit gives no notification, while the status itself is sent
+  silently, so the reply would arrive without one.
 - [picoclaw/mcp-reconnect.patch](picoclaw/mcp-reconnect.patch): an MCP server that refused the connection
   when the gateway started (the projector app, which comes up after the gateway at boot) is retried in the
   background: the pause between attempts grows from 5 s to 5 minutes, and the attempts go on until the
