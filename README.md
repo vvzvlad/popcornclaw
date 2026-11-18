@@ -206,7 +206,7 @@ panel and MCP give the same to anyone who knows the PIN and is on the same local
 ## How it works
 
 PicoClaw is built from upstream main at a pinned commit (`PICOCLAW_COMMIT` in
-[picoclaw/Dockerfile](picoclaw/Dockerfile)) with twelve patches:
+[picoclaw/Dockerfile](picoclaw/Dockerfile)) with thirteen patches:
 
 - [picoclaw/tool-status.patch](picoclaw/tool-status.patch): every tool gets a required `status` argument,
   a phrase about the current stage that the bot shows in Telegram instead of the command; the argument is
@@ -252,6 +252,11 @@ PicoClaw is built from upstream main at a pinned commit (`PICOCLAW_COMMIT` in
   the `exec` guard no longer takes a token made only of slashes for a path outside the workspace. Such a
   token resolves to the root, which a bare `/` already reaches unchecked, and blocking it blocked any
   `jq` filter where the alternative operator stands apart, as in `.name // "none"`.
+- [picoclaw/telegram-answer-as-new-message.patch](picoclaw/telegram-answer-as-new-message.patch): with the
+  progress status in one message (`tool_feedback.separate_messages: false`) and `answer_as_new_message`
+  in the Telegram settings, the reply comes as a new message and the status is deleted after it. Upstream
+  edits the status into the reply, and an edit gives no notification, while the status itself is sent
+  silently, so the reply would arrive without one.
 
 There are two builds for the box, both static binaries, linux/armv7 and linux/arm64, and the APK carries
 both. The 32-bit one is tested on GT-King and GT-King Pro (Android 9, 32-bit userspace); the 64-bit one has

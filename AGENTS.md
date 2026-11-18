@@ -28,7 +28,9 @@ where his notes are; read it first when it is there.
   `/cmd` is addressed to the bot only when it is the bot's own command), `group-decision.patch` (in a group a
   decision model, `group_trigger.decision`, decides whether a message is addressed to the bot),
   `exec-bare-slashes.patch` (with `restrict_to_workspace` the exec guard no longer takes a token of bare
-  slashes, jq's `//` operator, for a path outside the workspace))
+  slashes, jq's `//` operator, for a path outside the workspace), `telegram-answer-as-new-message.patch`
+  (`answer_as_new_message` in the Telegram settings: the reply comes as a new message and the one-message
+  progress status is deleted, instead of the status being edited into the reply)
 - `launcher/app/src/main/assets/defaults/` — the `config.json` (PicoClaw config) and `AGENT.md` (facts
   about the box for the agent itself) a fresh box gets; keys go to `.security.yml` on the box, mode 600
 - `launcher/app/src/main/assets/termux/bootstrap.sh` — unpacks Termux's bootstrap without opening the app;
