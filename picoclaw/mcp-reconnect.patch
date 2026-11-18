@@ -1,0 +1,676 @@
+diff --git a/pkg/agent/agent_mcp.go b/pkg/agent/agent_mcp.go
+index e8cdf81..8527071 100644
+--- a/pkg/agent/agent_mcp.go
++++ b/pkg/agent/agent_mcp.go
+@@ -107,102 +107,49 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
+ 	}
+ 
+ 	al.mcp.initOnce.Do(func() {
++		// The retry callback runs later on its own goroutine: it registers into the registry and
++		// config this manager was built for, never into ones a reload has swapped in meanwhile.
++		registry, cfg := al.registry, al.cfg
+ 		mcpManager := mcp.NewManager(mcp.WithRuntimeEvents(al.runtimeEvents))
+ 
+-		defaultAgent := al.registry.GetDefaultAgent()
+-		workspacePath := al.cfg.WorkspacePath()
++		defaultAgent := registry.GetDefaultAgent()
++		workspacePath := cfg.WorkspacePath()
+ 		if defaultAgent != nil && defaultAgent.Workspace != "" {
+ 			workspacePath = defaultAgent.Workspace
+ 		}
+ 
+ 		if err := mcpManager.LoadFromMCPConfig(ctx, mcpCfg, workspacePath); err != nil {
+-			al.mcp.setInitErr(fmt.Errorf("failed to load MCP servers: %w", err))
+-			logger.WarnCF("agent", "Failed to load MCP servers, MCP tools will not be available",
+-				map[string]any{
+-					"error": err.Error(),
+-				})
+-			if closeErr := mcpManager.Close(); closeErr != nil {
+-				logger.ErrorCF("agent", "Failed to close MCP manager",
++			if !mcpManager.HasFailedServers() {
++				al.mcp.setInitErr(fmt.Errorf("failed to load MCP servers: %w", err))
++				logger.WarnCF("agent", "Failed to load MCP servers, MCP tools will not be available",
+ 					map[string]any{
+-						"error": closeErr.Error(),
++						"error": err.Error(),
+ 					})
++				if closeErr := mcpManager.Close(); closeErr != nil {
++					logger.ErrorCF("agent", "Failed to close MCP manager",
++						map[string]any{
++							"error": closeErr.Error(),
++						})
++				}
++				return
+ 			}
+-			return
++			logger.WarnCF("agent", "No MCP server connected, retrying in the background",
++				map[string]any{
++					"error": err.Error(),
++				})
+ 		}
+ 
+ 		// Register MCP tools for all agents
+ 		servers := mcpManager.GetServers()
+ 		uniqueTools := 0
+ 		totalRegistrations := 0
+-		agentIDs := al.registry.ListAgentIDs()
++		agentIDs := registry.ListAgentIDs()
+ 		agentCount := len(agentIDs)
+ 
+ 		for serverName, conn := range servers {
+ 			uniqueTools += len(conn.Tools)
+-
+-			// Determine whether this server's tools should be deferred (hidden).
+-			// Per-server "deferred" field takes precedence over the global Discovery.Enabled.
+-			serverCfg := mcpCfg.Servers[serverName]
+-			registerAsHidden := serverIsDeferred(al.cfg.Tools.MCP.Discovery.Enabled, serverCfg)
+-			registeredToolsByAgent := make(map[string]map[string]struct{}, len(agentIDs))
+-
+-			for _, tool := range conn.Tools {
+-				for _, agentID := range agentIDs {
+-					agent, ok := al.registry.GetAgent(agentID)
+-					if !ok {
+-						continue
+-					}
+-					if !agent.AllowsMCPServer(serverName) {
+-						logger.DebugCF("agent", "Skipped MCP tool registration by agent mcpServers allowlist",
+-							map[string]any{
+-								"agent_id": agentID,
+-								"server":   serverName,
+-								"tool":     tool.Name,
+-							})
+-						continue
+-					}
+-
+-					mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
+-					toolName := mcpTool.Name()
+-					mcpTool.SetWorkspace(agent.Workspace)
+-					mcpTool.SetMaxInlineTextRunes(al.cfg.Tools.MCP.GetMaxInlineTextChars())
+-					mcpTool.SetEventPublisher(al.runtimeEvents)
+-
+-					if registerAsHidden {
+-						agent.Tools.RegisterHidden(mcpTool)
+-					} else {
+-						agent.Tools.Register(mcpTool)
+-					}
+-					if !toolRegistryIncludes(agent.Tools, toolName) {
+-						continue
+-					}
+-
+-					recordRegisteredMCPTool(registeredToolsByAgent, agentID, toolName)
+-					totalRegistrations++
+-					logger.DebugCF("agent", "Registered MCP tool",
+-						map[string]any{
+-							"agent_id": agentID,
+-							"server":   serverName,
+-							"tool":     tool.Name,
+-							"name":     toolName,
+-							"deferred": registerAsHidden,
+-						})
+-				}
+-			}
+-
+-			for _, agentID := range agentIDs {
+-				agent, ok := al.registry.GetAgent(agentID)
+-				if !ok {
+-					continue
+-				}
+-				registerMCPServerPromptContributor(
+-					agentID,
+-					agent,
+-					serverName,
+-					len(registeredToolsByAgent[agentID]),
+-					registerAsHidden,
+-				)
+-			}
++			totalRegistrations += al.registerMCPServerTools(
++				registry, cfg, mcpManager, serverName, mcpCfg.Servers[serverName], conn)
+ 		}
+ 		logger.InfoCF("agent", "MCP tools registered successfully",
+ 			map[string]any{
+@@ -213,9 +160,9 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
+ 			})
+ 
+ 		// Initializes Discovery Tools only if enabled by configuration
+-		if al.cfg.Tools.MCP.Enabled && al.cfg.Tools.MCP.Discovery.Enabled {
+-			useBM25 := al.cfg.Tools.MCP.Discovery.UseBM25
+-			useRegex := al.cfg.Tools.MCP.Discovery.UseRegex
++		if cfg.Tools.MCP.Enabled && cfg.Tools.MCP.Discovery.Enabled {
++			useBM25 := cfg.Tools.MCP.Discovery.UseBM25
++			useRegex := cfg.Tools.MCP.Discovery.UseRegex
+ 
+ 			// Fail fast: If discovery is enabled but no search method is turned on
+ 			if !useBM25 && !useRegex {
+@@ -231,12 +178,12 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
+ 				return
+ 			}
+ 
+-			ttl := al.cfg.Tools.MCP.Discovery.TTL
++			ttl := cfg.Tools.MCP.Discovery.TTL
+ 			if ttl <= 0 {
+ 				ttl = 5 // Default value
+ 			}
+ 
+-			maxSearchResults := al.cfg.Tools.MCP.Discovery.MaxSearchResults
++			maxSearchResults := cfg.Tools.MCP.Discovery.MaxSearchResults
+ 			if maxSearchResults <= 0 {
+ 				maxSearchResults = 5 // Default value
+ 			}
+@@ -246,11 +193,11 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
+ 			})
+ 
+ 			for _, agentID := range agentIDs {
+-				agent, ok := al.registry.GetAgent(agentID)
++				agent, ok := registry.GetAgent(agentID)
+ 				if !ok {
+ 					continue
+ 				}
+-				if !agentHasDiscoverableMCPServers(al.cfg, agent.MCPServerAllowlist) {
++				if !agentHasDiscoverableMCPServers(cfg, agent.MCPServerAllowlist) {
+ 					continue
+ 				}
+ 
+@@ -264,11 +211,104 @@ func (al *AgentLoop) ensureMCPInitialized(ctx context.Context) error {
+ 		}
+ 
+ 		al.mcp.setManager(mcpManager)
++
++		mcpManager.RetryFailedServers(func(serverName string, conn *mcp.ServerConnection) {
++			if mcpManager.IsClosed() {
++				return
++			}
++			registered := al.registerMCPServerTools(
++				registry, cfg, mcpManager, serverName, mcpCfg.Servers[serverName], conn)
++			logger.InfoCF("agent", "MCP server connected after retry, tools registered",
++				map[string]any{
++					"server":              serverName,
++					"tool_count":          len(conn.Tools),
++					"total_registrations": registered,
++				})
++		})
+ 	})
+ 
+ 	return al.mcp.getInitErr()
+ }
+ 
++// registerMCPServerTools registers the tools of one connected MCP server for every agent that
++// allows it, plus the server's prompt contributor. It returns the number of tool registrations.
++func (al *AgentLoop) registerMCPServerTools(
++	registry *AgentRegistry,
++	cfg *config.Config,
++	mcpManager *mcp.Manager,
++	serverName string,
++	serverCfg config.MCPServerConfig,
++	conn *mcp.ServerConnection,
++) int {
++	agentIDs := registry.ListAgentIDs()
++	totalRegistrations := 0
++
++	// Determine whether this server's tools should be deferred (hidden).
++	// Per-server "deferred" field takes precedence over the global Discovery.Enabled.
++	registerAsHidden := serverIsDeferred(cfg.Tools.MCP.Discovery.Enabled, serverCfg)
++	registeredToolsByAgent := make(map[string]map[string]struct{}, len(agentIDs))
++
++	for _, tool := range conn.Tools {
++		for _, agentID := range agentIDs {
++			agent, ok := registry.GetAgent(agentID)
++			if !ok {
++				continue
++			}
++			if !agent.AllowsMCPServer(serverName) {
++				logger.DebugCF("agent", "Skipped MCP tool registration by agent mcpServers allowlist",
++					map[string]any{
++						"agent_id": agentID,
++						"server":   serverName,
++						"tool":     tool.Name,
++					})
++				continue
++			}
++
++			mcpTool := tools.NewMCPTool(mcpManager, serverName, tool)
++			toolName := mcpTool.Name()
++			mcpTool.SetWorkspace(agent.Workspace)
++			mcpTool.SetMaxInlineTextRunes(cfg.Tools.MCP.GetMaxInlineTextChars())
++			mcpTool.SetEventPublisher(al.runtimeEvents)
++
++			if registerAsHidden {
++				agent.Tools.RegisterHidden(mcpTool)
++			} else {
++				agent.Tools.Register(mcpTool)
++			}
++			if !toolRegistryIncludes(agent.Tools, toolName) {
++				continue
++			}
++
++			recordRegisteredMCPTool(registeredToolsByAgent, agentID, toolName)
++			totalRegistrations++
++			logger.DebugCF("agent", "Registered MCP tool",
++				map[string]any{
++					"agent_id": agentID,
++					"server":   serverName,
++					"tool":     tool.Name,
++					"name":     toolName,
++					"deferred": registerAsHidden,
++				})
++		}
++	}
++
++	for _, agentID := range agentIDs {
++		agent, ok := registry.GetAgent(agentID)
++		if !ok {
++			continue
++		}
++		registerMCPServerPromptContributor(
++			agentID,
++			agent,
++			serverName,
++			len(registeredToolsByAgent[agentID]),
++			registerAsHidden,
++		)
++	}
++
++	return totalRegistrations
++}
++
+ func registerMCPServerPromptContributor(
+ 	agentID string,
+ 	agent *AgentInstance,
+diff --git a/pkg/agent/agent_mcp_test.go b/pkg/agent/agent_mcp_test.go
+index f858611..f71e3fc 100644
+--- a/pkg/agent/agent_mcp_test.go
++++ b/pkg/agent/agent_mcp_test.go
+@@ -9,8 +9,15 @@ package agent
+ import (
+ 	"context"
+ 	"errors"
++	"net/http"
++	"net/http/httptest"
++	"slices"
+ 	"strings"
++	"sync/atomic"
+ 	"testing"
++	"time"
++
++	sdkmcp "github.com/modelcontextprotocol/go-sdk/mcp"
+ 
+ 	"github.com/sipeed/picoclaw/pkg/config"
+ 	"github.com/sipeed/picoclaw/pkg/mcp"
+@@ -269,47 +276,60 @@ func TestAgentHasDiscoverableMCPServers(t *testing.T) {
+ 	}
+ }
+ 
+-func TestEnsureMCPInitialized_LoadFailureSetsInitErr(t *testing.T) {
++func TestEnsureMCPInitialized_AllServersDownIsRetriedInBackground(t *testing.T) {
+ 	al, cfg, _, _, cleanup := newTestAgentLoop(t)
+ 	defer cleanup()
+ 	defer al.Close()
+ 
++	server := sdkmcp.NewServer(&sdkmcp.Implementation{Name: "late-server", Version: "1.0.0"}, nil)
++	sdkmcp.AddTool(server, &sdkmcp.Tool{
++		Name:        "ping",
++		Description: "Ping test tool",
++	}, func(ctx context.Context, req *sdkmcp.CallToolRequest, args map[string]any) (*sdkmcp.CallToolResult, any, error) {
++		return &sdkmcp.CallToolResult{Content: []sdkmcp.Content{&sdkmcp.TextContent{Text: "pong"}}}, nil, nil
++	})
++	mcpHandler := sdkmcp.NewStreamableHTTPHandler(func(*http.Request) *sdkmcp.Server { return server }, nil)
++
++	var up atomic.Bool
++	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		if !up.Load() {
++			http.Error(w, "not started yet", http.StatusServiceUnavailable)
++			return
++		}
++		mcpHandler.ServeHTTP(w, r)
++	}))
++	defer httpServer.Close()
++
+ 	cfg.Tools = config.ToolsConfig{
+ 		MCP: config.MCPConfig{
+ 			ToolConfig: config.ToolConfig{Enabled: true},
+ 			Servers: map[string]config.MCPServerConfig{
+-				"broken": {
+-					Enabled: true,
+-					Command: "picoclaw-command-that-does-not-exist-for-mcp-tests",
+-				},
++				"late": {Enabled: true, Type: "http", URL: httpServer.URL},
+ 			},
+ 		},
+ 	}
+ 
+-	err := al.ensureMCPInitialized(context.Background())
+-	if err == nil {
+-		t.Fatal("ensureMCPInitialized() error = nil, want load failure")
++	if err := al.ensureMCPInitialized(context.Background()); err != nil {
++		t.Fatalf("ensureMCPInitialized() error = %v, want nil while the only server is down", err)
+ 	}
+-	if !strings.Contains(err.Error(), "failed to load MCP servers") {
+-		t.Fatalf("ensureMCPInitialized() error = %q, want wrapped load failure", err.Error())
+-	}
+-
+-	initErr := al.mcp.getInitErr()
+-	if initErr == nil {
+-		t.Fatal("getInitErr() = nil, want cached load failure")
+-	}
+-	if !strings.Contains(initErr.Error(), "failed to load MCP servers") {
+-		t.Fatalf("getInitErr() = %q, want wrapped load failure", initErr.Error())
++	if !al.mcp.hasManager() {
++		t.Fatal("expected the MCP manager to be kept for retries")
+ 	}
+-	if al.mcp.getManager() != nil {
+-		t.Fatal("expected MCP manager to remain nil after load failure")
++	if got := al.registry.GetDefaultAgent().Tools.List(); slices.Contains(got, "mcp_late_ping") {
++		t.Fatalf("tool registered while the server is down: %v", got)
+ 	}
+ 
+-	err = al.ensureMCPInitialized(context.Background())
+-	if err == nil {
+-		t.Fatal("second ensureMCPInitialized() error = nil, want cached load failure")
+-	}
+-	if !strings.Contains(err.Error(), "failed to load MCP servers") {
+-		t.Fatalf("second ensureMCPInitialized() error = %q, want wrapped load failure", err.Error())
++	up.Store(true)
++
++	deadline := time.Now().Add(20 * time.Second)
++	for {
++		if _, ok := al.registry.GetDefaultAgent().Tools.Get("mcp_late_ping"); ok {
++			return
++		}
++		if time.Now().After(deadline) {
++			t.Fatalf("tool mcp_late_ping did not appear after the server came up; tools: %v",
++				al.registry.GetDefaultAgent().Tools.List())
++		}
++		time.Sleep(100 * time.Millisecond)
+ 	}
+ }
+diff --git a/pkg/mcp/manager.go b/pkg/mcp/manager.go
+index a5ab10a..686586d 100644
+--- a/pkg/mcp/manager.go
++++ b/pkg/mcp/manager.go
+@@ -12,6 +12,7 @@ import (
+ 	"strings"
+ 	"sync"
+ 	"sync/atomic"
++	"time"
+ 
+ 	"github.com/modelcontextprotocol/go-sdk/mcp"
+ 
+@@ -129,6 +130,8 @@ type ServerConnection struct {
+ // Manager manages multiple MCP server connections
+ type Manager struct {
+ 	servers       map[string]*ServerConnection
++	failed        map[string]config.MCPServerConfig // servers whose first connect failed, with the resolved config to retry
++	done          chan struct{}                     // closed by Close to stop the retry goroutines
+ 	runtimeEvents runtimeevents.Bus
+ 	mu            sync.RWMutex
+ 	closed        atomic.Bool    // changed from bool to atomic.Bool to avoid TOCTOU race
+@@ -137,6 +140,13 @@ type Manager struct {
+ 
+ var connectServerFunc = connectServer
+ 
++// Delays between attempts to connect a server that was down at startup: the first one, doubled
++// after each failure up to the cap. Variables so tests can shorten them.
++var (
++	retryFirstDelay = 5 * time.Second
++	retryMaxDelay   = 5 * time.Minute
++)
++
+ // ManagerOption configures an MCP manager.
+ type ManagerOption func(*Manager)
+ 
+@@ -162,6 +172,8 @@ type ServerEventPayload struct {
+ func NewManager(opts ...ManagerOption) *Manager {
+ 	m := &Manager{
+ 		servers: make(map[string]*ServerConnection),
++		failed:  make(map[string]config.MCPServerConfig),
++		done:    make(chan struct{}),
+ 	}
+ 	for _, opt := range opts {
+ 		if opt != nil {
+@@ -242,6 +254,9 @@ func (m *Manager) LoadFromMCPConfig(
+ 						"server": name,
+ 						"error":  err.Error(),
+ 					})
++				m.mu.Lock()
++				m.failed[name] = serverCfg
++				m.mu.Unlock()
+ 				errs <- fmt.Errorf("failed to connect to server %s: %w", name, err)
+ 			}
+ 		}(name, serverCfg, workspacePath)
+@@ -287,6 +302,85 @@ func (m *Manager) LoadFromMCPConfig(
+ 	return nil
+ }
+ 
++// HasFailedServers reports whether some server failed to connect and is still waiting to be retried.
++func (m *Manager) HasFailedServers() bool {
++	m.mu.RLock()
++	defer m.mu.RUnlock()
++	return len(m.failed) > 0
++}
++
++// IsClosed reports whether the manager has been closed.
++func (m *Manager) IsClosed() bool {
++	return m.closed.Load()
++}
++
++// RetryFailedServers starts one goroutine per server that failed to connect in LoadFromMCPConfig.
++// Each retries with a growing delay until it connects or the manager is closed; onConnected is
++// called with the new connection. It returns the number of goroutines started.
++func (m *Manager) RetryFailedServers(onConnected func(name string, conn *ServerConnection)) int {
++	m.mu.RLock()
++	pending := make(map[string]config.MCPServerConfig, len(m.failed))
++	for name, cfg := range m.failed {
++		pending[name] = cfg
++	}
++	m.mu.RUnlock()
++
++	// Read once here: the goroutines outlive Close and must not touch the package variables.
++	firstDelay, maxDelay := retryFirstDelay, retryMaxDelay
++	for name, cfg := range pending {
++		go m.retryServer(name, cfg, firstDelay, maxDelay, onConnected)
++	}
++	return len(pending)
++}
++
++func (m *Manager) retryServer(
++	name string,
++	cfg config.MCPServerConfig,
++	firstDelay, maxDelay time.Duration,
++	onConnected func(name string, conn *ServerConnection),
++) {
++	delay := firstDelay
++	for {
++		timer := time.NewTimer(delay)
++		select {
++		case <-m.done:
++			timer.Stop()
++			return
++		case <-timer.C:
++		}
++
++		// Background on purpose: a stdio server's process is bound to the connect context
++		// (exec.CommandContext), so a request-scoped context would kill it later.
++		err := m.ConnectServer(context.Background(), name, cfg)
++		if err == nil {
++			break
++		}
++		if m.IsClosed() {
++			return
++		}
++		delay = min(delay*2, maxDelay)
++		logger.WarnCF("mcp", "Retry to connect to MCP server failed",
++			map[string]any{
++				"server":     name,
++				"error":      err.Error(),
++				"next_retry": delay.String(),
++			})
++	}
++
++	m.mu.Lock()
++	delete(m.failed, name)
++	conn, ok := m.servers[name]
++	m.mu.Unlock()
++	if !ok {
++		return
++	}
++	logger.InfoCF("mcp", "Connected to MCP server after retry",
++		map[string]any{
++			"server": name,
++		})
++	onConnected(name, conn)
++}
++
+ // ConnectServer connects to a single MCP server
+ func (m *Manager) ConnectServer(
+ 	ctx context.Context,
+@@ -670,6 +764,7 @@ func (m *Manager) Close() error {
+ 	if m.closed.Swap(true) {
+ 		return nil // already closed
+ 	}
++	close(m.done)
+ 
+ 	// Wait for all in-flight CallTool calls to finish before closing sessions
+ 	// After closed=true is set, no new CallTool can start (they check closed first)
+diff --git a/pkg/mcp/manager_test.go b/pkg/mcp/manager_test.go
+index 2455a49..b2ff0da 100644
+--- a/pkg/mcp/manager_test.go
++++ b/pkg/mcp/manager_test.go
+@@ -11,6 +11,7 @@ import (
+ 	"path/filepath"
+ 	"strings"
+ 	"sync"
++	"sync/atomic"
+ 	"testing"
+ 	"time"
+ 
+@@ -623,6 +624,131 @@ func TestClose_IdempotentOnEmptyManager(t *testing.T) {
+ 	}
+ }
+ 
++func shortenRetryDelays(t *testing.T) {
++	t.Helper()
++	originalFirst, originalMax := retryFirstDelay, retryMaxDelay
++	retryFirstDelay, retryMaxDelay = 5*time.Millisecond, 20*time.Millisecond
++	t.Cleanup(func() {
++		retryFirstDelay, retryMaxDelay = originalFirst, originalMax
++	})
++}
++
++func TestRetryFailedServers_ConnectsServerThatWasDown(t *testing.T) {
++	originalConnectServerFunc := connectServerFunc
++	t.Cleanup(func() {
++		connectServerFunc = originalConnectServerFunc
++	})
++	shortenRetryDelays(t)
++
++	upConn, _, err := newScriptedServerConnection("session-1", nil, nil)
++	if err != nil {
++		t.Fatalf("newScriptedServerConnection() error = %v", err)
++	}
++
++	var connectCalls atomic.Int32
++	connectServerFunc = func(ctx context.Context, name string, cfg config.MCPServerConfig) (*ServerConnection, error) {
++		if connectCalls.Add(1) <= 2 {
++			return nil, fmt.Errorf("connection refused")
++		}
++		return upConn, nil
++	}
++
++	mgr := NewManager()
++	defer mgr.Close()
++
++	mcpCfg := config.MCPConfig{
++		ToolConfig: config.ToolConfig{Enabled: true},
++		Servers: map[string]config.MCPServerConfig{
++			"projector": {Enabled: true, URL: "http://127.0.0.1:1/mcp"},
++		},
++	}
++	if err := mgr.LoadFromMCPConfig(context.Background(), mcpCfg, ""); err == nil {
++		t.Fatal("LoadFromMCPConfig() error = nil, want failure of the only server")
++	}
++	if !mgr.HasFailedServers() {
++		t.Fatal("HasFailedServers() = false, want true after the failed connect")
++	}
++
++	connected := make(chan *ServerConnection, 1)
++	started := mgr.RetryFailedServers(func(name string, conn *ServerConnection) {
++		if name != "projector" {
++			t.Errorf("onConnected name = %q, want %q", name, "projector")
++		}
++		connected <- conn
++	})
++	if started != 1 {
++		t.Fatalf("RetryFailedServers() = %d, want 1", started)
++	}
++
++	select {
++	case conn := <-connected:
++		if conn != upConn {
++			t.Fatalf("onConnected conn = %p, want %p", conn, upConn)
++		}
++	case <-time.After(5 * time.Second):
++		t.Fatal("onConnected was not called")
++	}
++	if got, ok := mgr.GetServer("projector"); !ok || got != upConn {
++		t.Fatalf("GetServer() = %p, %v, want the connection made by the retry", got, ok)
++	}
++	if mgr.HasFailedServers() {
++		t.Fatal("HasFailedServers() = true, want false after the retry succeeded")
++	}
++	if got := connectCalls.Load(); got != 3 {
++		t.Fatalf("connect calls = %d, want 3 (initial, one failed retry, successful retry)", got)
++	}
++}
++
++func TestClose_StopsRetryingFailedServers(t *testing.T) {
++	originalConnectServerFunc := connectServerFunc
++	t.Cleanup(func() {
++		connectServerFunc = originalConnectServerFunc
++	})
++	shortenRetryDelays(t)
++
++	var connectCalls atomic.Int32
++	connectServerFunc = func(ctx context.Context, name string, cfg config.MCPServerConfig) (*ServerConnection, error) {
++		connectCalls.Add(1)
++		return nil, fmt.Errorf("connection refused")
++	}
++
++	mgr := NewManager()
++	mcpCfg := config.MCPConfig{
++		ToolConfig: config.ToolConfig{Enabled: true},
++		Servers: map[string]config.MCPServerConfig{
++			"projector": {Enabled: true, URL: "http://127.0.0.1:1/mcp"},
++		},
++	}
++	if err := mgr.LoadFromMCPConfig(context.Background(), mcpCfg, ""); err == nil {
++		t.Fatal("LoadFromMCPConfig() error = nil, want failure of the only server")
++	}
++	mgr.RetryFailedServers(func(string, *ServerConnection) {
++		t.Error("onConnected called for a server that never connects")
++	})
++
++	deadline := time.Now().Add(5 * time.Second)
++	for connectCalls.Load() < 3 {
++		if time.Now().After(deadline) {
++			t.Fatal("no retries happened before Close")
++		}
++		time.Sleep(time.Millisecond)
++	}
++
++	if err := mgr.Close(); err != nil {
++		t.Fatalf("Close() error = %v", err)
++	}
++	if !mgr.IsClosed() {
++		t.Fatal("IsClosed() = false after Close")
++	}
++	// Let an attempt that was already in flight at Close finish, then require silence.
++	time.Sleep(50 * time.Millisecond)
++	callsAfterClose := connectCalls.Load()
++	time.Sleep(100 * time.Millisecond)
++	if got := connectCalls.Load(); got != callsAfterClose {
++		t.Fatalf("connect calls grew from %d to %d after Close", callsAfterClose, got)
++	}
++}
++
+ func newScriptedServerConnection(
+ 	sessionID string,
+ 	toolCallResult *sdkmcp.CallToolResult,

@@ -206,7 +206,7 @@ panel and MCP give the same to anyone who knows the PIN and is on the same local
 ## How it works
 
 PicoClaw is built from upstream main at a pinned commit (`PICOCLAW_COMMIT` in
-[picoclaw/Dockerfile](picoclaw/Dockerfile)) with thirteen patches:
+[picoclaw/Dockerfile](picoclaw/Dockerfile)) with fourteen patches:
 
 - [picoclaw/tool-status.patch](picoclaw/tool-status.patch): every tool gets a required `status` argument,
   a phrase about the current stage that the bot shows in Telegram instead of the command; the argument is
@@ -257,6 +257,10 @@ PicoClaw is built from upstream main at a pinned commit (`PICOCLAW_COMMIT` in
   in the Telegram settings, the reply comes as a new message and the status is deleted after it. Upstream
   edits the status into the reply, and an edit gives no notification, while the status itself is sent
   silently, so the reply would arrive without one.
+- [picoclaw/mcp-reconnect.patch](picoclaw/mcp-reconnect.patch): an MCP server that refused the connection
+  when the gateway started (the projector app, which comes up after the gateway at boot) is retried in the
+  background: the pause between attempts grows from 5 s to 5 minutes, and the attempts go on until the
+  server answers; then its tools appear for the agent with no restart. Without the patch the gateway tried each server once and never again.
 
 There are two builds for the box, both static binaries, linux/armv7 and linux/arm64, and the APK carries
 both. The 32-bit one is tested on GT-King and GT-King Pro (Android 9, 32-bit userspace); the 64-bit one has

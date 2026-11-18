@@ -56,7 +56,7 @@ build/arm/picoclaw build/arm64/picoclaw build/amd64/picoclaw: build/%/picoclaw: 
 	picoclaw/asr-proxy.patch picoclaw/image-shrink.patch picoclaw/tool-feedback.patch picoclaw/keep-logs.patch \
 	picoclaw/shared-session.patch picoclaw/pico-audio.patch picoclaw/start-to-agent.patch picoclaw/webhook-channel.patch \
 	picoclaw/group-foreign-commands.patch picoclaw/group-decision.patch picoclaw/exec-bare-slashes.patch \
-	picoclaw/telegram-answer-as-new-message.patch
+	picoclaw/telegram-answer-as-new-message.patch picoclaw/mcp-reconnect.patch
 	docker build --build-arg GOARCH=$* -t popcornclaw-picoclaw-$* picoclaw
 	mkdir -p $(@D)
 	id=$$(docker create popcornclaw-picoclaw-$* /picoclaw) && { docker cp $$id:/picoclaw $@; r=$$?; docker rm $$id >/dev/null; exit $$r; }
