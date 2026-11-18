@@ -206,7 +206,7 @@ panel and MCP give the same to anyone who knows the PIN and is on the same local
 ## How it works
 
 PicoClaw is built from upstream main at a pinned commit (`PICOCLAW_COMMIT` in
-[picoclaw/Dockerfile](picoclaw/Dockerfile)) with eight patches:
+[picoclaw/Dockerfile](picoclaw/Dockerfile)) with eleven patches:
 
 - [picoclaw/tool-status.patch](picoclaw/tool-status.patch): every tool gets a required `status` argument,
   a phrase about the current stage that the bot shows in Telegram instead of the command; the argument is
@@ -235,6 +235,19 @@ PicoClaw is built from upstream main at a pinned commit (`PICOCLAW_COMMIT` in
 - [picoclaw/pico-audio.patch](picoclaw/pico-audio.patch): the pico channel takes a voice note: the gateway
   saves the recording from the remote's microphone button, marks it `[voice]` and transcribes it with the
   same Groq as Telegram voice notes.
+- [picoclaw/webhook-channel.patch](picoclaw/webhook-channel.patch): a generic `webhook` channel. A message
+  arrives as a POST signed with HMAC-SHA256 (`X-Webhook-Signature`) on the gateway's HTTP server, and the
+  agent's reply goes back as a POST to `send_url`; several named instances can run side by side. Its
+  protocol is in `docs/channels/webhook/README.md` of the patched tree.
+- [picoclaw/group-foreign-commands.patch](picoclaw/group-foreign-commands.patch): in a Telegram group a
+  bare `/cmd` counts as addressed to the bot only when it is one of the bot's own commands; a group
+  message that starts with a command for another bot (`/print` for a label printer) no longer reaches
+  the agent.
+- [picoclaw/group-decision.patch](picoclaw/group-decision.patch): in a Telegram group a decision model
+  (`group_trigger.decision`: the OpenRouter Decisions API, for example `typesafe/jev-1.14`) decides
+  whether a message is addressed to the bot, from the message, the one it replies to, the bot's last
+  message and the recent chat; a mention or the bot's own command skips it, and an error or a timeout
+  means silence. Its configuration is in `docs/channels/telegram/README.md` of the patched tree.
 
 There are two builds for the box, both static binaries, linux/armv7 and linux/arm64, and the APK carries
 both. The 32-bit one is tested on GT-King and GT-King Pro (Android 9, 32-bit userspace); the 64-bit one has

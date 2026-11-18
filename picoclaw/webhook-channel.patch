@@ -1,0 +1,1010 @@
+diff --git a/docs/channels/webhook/README.md b/docs/channels/webhook/README.md
+new file mode 100644
+index 00000000..c416e01c
+--- /dev/null
++++ b/docs/channels/webhook/README.md
+@@ -0,0 +1,150 @@
++# 🔗 Webhook Channel
++
++PicoClaw can talk to any service that can send a signed HTTP request and receive one back. The service POSTs a message to PicoClaw; PicoClaw hands it to the agent and POSTs every reply to a URL of your choosing.
++
++## 🚀 Quick Start
++
++**1. Add the channel to `~/.picoclaw/config.json`:**
++
++```json
++{
++  "channel_list": {
++    "webhook": {
++      "enabled": true,
++      "type": "webhook",
++      "settings": {
++        "send_url": "http://localhost:9000/reply"
++      }
++    }
++  }
++}
++```
++
++**2. Put the shared secret in `~/.picoclaw/.security.yml`:**
++
++```yaml
++channel_list:
++  webhook:
++    settings:
++      secret: your_shared_secret
++```
++
++**3. Start the gateway:**
++
++```bash
++picoclaw gateway
++```
++
++**4. Send a signed message:**
++
++```bash
++BODY='{"sender":"alice","content":"What is the CPU usage?","thread_id":"job-1"}'
++SIG=$(printf '%s' "$BODY" | openssl dgst -sha256 -hmac "your_shared_secret" -hex | sed 's/^.* //')
++curl -X POST http://127.0.0.1:18790/webhook/webhook \
++  -H "Content-Type: application/json" \
++  -H "X-Webhook-Signature: sha256=$SIG" \
++  -d "$BODY"
++```
++
++The reply arrives as a POST to `send_url`.
++
++---
++
++## 📨 Inbound Request
++
++PicoClaw receives messages on the shared Gateway HTTP server (listening on `127.0.0.1:18790` by default), at the channel's `path`.
++
++```json
++{ "sender": "alice", "content": "your message here", "thread_id": "job-1" }
++```
++
++| Field | Required | Description |
++|-------|----------|-------------|
++| `content` | Yes | Message text. Must not be empty |
++| `thread_id` | No | Conversation identifier, used as the chat ID. Replies carry it back. Falls back to `sender` when empty |
++| `sender` | No | Sender identifier, matched against `allow_from` |
++
++The request must carry the header `X-Webhook-Signature: sha256=<hex>`, where `<hex>` is the HMAC-SHA256 of the raw request body, keyed with `secret`.
++
++| Status | Meaning |
++|--------|---------|
++| `202` | The message was handed to the agent |
++| `400` | Malformed JSON, empty `content`, or neither `thread_id` nor `sender` given |
++| `401` | Missing or wrong signature |
++| `403` | The sender is not in `allow_from` |
++| `413` | Body larger than 1 MiB |
++| `503` | The channel is not running, or the message could not be handed to the agent |
++
++Any status other than `202` means the message was not delivered.
++
++---
++
++## 📤 Reply Request
++
++Every agent reply is POSTed to `send_url` with `Content-Type: application/json`:
++
++```json
++{ "content": "reply text", "thread_id": "job-1", "recipient": "job-1" }
++```
++
++`thread_id` and `recipient` both hold the chat ID of the request being answered. Tool-feedback progress messages are not sent.
++
++The receiver should answer `2xx`. Failures are classified like in other channels: `404` and other `4xx` are permanent, `429` and `5xx` (and network errors) are temporary and retried by the channel manager.
++
++---
++
++## ⚙️ Configuration
++
++| Field | Location | Required | Default | Description |
++|-------|----------|----------|---------|-------------|
++| `secret` | `.security.yml` | Yes | — | Shared secret for the request signature |
++| `send_url` | `settings` | Yes | — | URL that receives the replies |
++| `path` | `settings` | No | `/webhook/<channel name>` | Path to mount on the Gateway HTTP server |
++| `allow_from` | channel | No | all senders | Allowed `sender` values |
++
++The channel is not started until both `secret` and `send_url` are set.
++
++### Several instances
++
++Each entry in `channel_list` with `"type": "webhook"` is an independent channel with its own path, secret and send URL:
++
++```json
++{
++  "channel_list": {
++    "alerts": {
++      "enabled": true,
++      "type": "webhook",
++      "settings": {
++        "path": "/hooks/alerts",
++        "send_url": "http://localhost:9001/reply"
++      }
++    },
++    "helpdesk": {
++      "enabled": true,
++      "type": "webhook",
++      "settings": {
++        "send_url": "http://localhost:9002/reply"
++      }
++    }
++  }
++}
++```
++
++```yaml
++channel_list:
++  alerts:
++    settings:
++      secret: alerts_secret
++  helpdesk:
++    settings:
++      secret: helpdesk_secret
++```
++
++Here `alerts` listens on `/hooks/alerts` and `helpdesk` on the default `/webhook/helpdesk`.
++
++---
++
++## ⚠️ Notes
++
++- **No media, typing indicator, placeholder or reactions**: the channel carries text only.
++- **HTTPS**: PicoClaw serves plain HTTP; put a reverse proxy in front of the Gateway if the sender is not on the same host.
+diff --git a/pkg/channels/README.md b/pkg/channels/README.md
+index eef31a61..ca2829a7 100644
+--- a/pkg/channels/README.md
++++ b/pkg/channels/README.md
+@@ -1302,6 +1302,7 @@ make test                                       # Full test suite
+ | `pkg/channels/discord/` | `"discord"` | TypingCapable, PlaceholderCapable, MessageEditor, MediaSender |
+ | `pkg/channels/slack/` | `"slack"` | ReactionCapable, MediaSender |
+ | `pkg/channels/line/` | `"line"` | TypingCapable, MediaSender, WebhookHandler |
++| `pkg/channels/webhook/` | `"webhook"` | WebhookHandler |
+ | `pkg/channels/onebot/` | `"onebot"` | ReactionCapable, MediaSender |
+ | `pkg/channels/dingtalk/` | `"dingtalk"` | — |
+ | `pkg/channels/feishu/` | `"feishu"` | — (architecture-specific build tags: `feishu_32.go` / `feishu_64.go`) |
+diff --git a/pkg/channels/README.zh.md b/pkg/channels/README.zh.md
+index b9add6ff..5157eb1c 100644
+--- a/pkg/channels/README.zh.md
++++ b/pkg/channels/README.zh.md
+@@ -1300,6 +1300,7 @@ make test                                       # 全量测试
+ | `pkg/channels/discord/` | `"discord"` | TypingCapable, PlaceholderCapable, MessageEditor, MediaSender |
+ | `pkg/channels/slack/` | `"slack"` | ReactionCapable, MediaSender |
+ | `pkg/channels/line/` | `"line"` | TypingCapable, MediaSender, WebhookHandler |
++| `pkg/channels/webhook/` | `"webhook"` | WebhookHandler |
+ | `pkg/channels/onebot/` | `"onebot"` | ReactionCapable, MediaSender |
+ | `pkg/channels/dingtalk/` | `"dingtalk"` | — |
+ | `pkg/channels/feishu/` | `"feishu"` | — (架构特定 build tags: `feishu_32.go` / `feishu_64.go`) |
+diff --git a/pkg/channels/manager.go b/pkg/channels/manager.go
+index bea8154f..9f12110e 100644
+--- a/pkg/channels/manager.go
++++ b/pkg/channels/manager.go
+@@ -1083,6 +1083,8 @@ func (m *Manager) getChannelConfigAndEnabled(channelName string) (*config.Channe
+ 		return bc, true
+ 	case *config.SlackWebhookSettings:
+ 		return bc, true
++	case *config.WebhookSettings:
++		return bc, settings.Secret.String() != "" && settings.SendURL != ""
+ 	case *config.DiscordSettings:
+ 		return bc, settings.Token.String() != ""
+ 	case *config.VKSettings:
+diff --git a/pkg/channels/manager_channel.go b/pkg/channels/manager_channel.go
+index fb3d76e0..06002825 100644
+--- a/pkg/channels/manager_channel.go
++++ b/pkg/channels/manager_channel.go
+@@ -126,6 +126,10 @@ func hiddenValues(key string, value map[string]any, ch *config.Channel) {
+ 			value["username"] = settings.Username.String()
+ 			value["password"] = settings.Password.String()
+ 		}
++	case "webhook":
++		if settings, ok := v.(*config.WebhookSettings); ok {
++			value["secret"] = settings.Secret.String()
++		}
+ 	case "slack_webhook":
+ 		// Expose webhook URLs for hash computation (they contain secrets)
+ 		if settings, ok := v.(*config.SlackWebhookSettings); ok {
+diff --git a/pkg/channels/webhook/init.go b/pkg/channels/webhook/init.go
+new file mode 100644
+index 00000000..2743379a
+--- /dev/null
++++ b/pkg/channels/webhook/init.go
+@@ -0,0 +1,32 @@
++package webhook
++
++import (
++	"github.com/sipeed/picoclaw/pkg/bus"
++	"github.com/sipeed/picoclaw/pkg/channels"
++	"github.com/sipeed/picoclaw/pkg/config"
++)
++
++func init() {
++	channels.RegisterFactory(
++		config.ChannelWebhook,
++		func(channelName, channelType string, cfg *config.Config, b *bus.MessageBus) (channels.Channel, error) {
++			bc := cfg.Channels[channelName]
++			decoded, err := bc.GetDecoded()
++			if err != nil {
++				return nil, err
++			}
++			c, ok := decoded.(*config.WebhookSettings)
++			if !ok {
++				return nil, channels.ErrSendFailed
++			}
++			ch, err := NewWebhookChannel(bc, c, b)
++			if err != nil {
++				return nil, err
++			}
++			if channelName != config.ChannelWebhook {
++				ch.SetName(channelName)
++			}
++			return ch, nil
++		},
++	)
++}
+diff --git a/pkg/channels/webhook/webhook.go b/pkg/channels/webhook/webhook.go
+new file mode 100644
+index 00000000..74710a69
+--- /dev/null
++++ b/pkg/channels/webhook/webhook.go
+@@ -0,0 +1,280 @@
++package webhook
++
++import (
++	"bytes"
++	"context"
++	"crypto/hmac"
++	"crypto/sha256"
++	"encoding/hex"
++	"encoding/json"
++	"errors"
++	"fmt"
++	"io"
++	"net/http"
++	"strings"
++	"time"
++
++	"github.com/sipeed/picoclaw/pkg/bus"
++	"github.com/sipeed/picoclaw/pkg/channels"
++	"github.com/sipeed/picoclaw/pkg/config"
++	"github.com/sipeed/picoclaw/pkg/identity"
++	"github.com/sipeed/picoclaw/pkg/logger"
++	"github.com/sipeed/picoclaw/pkg/utils"
++)
++
++const (
++	signatureHeader = "X-Webhook-Signature"
++	signaturePrefix = "sha256="
++
++	sendTimeout    = 30 * time.Second
++	publishTimeout = 5 * time.Second
++
++	// Limit request body to prevent memory exhaustion (DoS).
++	maxWebhookBodySize = 1 << 20 // 1 MiB
++)
++
++// inboundPayload is the JSON body of an incoming webhook request.
++type inboundPayload struct {
++	Sender   string `json:"sender"`
++	Content  string `json:"content"`
++	ThreadID string `json:"thread_id"`
++}
++
++// outboundPayload is the JSON body of a reply posted to the send URL.
++type outboundPayload struct {
++	Content   string `json:"content"`
++	ThreadID  string `json:"thread_id"`
++	Recipient string `json:"recipient"`
++}
++
++// WebhookChannel implements the Channel interface for a generic HMAC-signed
++// webhook: messages arrive as signed POST requests on the shared HTTP server
++// and every reply is POSTed as JSON to the configured send URL. The thread ID
++// of a request is used as the chat ID.
++type WebhookChannel struct {
++	*channels.BaseChannel
++	config *config.WebhookSettings
++	client *http.Client
++}
++
++// NewWebhookChannel creates a new webhook channel instance.
++func NewWebhookChannel(
++	bc *config.Channel,
++	cfg *config.WebhookSettings,
++	messageBus *bus.MessageBus,
++) (*WebhookChannel, error) {
++	if cfg.Secret.String() == "" || cfg.SendURL == "" {
++		return nil, fmt.Errorf("webhook secret and send_url are required")
++	}
++
++	base := channels.NewBaseChannel(
++		config.ChannelWebhook, cfg, messageBus, bc.AllowFrom,
++		channels.WithReasoningChannelID(bc.ReasoningChannelID),
++	)
++
++	return &WebhookChannel{
++		BaseChannel: base,
++		config:      cfg,
++		client:      &http.Client{Timeout: sendTimeout},
++	}, nil
++}
++
++// Start initializes the webhook channel.
++func (c *WebhookChannel) Start(ctx context.Context) error {
++	logger.InfoCF("webhook", "Starting webhook channel", map[string]any{
++		"channel": c.Name(),
++		"path":    c.WebhookPath(),
++	})
++
++	c.SetRunning(true)
++	return nil
++}
++
++// Stop gracefully stops the webhook channel.
++func (c *WebhookChannel) Stop(ctx context.Context) error {
++	logger.InfoCF("webhook", "Stopping webhook channel", map[string]any{"channel": c.Name()})
++	c.SetRunning(false)
++	return nil
++}
++
++// WebhookPath returns the path for registering on the shared HTTP server.
++func (c *WebhookChannel) WebhookPath() string {
++	if c.config.Path != "" {
++		return c.config.Path
++	}
++	return "/webhook/" + c.Name()
++}
++
++// ServeHTTP implements http.Handler for the shared HTTP server.
++func (c *WebhookChannel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
++	c.webhookHandler(w, r)
++}
++
++// webhookHandler handles incoming webhook requests.
++func (c *WebhookChannel) webhookHandler(w http.ResponseWriter, r *http.Request) {
++	if r.Method != http.MethodPost {
++		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
++		return
++	}
++
++	if !c.IsRunning() {
++		http.Error(w, "Service unavailable", http.StatusServiceUnavailable)
++		return
++	}
++
++	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxWebhookBodySize))
++	if err != nil {
++		var maxBytesErr *http.MaxBytesError
++		if errors.As(err, &maxBytesErr) {
++			logger.WarnCF("webhook", "Webhook request body too large, rejected", map[string]any{
++				"channel": c.Name(),
++			})
++			http.Error(w, "Request entity too large", http.StatusRequestEntityTooLarge)
++		} else {
++			http.Error(w, "Bad request", http.StatusBadRequest)
++		}
++		return
++	}
++
++	if !validSignature(c.config.Secret.String(), body, r.Header.Get(signatureHeader)) {
++		logger.WarnCF("webhook", "Invalid webhook signature", map[string]any{
++			"channel": c.Name(),
++		})
++		http.Error(w, "Unauthorized", http.StatusUnauthorized)
++		return
++	}
++
++	var payload inboundPayload
++	if err := json.Unmarshal(body, &payload); err != nil || strings.TrimSpace(payload.Content) == "" {
++		http.Error(w, "Bad request", http.StatusBadRequest)
++		return
++	}
++
++	// The thread is the chat; a request without one falls back to its sender.
++	senderID := strings.TrimSpace(payload.Sender)
++	chatID := strings.TrimSpace(payload.ThreadID)
++	if chatID == "" {
++		chatID = senderID
++	}
++	if chatID == "" {
++		http.Error(w, "Bad request", http.StatusBadRequest)
++		return
++	}
++
++	sender := bus.SenderInfo{
++		Platform:    config.ChannelWebhook,
++		PlatformID:  senderID,
++		CanonicalID: identity.BuildCanonicalID(config.ChannelWebhook, senderID),
++	}
++	if !c.IsAllowedSender(sender) {
++		http.Error(w, "Forbidden", http.StatusForbidden)
++		return
++	}
++
++	logger.DebugCF("webhook", "Received message", map[string]any{
++		"channel":   c.Name(),
++		"sender_id": senderID,
++		"chat_id":   chatID,
++		"preview":   utils.Truncate(payload.Content, 50),
++	})
++
++	inboundCtx := bus.InboundContext{
++		Channel:  c.Name(),
++		ChatID:   chatID,
++		ChatType: "direct",
++		SenderID: senderID,
++		Raw: map[string]string{
++			"platform": config.ChannelWebhook,
++		},
++	}
++
++	// The caller treats any non-2xx answer as "not delivered", so the status
++	// reflects whether the message actually reached the agent.
++	ctx, cancel := context.WithTimeout(r.Context(), publishTimeout)
++	defer cancel()
++	if err := c.HandleInboundContext(ctx, chatID, payload.Content, nil, inboundCtx, sender); err != nil {
++		logger.ErrorCF("webhook", "Failed to publish inbound message", map[string]any{
++			"channel": c.Name(),
++			"chat_id": chatID,
++			"error":   err.Error(),
++		})
++		http.Error(w, "Service unavailable", http.StatusServiceUnavailable)
++		return
++	}
++
++	w.WriteHeader(http.StatusAccepted)
++}
++
++// Send posts a reply to the configured send URL. Tool-feedback messages are
++// dropped, since the receiver handles every POST as a reply to the user.
++func (c *WebhookChannel) Send(ctx context.Context, msg bus.OutboundMessage) ([]string, error) {
++	if !c.IsRunning() {
++		return nil, channels.ErrNotRunning
++	}
++
++	if outboundMessageIsToolFeedback(msg) {
++		return nil, nil
++	}
++
++	jsonData, err := json.Marshal(outboundPayload{
++		Content:   msg.Content,
++		ThreadID:  msg.ChatID,
++		Recipient: msg.ChatID,
++	})
++	if err != nil {
++		return nil, fmt.Errorf("webhook: failed to marshal payload: %w", err)
++	}
++
++	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.config.SendURL, bytes.NewReader(jsonData))
++	if err != nil {
++		return nil, fmt.Errorf("webhook: failed to create request: %w: %w", channels.ErrSendFailed, err)
++	}
++	req.Header.Set("Content-Type", "application/json")
++
++	resp, err := c.client.Do(req)
++	if err != nil {
++		logger.ErrorCF("webhook", "Failed to send message", map[string]any{
++			"channel": c.Name(),
++			"chat_id": msg.ChatID,
++			"error":   err.Error(),
++		})
++		return nil, fmt.Errorf("webhook: network error: %w", channels.ClassifyNetError(err))
++	}
++	defer resp.Body.Close()
++
++	if resp.StatusCode >= http.StatusBadRequest {
++		sendErr := fmt.Errorf("status %d", resp.StatusCode)
++		logger.ErrorCF("webhook", "Send URL rejected message", map[string]any{
++			"channel": c.Name(),
++			"chat_id": msg.ChatID,
++			"error":   sendErr.Error(),
++		})
++		return nil, fmt.Errorf("webhook: %w", channels.ClassifySendError(resp.StatusCode, sendErr))
++	}
++
++	return nil, nil
++}
++
++// validSignature reports whether header carries the hex HMAC-SHA256 of body
++// under secret, in the form "sha256=<hex>".
++func validSignature(secret string, body []byte, header string) bool {
++	sig, ok := strings.CutPrefix(header, signaturePrefix)
++	if !ok {
++		return false
++	}
++	got, err := hex.DecodeString(sig)
++	if err != nil {
++		return false
++	}
++	mac := hmac.New(sha256.New, []byte(secret))
++	mac.Write(body)
++	return hmac.Equal(got, mac.Sum(nil))
++}
++
++// outboundMessageIsToolFeedback reports whether msg is a tool-feedback progress message.
++func outboundMessageIsToolFeedback(msg bus.OutboundMessage) bool {
++	if len(msg.Context.Raw) == 0 {
++		return false
++	}
++	return strings.EqualFold(strings.TrimSpace(msg.Context.Raw["message_kind"]), "tool_feedback")
++}
+diff --git a/pkg/channels/webhook/webhook_test.go b/pkg/channels/webhook/webhook_test.go
+new file mode 100644
+index 00000000..778465d4
+--- /dev/null
++++ b/pkg/channels/webhook/webhook_test.go
+@@ -0,0 +1,421 @@
++package webhook
++
++import (
++	"bytes"
++	"context"
++	"crypto/hmac"
++	"crypto/sha256"
++	"encoding/hex"
++	"encoding/json"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++
++	"github.com/sipeed/picoclaw/pkg/bus"
++	"github.com/sipeed/picoclaw/pkg/channels"
++	"github.com/sipeed/picoclaw/pkg/config"
++)
++
++const testSecret = "test-secret"
++
++func sign(secret string, body []byte) string {
++	mac := hmac.New(sha256.New, []byte(secret))
++	mac.Write(body)
++	return signaturePrefix + hex.EncodeToString(mac.Sum(nil))
++}
++
++func newTestChannel(t *testing.T, cfg *config.WebhookSettings) (*WebhookChannel, *bus.MessageBus) {
++	t.Helper()
++	mb := bus.NewMessageBus()
++	ch, err := NewWebhookChannel(&config.Channel{Enabled: true}, cfg, mb)
++	require.NoError(t, err)
++	require.NoError(t, ch.Start(context.Background()))
++	t.Cleanup(func() { _ = ch.Stop(context.Background()) })
++	return ch, mb
++}
++
++func TestNewWebhookChannel_Validation(t *testing.T) {
++	tests := []struct {
++		name      string
++		cfg       config.WebhookSettings
++		expectErr string
++	}{
++		{
++			name:      "missing secret",
++			cfg:       config.WebhookSettings{SendURL: "http://127.0.0.1/send"},
++			expectErr: "secret and send_url are required",
++		},
++		{
++			name:      "missing send_url",
++			cfg:       config.WebhookSettings{Secret: *config.NewSecureString(testSecret)},
++			expectErr: "secret and send_url are required",
++		},
++		{
++			name: "valid config",
++			cfg: config.WebhookSettings{
++				Secret:  *config.NewSecureString(testSecret),
++				SendURL: "http://127.0.0.1/send",
++			},
++		},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			_, err := NewWebhookChannel(&config.Channel{Enabled: true}, &tt.cfg, bus.NewMessageBus())
++			if tt.expectErr != "" {
++				require.Error(t, err)
++				assert.Contains(t, err.Error(), tt.expectErr)
++				return
++			}
++			require.NoError(t, err)
++		})
++	}
++}
++
++func TestWebhookPath(t *testing.T) {
++	tests := []struct {
++		name        string
++		channelName string
++		path        string
++		want        string
++	}{
++		{name: "default for type name", channelName: "webhook", want: "/webhook/webhook"},
++		{name: "default for instance name", channelName: "zakhar", want: "/webhook/zakhar"},
++		{name: "configured path", channelName: "zakhar", path: "/hooks/zakhar", want: "/hooks/zakhar"},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			ch, err := NewWebhookChannel(
++				&config.Channel{Enabled: true},
++				&config.WebhookSettings{
++					Path:    tt.path,
++					Secret:  *config.NewSecureString(testSecret),
++					SendURL: "http://127.0.0.1/send",
++				},
++				bus.NewMessageBus(),
++			)
++			require.NoError(t, err)
++			ch.SetName(tt.channelName)
++			assert.Equal(t, tt.want, ch.WebhookPath())
++		})
++	}
++}
++
++func TestWebhookHandler_Requests(t *testing.T) {
++	valid := []byte(`{"sender":"alice","content":"hello","thread_id":"t1"}`)
++
++	tests := []struct {
++		name      string
++		method    string
++		body      []byte
++		signature string
++		want      int
++	}{
++		{name: "valid signature", method: http.MethodPost, body: valid, signature: sign(testSecret, valid), want: 202},
++		{name: "wrong secret", method: http.MethodPost, body: valid, signature: sign("other", valid), want: 401},
++		{name: "missing signature", method: http.MethodPost, body: valid, want: 401},
++		{name: "missing prefix", method: http.MethodPost, body: valid, want: 401,
++			signature: strings.TrimPrefix(sign(testSecret, valid), signaturePrefix)},
++		{name: "signature is not hex", method: http.MethodPost, body: valid, signature: "sha256=zz", want: 401},
++		{name: "signature of another body", method: http.MethodPost, body: valid, want: 401,
++			signature: sign(testSecret, []byte(`{}`))},
++		{
++			name: "malformed json", method: http.MethodPost, want: 400,
++			body: []byte(`{"sender":`), signature: sign(testSecret, []byte(`{"sender":`)),
++		},
++		{
++			name: "empty content", method: http.MethodPost, want: 400,
++			body:      []byte(`{"sender":"alice","content":"  ","thread_id":"t1"}`),
++			signature: sign(testSecret, []byte(`{"sender":"alice","content":"  ","thread_id":"t1"}`)),
++		},
++		{
++			name: "no thread and no sender", method: http.MethodPost, want: 400,
++			body:      []byte(`{"content":"hello"}`),
++			signature: sign(testSecret, []byte(`{"content":"hello"}`)),
++		},
++		{
++			name: "no thread falls back to sender", method: http.MethodPost, want: 202,
++			body:      []byte(`{"sender":"alice","content":"hello"}`),
++			signature: sign(testSecret, []byte(`{"sender":"alice","content":"hello"}`)),
++		},
++		{name: "get not allowed", method: http.MethodGet, body: valid, signature: sign(testSecret, valid), want: 405},
++		{
++			name: "oversized body", method: http.MethodPost, want: 413,
++			body: bytes.Repeat([]byte("A"), maxWebhookBodySize+1),
++		},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			ch, _ := newTestChannel(t, &config.WebhookSettings{
++				Secret:  *config.NewSecureString(testSecret),
++				SendURL: "http://127.0.0.1/send",
++			})
++
++			req := httptest.NewRequest(tt.method, "/webhook/webhook", bytes.NewReader(tt.body))
++			if tt.signature != "" {
++				req.Header.Set(signatureHeader, tt.signature)
++			}
++			rec := httptest.NewRecorder()
++
++			ch.ServeHTTP(rec, req)
++
++			assert.Equal(t, tt.want, rec.Code)
++		})
++	}
++}
++
++func TestWebhookHandler_NotRunning(t *testing.T) {
++	ch, err := NewWebhookChannel(
++		&config.Channel{Enabled: true},
++		&config.WebhookSettings{Secret: *config.NewSecureString(testSecret), SendURL: "http://127.0.0.1/send"},
++		bus.NewMessageBus(),
++	)
++	require.NoError(t, err)
++
++	req := httptest.NewRequest(http.MethodPost, "/webhook/webhook", strings.NewReader(`{}`))
++	rec := httptest.NewRecorder()
++	ch.ServeHTTP(rec, req)
++
++	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
++}
++
++func TestWebhookHandler_PublishesInboundMessage(t *testing.T) {
++	ch, mb := newTestChannel(t, &config.WebhookSettings{
++		Secret:  *config.NewSecureString(testSecret),
++		SendURL: "http://127.0.0.1/send",
++	})
++	ch.SetName("zakhar")
++
++	body := []byte(`{"sender":"alice","content":"hello","thread_id":"t1"}`)
++	req := httptest.NewRequest(http.MethodPost, "/webhook/zakhar", bytes.NewReader(body))
++	req.Header.Set(signatureHeader, sign(testSecret, body))
++	rec := httptest.NewRecorder()
++
++	ch.ServeHTTP(rec, req)
++	require.Equal(t, http.StatusAccepted, rec.Code)
++
++	select {
++	case msg := <-mb.InboundChan():
++		assert.Equal(t, "hello", msg.Content)
++		assert.Equal(t, "zakhar", msg.Context.Channel)
++		assert.Equal(t, "t1", msg.Context.ChatID)
++		assert.Equal(t, "direct", msg.Context.ChatType)
++		assert.Equal(t, "alice", msg.Context.SenderID)
++		assert.Equal(t, "webhook:alice", msg.Sender.CanonicalID)
++	case <-time.After(5 * time.Second):
++		t.Fatal("inbound message was not published")
++	}
++}
++
++func TestWebhookHandler_ThreadFallsBackToSender(t *testing.T) {
++	ch, mb := newTestChannel(t, &config.WebhookSettings{
++		Secret:  *config.NewSecureString(testSecret),
++		SendURL: "http://127.0.0.1/send",
++	})
++
++	body := []byte(`{"sender":" alice ","content":"hello","thread_id":"  "}`)
++	req := httptest.NewRequest(http.MethodPost, "/webhook/webhook", bytes.NewReader(body))
++	req.Header.Set(signatureHeader, sign(testSecret, body))
++	rec := httptest.NewRecorder()
++
++	ch.ServeHTTP(rec, req)
++	require.Equal(t, http.StatusAccepted, rec.Code)
++
++	select {
++	case msg := <-mb.InboundChan():
++		assert.Equal(t, "alice", msg.Context.ChatID)
++		assert.Equal(t, "alice", msg.Context.SenderID)
++	case <-time.After(5 * time.Second):
++		t.Fatal("inbound message was not published")
++	}
++}
++
++func TestWebhookHandler_RefusedSender(t *testing.T) {
++	mb := bus.NewMessageBus()
++	ch, err := NewWebhookChannel(
++		&config.Channel{Enabled: true, AllowFrom: config.FlexibleStringSlice{"bob"}},
++		&config.WebhookSettings{Secret: *config.NewSecureString(testSecret), SendURL: "http://127.0.0.1/send"},
++		mb,
++	)
++	require.NoError(t, err)
++	require.NoError(t, ch.Start(context.Background()))
++
++	body := []byte(`{"sender":"alice","content":"hello","thread_id":"t1"}`)
++	req := httptest.NewRequest(http.MethodPost, "/webhook/webhook", bytes.NewReader(body))
++	req.Header.Set(signatureHeader, sign(testSecret, body))
++	rec := httptest.NewRecorder()
++
++	ch.ServeHTTP(rec, req)
++
++	assert.Equal(t, http.StatusForbidden, rec.Code)
++	assert.Empty(t, mb.InboundChan())
++}
++
++func TestWebhookHandler_PublishFailure(t *testing.T) {
++	ch, mb := newTestChannel(t, &config.WebhookSettings{
++		Secret:  *config.NewSecureString(testSecret),
++		SendURL: "http://127.0.0.1/send",
++	})
++	mb.Close()
++
++	body := []byte(`{"sender":"alice","content":"hello","thread_id":"t1"}`)
++	req := httptest.NewRequest(http.MethodPost, "/webhook/webhook", bytes.NewReader(body))
++	req.Header.Set(signatureHeader, sign(testSecret, body))
++	rec := httptest.NewRecorder()
++
++	ch.ServeHTTP(rec, req)
++
++	assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
++}
++
++func TestSend_PostsReply(t *testing.T) {
++	type request struct {
++		contentType string
++		body        map[string]string
++	}
++	received := make(chan request, 1)
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		raw, _ := io.ReadAll(r.Body)
++		var body map[string]string
++		_ = json.Unmarshal(raw, &body)
++		received <- request{contentType: r.Header.Get("Content-Type"), body: body}
++		w.WriteHeader(http.StatusOK)
++	}))
++	defer server.Close()
++
++	ch, _ := newTestChannel(t, &config.WebhookSettings{
++		Secret:  *config.NewSecureString(testSecret),
++		SendURL: server.URL,
++	})
++
++	_, err := ch.Send(context.Background(), bus.OutboundMessage{ChatID: "t1", Content: "done"})
++	require.NoError(t, err)
++
++	req := <-received
++	assert.Equal(t, "application/json", req.contentType)
++	assert.Equal(t, map[string]string{"content": "done", "thread_id": "t1", "recipient": "t1"}, req.body)
++}
++
++func TestSend_ToolFeedbackIsDropped(t *testing.T) {
++	requests := make(chan struct{}, 1)
++	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++		requests <- struct{}{}
++	}))
++	defer server.Close()
++
++	ch, _ := newTestChannel(t, &config.WebhookSettings{
++		Secret:  *config.NewSecureString(testSecret),
++		SendURL: server.URL,
++	})
++
++	feedback := bus.OutboundMessage{
++		ChatID:  "t1",
++		Content: "running tool",
++		Context: bus.InboundContext{Raw: map[string]string{"message_kind": "tool_feedback"}},
++	}
++	_, err := ch.Send(context.Background(), feedback)
++	require.NoError(t, err)
++	assert.Empty(t, requests)
++}
++
++func TestSend_ErrorClassification(t *testing.T) {
++	tests := []struct {
++		name   string
++		status int
++		want   error
++	}{
++		{"unknown thread", http.StatusNotFound, channels.ErrSendFailed},
++		{"server error", http.StatusInternalServerError, channels.ErrTemporary},
++		{"unavailable", http.StatusServiceUnavailable, channels.ErrTemporary},
++		{"rate limited", http.StatusTooManyRequests, channels.ErrRateLimit},
++	}
++
++	for _, tt := range tests {
++		t.Run(tt.name, func(t *testing.T) {
++			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
++				w.WriteHeader(tt.status)
++			}))
++			defer server.Close()
++
++			ch, _ := newTestChannel(t, &config.WebhookSettings{
++				Secret:  *config.NewSecureString(testSecret),
++				SendURL: server.URL,
++			})
++
++			_, err := ch.Send(context.Background(), bus.OutboundMessage{ChatID: "t1", Content: "done"})
++			require.Error(t, err)
++			assert.ErrorIs(t, err, tt.want)
++		})
++	}
++}
++
++func TestSend_NetworkErrorIsTemporary(t *testing.T) {
++	server := httptest.NewServer(http.NotFoundHandler())
++	url := server.URL
++	server.Close()
++
++	ch, _ := newTestChannel(t, &config.WebhookSettings{
++		Secret:  *config.NewSecureString(testSecret),
++		SendURL: url,
++	})
++
++	_, err := ch.Send(context.Background(), bus.OutboundMessage{ChatID: "t1", Content: "done"})
++	require.Error(t, err)
++	assert.ErrorIs(t, err, channels.ErrTemporary)
++}
++
++func TestSend_NotRunning(t *testing.T) {
++	ch, err := NewWebhookChannel(
++		&config.Channel{Enabled: true},
++		&config.WebhookSettings{Secret: *config.NewSecureString(testSecret), SendURL: "http://127.0.0.1/send"},
++		bus.NewMessageBus(),
++	)
++	require.NoError(t, err)
++
++	_, err = ch.Send(context.Background(), bus.OutboundMessage{ChatID: "t1", Content: "done"})
++	assert.ErrorIs(t, err, channels.ErrNotRunning)
++}
++
++func TestManager_NamedInstances(t *testing.T) {
++	chans := config.ChannelsConfig{
++		"zakhar_a": {
++			Type:     config.ChannelWebhook,
++			Enabled:  true,
++			Settings: config.RawNode(`{"path":"/hooks/a","secret":"secret-a","send_url":"http://127.0.0.1/a"}`),
++		},
++		"zakhar_b": {
++			Type:     config.ChannelWebhook,
++			Enabled:  true,
++			Settings: config.RawNode(`{"secret":"secret-b","send_url":"http://127.0.0.1/b"}`),
++		},
++		"no_secret": {
++			Type:     config.ChannelWebhook,
++			Enabled:  true,
++			Settings: config.RawNode(`{"send_url":"http://127.0.0.1/c"}`),
++		},
++	}
++	require.NoError(t, config.InitChannelList(chans))
++
++	m, err := channels.NewManager(&config.Config{Channels: chans}, bus.NewMessageBus(), nil)
++	require.NoError(t, err)
++
++	paths := map[string]string{}
++	for _, name := range []string{"zakhar_a", "zakhar_b"} {
++		ch, ok := m.GetChannel(name)
++		require.True(t, ok, name)
++		assert.Equal(t, name, ch.Name())
++		paths[name] = ch.(channels.WebhookHandler).WebhookPath()
++	}
++	assert.Equal(t, map[string]string{"zakhar_a": "/hooks/a", "zakhar_b": "/webhook/zakhar_b"}, paths)
++
++	_, ok := m.GetChannel("no_secret")
++	assert.False(t, ok)
++}
+diff --git a/pkg/config/config.go b/pkg/config/config.go
+index df232f77..04248d86 100644
+--- a/pkg/config/config.go
++++ b/pkg/config/config.go
+@@ -750,6 +750,14 @@ type SlackWebhookTarget struct {
+ 	IconEmoji  string       `json:"icon_emoji,omitempty" yaml:"-"`
+ }
+ 
++// WebhookSettings configures the generic HMAC-signed webhook channel: messages
++// arrive as signed POST requests on Path and replies are POSTed to SendURL.
++type WebhookSettings struct {
++	Path    string       `json:"path,omitempty"     yaml:"-"`
++	Secret  SecureString `json:"secret,omitzero"    yaml:"secret,omitempty"`
++	SendURL string       `json:"send_url,omitempty" yaml:"-"`
++}
++
+ type HeartbeatConfig struct {
+ 	Enabled  bool `json:"enabled"  env:"PICOCLAW_HEARTBEAT_ENABLED"`
+ 	Interval int  `json:"interval" env:"PICOCLAW_HEARTBEAT_INTERVAL"` // minutes, min 5
+diff --git a/pkg/config/config_channel.go b/pkg/config/config_channel.go
+index 232c37cd..e4fc7838 100644
+--- a/pkg/config/config_channel.go
++++ b/pkg/config/config_channel.go
+@@ -39,6 +39,7 @@ const (
+ 	ChannelTeamsWebHook   = "teams_webhook"
+ 	ChannelMQTT           = "mqtt"
+ 	ChannelSlackWebHook   = "slack_webhook"
++	ChannelWebhook        = "webhook"
+ )
+ 
+ func initChannel() {
+@@ -682,6 +683,7 @@ var channelSettingsFactory = map[string]any{
+ 	ChannelTeamsWebHook:   (TeamsWebhookSettings{}),
+ 	ChannelMQTT:           (MQTTSettings{}),
+ 	ChannelSlackWebHook:   (SlackWebhookSettings{}),
++	ChannelWebhook:        (WebhookSettings{}),
+ }
+ 
+ // RegisterChannelSettings registers a settings struct prototype for a custom
+diff --git a/pkg/gateway/gateway.go b/pkg/gateway/gateway.go
+index 41592937..9431ecd5 100644
+--- a/pkg/gateway/gateway.go
++++ b/pkg/gateway/gateway.go
+@@ -35,6 +35,7 @@ import (
+ 	_ "github.com/sipeed/picoclaw/pkg/channels/teams_webhook"
+ 	_ "github.com/sipeed/picoclaw/pkg/channels/telegram"
+ 	_ "github.com/sipeed/picoclaw/pkg/channels/vk"
++	_ "github.com/sipeed/picoclaw/pkg/channels/webhook"
+ 	_ "github.com/sipeed/picoclaw/pkg/channels/wecom"
+ 	_ "github.com/sipeed/picoclaw/pkg/channels/weixin"
+ 	_ "github.com/sipeed/picoclaw/pkg/channels/whatsapp"

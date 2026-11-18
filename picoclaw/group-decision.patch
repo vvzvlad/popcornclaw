@@ -1,0 +1,2177 @@
+diff --git a/docs/channels/telegram/README.md b/docs/channels/telegram/README.md
+index 215d80af..0af6a1e8 100644
+--- a/docs/channels/telegram/README.md
++++ b/docs/channels/telegram/README.md
+@@ -39,6 +39,64 @@ The Telegram channel uses long polling via the Telegram Bot API for bot-based co
+ 4. Fill in the Token in the configuration file
+ 5. (Optional) Configure `allow_from` to restrict which user IDs can interact (you can get IDs via `@userinfobot`)
+ 
++## Group Chats
++
++Without `group_trigger` the bot answers every message in a group, except messages that start with another bot's or an unknown `/command`. To narrow that:
++
++- `mention_only: true` answers only messages that mention the bot (`@yourbot`) and the bot's own commands.
++- `prefixes: ["!bot"]` answers only messages that start with a prefix, and mentions.
++
++A bare `/command` counts as addressed to the bot only when it is one of the bot's own commands, so `/print` meant for another bot in the group is not answered. `/command@yourbot` is always addressed to it.
++
++### Deciding by a decision model
++
++When several people talk in the group, a model that only judges "is this message addressed to the bot?" can replace `mention_only`/`prefixes`. It is an [OpenRouter Decisions](https://openrouter.ai/docs) model such as `typesafe/jev-1.14`: it returns a probability and generates no text.
++
++```json
++{
++  "channel_list": {
++    "telegram": {
++      "group_trigger": {
++        "decision": {
++          "model": "typesafe/jev-1.14",
++          "min_confidence": 0.5,
++          "timeout_ms": 3000,
++          "proxy": "http://127.0.0.1:7890",
++          "bot_description": "assistant of a ceramics studio: records expenses, answers about glazes",
++          "chat_description": "Telegram group of the studio staff. Other bots live in it too; slash commands without @yourbot are for them."
++        }
++      }
++    }
++  }
++}
++```
++
++The API key is a secret and lives in `.security.yml` next to `config.json`:
++
++```yaml
++channel_list:
++  telegram:
++    group_trigger:
++      decision:
++        api_key: "sk-or-..."
++```
++
++| Field            | Description                                                                                         |
++| ---------------- | --------------------------------------------------------------------------------------------------- |
++| model            | Decision model. The decision is enabled when both `model` and `api_key` are set                     |
++| min_confidence   | The bot answers when the probability is at least this. Defaults to 0.5                              |
++| timeout_ms       | Time limit of one decision request. Defaults to 3000                                                |
++| proxy            | HTTP proxy URL for OpenRouter (it refuses some regions); empty uses the environment proxy           |
++| bot_description  | What the bot does, shown to the model                                                               |
++| chat_description | What the chat is and which other bots live in it, shown to the model                                |
++
++What the model sees for each message: the sender and text, the message it replies to and whether that is the bot's, the last 8 messages of the chat from the past hour (including the bot's own), and the bot's last message.
++
++- A message that mentions the bot, `/command@yourbot` and the bot's own commands are answered without asking the model.
++- A message that starts with another bot's or an unknown `/command` is ignored without asking the model.
++- If the request fails or times out, the message is ignored and a warning with the error is logged. If `model` is set without `api_key`, a warning is logged at startup and the `mention_only`/`prefixes` rules apply.
++- Each decision is logged at info level with the probability and the outcome.
++
+ ## Built-in Commands
+ 
+ Telegram auto-registers PicoClaw's top-level bot commands at startup, including `/start`, `/help`, `/show`, `/list`, and `/use`.
+diff --git a/pkg/channels/README.md b/pkg/channels/README.md
+index eef31a61..329d7b4f 100644
+--- a/pkg/channels/README.md
++++ b/pkg/channels/README.md
+@@ -957,6 +957,7 @@ BaseChannel is the shared abstraction layer for all channels, providing the foll
+ | `IsAllowed(senderID string) bool` | Legacy allow-list check (supports `"id\|username"` and `"@username"` formats) |
+ | `IsAllowedSender(sender SenderInfo) bool` | New allow-list check (delegates to `identity.MatchAllowed`) |
+ | `ShouldRespondInGroup(isMentioned, content) (bool, string)` | Unified group chat trigger filtering logic |
++| `SetGroupDecider(d) / GroupDecider() / GroupHistory() / ShouldRespondByDecision(ctx, chatID, req) bool` | Optional decision model that judges group messages not mentioning the bot (Telegram only so far); configured by `group_trigger.decision` (`model`, `api_key`, `min_confidence` default 0.5, `timeout_ms` default 3000, `proxy`, `bot_description`, `chat_description`); the bot answers when the probability reaches `min_confidence` and ignores the message on any error |
+ | `HandleMessage(...)` | Unified inbound message handling: permission check → build MediaScope → auto-trigger Typing/Reaction/Placeholder → publish to Bus |
+ | `SetMediaStore(s) / GetMediaStore()` | MediaStore injected by Manager |
+ | `SetPlaceholderRecorder(r) / GetPlaceholderRecorder()` | PlaceholderRecorder injected by Manager |
+diff --git a/pkg/channels/README.zh.md b/pkg/channels/README.zh.md
+index b9add6ff..3a91f906 100644
+--- a/pkg/channels/README.zh.md
++++ b/pkg/channels/README.zh.md
+@@ -955,6 +955,7 @@ BaseChannel 是所有 channel 的共享抽象层，提供以下能力：
+ | `IsAllowed(senderID string) bool` | 旧格式允许列表检查（支持 `"id\|username"` 和 `"@username"` 格式） |
+ | `IsAllowedSender(sender SenderInfo) bool` | 新格式允许列表检查（委托给 `identity.MatchAllowed`） |
+ | `ShouldRespondInGroup(isMentioned, content) (bool, string)` | 统一群聊触发过滤逻辑 |
++| `SetGroupDecider(d) / GroupDecider() / GroupHistory() / ShouldRespondByDecision(ctx, chatID, req) bool` | 可选的决策模型，用于判断未 @ 机器人的群消息是否在对它说话（目前仅 Telegram）；由 `group_trigger.decision` 配置（`model`、`api_key`、`min_confidence` 默认 0.5、`timeout_ms` 默认 3000、`proxy`、`bot_description`、`chat_description`）；概率达到 `min_confidence` 时回复，出现任何错误则忽略该消息 |
+ | `HandleMessage(...)` | 统一入站消息处理：权限检查 → 构建 MediaScope → 自动触发 Typing/Reaction/Placeholder → 发布到 Bus |
+ | `SetMediaStore(s) / GetMediaStore()` | Manager 注入的媒体存储 |
+ | `SetPlaceholderRecorder(r) / GetPlaceholderRecorder()` | Manager 注入的占位符记录器 |
+diff --git a/pkg/channels/base.go b/pkg/channels/base.go
+index 81d9ab72..a86508e9 100644
+--- a/pkg/channels/base.go
++++ b/pkg/channels/base.go
+@@ -92,6 +92,8 @@ type BaseChannel struct {
+ 	groupTrigger        config.GroupTriggerConfig
+ 	mediaStore          media.MediaStore
+ 	placeholderRecorder PlaceholderRecorder
++	groupDecider        GroupReplyDecider
++	groupHistory        *GroupHistory
+ 	owner               Channel // the concrete channel that embeds this BaseChannel
+ 	reasoningChannelID  string
+ }
+@@ -114,10 +116,11 @@ func NewBaseChannel(
+ 		allowList = []string{}
+ 	}
+ 	bc := &BaseChannel{
+-		config:    config,
+-		bus:       bus,
+-		name:      name,
+-		allowList: allowList,
++		config:       config,
++		bus:          bus,
++		name:         name,
++		allowList:    allowList,
++		groupHistory: NewGroupHistory(),
+ 	}
+ 	for _, opt := range opts {
+ 		opt(bc)
+diff --git a/pkg/channels/group_decision.go b/pkg/channels/group_decision.go
+new file mode 100644
+index 00000000..f2d9506e
+--- /dev/null
++++ b/pkg/channels/group_decision.go
+@@ -0,0 +1,182 @@
++package channels
++
++import (
++	"context"
++	"sort"
++	"sync"
++	"time"
++
++	"github.com/sipeed/picoclaw/pkg/logger"
++)
++
++const (
++	// GroupHistoryMaxMessages is how many recent messages the decider gets.
++	GroupHistoryMaxMessages = 8
++	// GroupHistoryWindow is how old a history message may be to still count as recent.
++	GroupHistoryWindow = time.Hour
++	// GroupHistoryBotName is the sender recorded for the bot's own messages.
++	GroupHistoryBotName = "bot"
++
++	// groupHistoryStored is how many messages per chat are kept. It is larger
++	// than GroupHistoryMaxMessages because messages of one chat can be handled
++	// out of order: when an earlier message is judged, later ones may already be stored.
++	groupHistoryStored = 4 * GroupHistoryMaxMessages
++)
++
++// GroupMessage is a message as the reply decider sees it.
++type GroupMessage struct {
++	From string
++	Text string
++}
++
++// GroupHistoryEntry is one message of a group chat's recent history.
++type GroupHistoryEntry struct {
++	MessageID int // platform message ID, increasing within a chat; orders the history
++	From      string
++	Text      string
++	Time      time.Time
++	ReplyTo   string // sender of the message this one replies to; empty when it is not a reply
++}
++
++// GroupReplyRequest is everything a GroupReplyDecider gets to judge one group message.
++type GroupReplyRequest struct {
++	BotUsername  string
++	RepliesToBot bool
++	Now          time.Time // when Message was sent; the history ages are measured from it
++	Message      GroupMessage
++	RepliedTo    *GroupMessage       // nil when Message is not a reply
++	History      []GroupHistoryEntry // recent messages before Message, oldest first
++	BotLast      *GroupHistoryEntry  // the bot's last message before Message, nil when there is none
++}
++
++// GroupReplyDecider judges whether a group message that does not mention the
++// bot is addressed to it. Implementations return the probability in [0, 1] that
++// the bot should reply; an error means the message could not be judged.
++type GroupReplyDecider interface {
++	ReplyProbability(ctx context.Context, req GroupReplyRequest) (float64, error)
++}
++
++// GroupHistory keeps the recent messages of each group chat, ordered by message
++// ID, and the bot's own last messages. It is safe for concurrent use.
++type GroupHistory struct {
++	mu    sync.Mutex
++	chats map[string]*groupChatHistory
++}
++
++type groupChatHistory struct {
++	entries []GroupHistoryEntry // sorted by MessageID
++	bot     []GroupHistoryEntry // the bot's messages, sorted by MessageID
++}
++
++// NewGroupHistory returns an empty history.
++func NewGroupHistory() *GroupHistory {
++	return &GroupHistory{chats: make(map[string]*groupChatHistory)}
++}
++
++// Add stores a message in the chat's history at the place its MessageID gives,
++// whatever the order the messages arrive in. The oldest messages beyond the
++// storage cap are dropped.
++func (h *GroupHistory) Add(chatID string, e GroupHistoryEntry) {
++	h.mu.Lock()
++	defer h.mu.Unlock()
++
++	chat := h.chats[chatID]
++	if chat == nil {
++		chat = &groupChatHistory{}
++		h.chats[chatID] = chat
++	}
++	chat.entries = insertByMessageID(chat.entries, e, groupHistoryStored)
++	if e.From == GroupHistoryBotName {
++		chat.bot = insertByMessageID(chat.bot, e, GroupHistoryMaxMessages)
++	}
++}
++
++// Recent returns up to GroupHistoryMaxMessages of the chat's latest messages that
++// were sent before the message with ID beforeID and no longer ago than
++// GroupHistoryWindow at now, oldest first.
++func (h *GroupHistory) Recent(chatID string, beforeID int, now time.Time) []GroupHistoryEntry {
++	h.mu.Lock()
++	defer h.mu.Unlock()
++
++	chat := h.chats[chatID]
++	if chat == nil {
++		return nil
++	}
++	var recent []GroupHistoryEntry
++	for _, e := range chat.entries {
++		if e.MessageID < beforeID && now.Sub(e.Time) <= GroupHistoryWindow {
++			recent = append(recent, e)
++		}
++	}
++	if extra := len(recent) - GroupHistoryMaxMessages; extra > 0 {
++		recent = recent[extra:]
++	}
++	return recent
++}
++
++// LastBot returns the bot's last message in the chat sent before the message
++// with ID beforeID, however old.
++func (h *GroupHistory) LastBot(chatID string, beforeID int) (GroupHistoryEntry, bool) {
++	h.mu.Lock()
++	defer h.mu.Unlock()
++
++	chat := h.chats[chatID]
++	if chat == nil {
++		return GroupHistoryEntry{}, false
++	}
++	for i := len(chat.bot) - 1; i >= 0; i-- {
++		if chat.bot[i].MessageID < beforeID {
++			return chat.bot[i], true
++		}
++	}
++	return GroupHistoryEntry{}, false
++}
++
++// insertByMessageID inserts e into entries (sorted by MessageID), replacing an
++// entry with the same ID, and keeps only the limit entries with the highest IDs.
++func insertByMessageID(entries []GroupHistoryEntry, e GroupHistoryEntry, limit int) []GroupHistoryEntry {
++	i := sort.Search(len(entries), func(i int) bool { return entries[i].MessageID >= e.MessageID })
++	if i < len(entries) && entries[i].MessageID == e.MessageID {
++		entries[i] = e
++		return entries
++	}
++	entries = append(entries, GroupHistoryEntry{})
++	copy(entries[i+1:], entries[i:])
++	entries[i] = e
++	if extra := len(entries) - limit; extra > 0 {
++		entries = append([]GroupHistoryEntry(nil), entries[extra:]...)
++	}
++	return entries
++}
++
++// SetGroupDecider injects the decider that judges group messages (nil disables it).
++func (c *BaseChannel) SetGroupDecider(d GroupReplyDecider) { c.groupDecider = d }
++
++// GroupDecider returns the injected GroupReplyDecider (may be nil).
++func (c *BaseChannel) GroupDecider() GroupReplyDecider { return c.groupDecider }
++
++// GroupHistory returns the per-chat history of group messages.
++func (c *BaseChannel) GroupHistory() *GroupHistory { return c.groupHistory }
++
++// ShouldRespondByDecision asks the injected decider whether to reply and logs
++// the outcome. The bot replies when the probability reaches the configured
++// min_confidence; when the decider fails the message is ignored.
++func (c *BaseChannel) ShouldRespondByDecision(ctx context.Context, chatID string, req GroupReplyRequest) bool {
++	p, err := c.groupDecider.ReplyProbability(ctx, req)
++	if err != nil {
++		logger.WarnCF("channels", "Group reply decision failed; ignoring message", map[string]any{
++			"channel": c.name,
++			"chat_id": chatID,
++			"error":   err.Error(),
++		})
++		return false
++	}
++	respond := p >= c.groupTrigger.Decision.Threshold()
++	logger.InfoCF("channels", "Group reply decision", map[string]any{
++		"channel":     c.name,
++		"chat_id":     chatID,
++		"probability": p,
++		"respond":     respond,
++	})
++	return respond
++}
+diff --git a/pkg/channels/group_decision_test.go b/pkg/channels/group_decision_test.go
+new file mode 100644
+index 00000000..453d3fb5
+--- /dev/null
++++ b/pkg/channels/group_decision_test.go
+@@ -0,0 +1,165 @@
++package channels
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"testing"
++	"time"
++
++	"github.com/sipeed/picoclaw/pkg/bus"
++	"github.com/sipeed/picoclaw/pkg/config"
++)
++
++func TestGroupHistory_RecentReturnsLastMessagesInOrder(t *testing.T) {
++	h := NewGroupHistory()
++	now := time.Now()
++	for i := 1; i <= GroupHistoryMaxMessages+3; i++ {
++		h.Add("chat", GroupHistoryEntry{MessageID: i, From: "u", Text: fmt.Sprint(i), Time: now})
++	}
++
++	got := h.Recent("chat", 1000, now)
++	if len(got) != GroupHistoryMaxMessages {
++		t.Fatalf("len = %d, want %d", len(got), GroupHistoryMaxMessages)
++	}
++	for i, e := range got {
++		if want := fmt.Sprint(i + 4); e.Text != want {
++			t.Fatalf("entry %d = %q, want %q (oldest first)", i, e.Text, want)
++		}
++	}
++}
++
++func TestGroupHistory_RecentDropsMessagesOlderThanWindow(t *testing.T) {
++	h := NewGroupHistory()
++	now := time.Now()
++	h.Add("chat", GroupHistoryEntry{MessageID: 1, From: "u", Text: "old", Time: now.Add(-GroupHistoryWindow - time.Second)})
++	h.Add("chat", GroupHistoryEntry{MessageID: 2, From: "u", Text: "edge", Time: now.Add(-GroupHistoryWindow)})
++	h.Add("chat", GroupHistoryEntry{MessageID: 3, From: "u", Text: "new", Time: now.Add(-time.Minute)})
++
++	got := h.Recent("chat", 1000, now)
++	if len(got) != 2 || got[0].Text != "edge" || got[1].Text != "new" {
++		t.Fatalf("Recent = %+v, want [edge new]", got)
++	}
++	if got := h.Recent("other chat", 1000, now); len(got) != 0 {
++		t.Fatalf("unknown chat has history: %+v", got)
++	}
++}
++
++func TestGroupHistory_OrdersByMessageIDWhateverTheArrival(t *testing.T) {
++	h := NewGroupHistory()
++	now := time.Now()
++	for _, id := range []int{30, 10, 40, 20} {
++		h.Add("chat", GroupHistoryEntry{MessageID: id, From: "u", Text: fmt.Sprint(id), Time: now})
++	}
++
++	ids := func(entries []GroupHistoryEntry) string {
++		var out []int
++		for _, e := range entries {
++			out = append(out, e.MessageID)
++		}
++		return fmt.Sprint(out)
++	}
++	if got := ids(h.Recent("chat", 1000, now)); got != "[10 20 30 40]" {
++		t.Errorf("all = %s, want [10 20 30 40]", got)
++	}
++	if got := ids(h.Recent("chat", 30, now)); got != "[10 20]" {
++		t.Errorf("before 30 = %s, want [10 20]", got)
++	}
++	if got := ids(h.Recent("chat", 10, now)); got != "[]" {
++		t.Errorf("before 10 = %s, want none", got)
++	}
++
++	h.Add("chat", GroupHistoryEntry{MessageID: 20, From: "u", Text: "edited", Time: now})
++	if got := h.Recent("chat", 30, now); len(got) != 2 || got[1].Text != "edited" {
++		t.Errorf("the same message ID added twice: %+v, want it replaced", got)
++	}
++}
++
++func TestGroupHistory_StorageCapDropsTheOldestIDs(t *testing.T) {
++	h := NewGroupHistory()
++	now := time.Now()
++	for _, id := range []int{500, 100} {
++		h.Add("chat", GroupHistoryEntry{MessageID: id, From: "u", Time: now})
++	}
++	for i := 0; i < groupHistoryStored; i++ {
++		h.Add("chat", GroupHistoryEntry{MessageID: 200 + i, From: "u", Time: now})
++	}
++
++	got := h.Recent("chat", 1000, now)
++	if got[len(got)-1].MessageID != 500 || len(got) != GroupHistoryMaxMessages {
++		t.Fatalf("Recent = %+v, want the latest %d ending with 500", got, GroupHistoryMaxMessages)
++	}
++	h.mu.Lock()
++	stored := len(h.chats["chat"].entries)
++	h.mu.Unlock()
++	if stored != groupHistoryStored {
++		t.Fatalf("%d messages stored, want the cap %d", stored, groupHistoryStored)
++	}
++}
++
++func TestGroupHistory_LastBotSurvivesCapAndWindow(t *testing.T) {
++	h := NewGroupHistory()
++	now := time.Now()
++	if _, ok := h.LastBot("chat", 1000); ok {
++		t.Fatal("LastBot on empty history")
++	}
++	h.Add("chat", GroupHistoryEntry{MessageID: 1, From: GroupHistoryBotName, Text: "first", Time: now.Add(-3 * time.Hour)})
++	h.Add("chat", GroupHistoryEntry{MessageID: 2, From: GroupHistoryBotName, Text: "second", Time: now.Add(-2 * time.Hour)})
++	for i := 0; i < groupHistoryStored; i++ {
++		h.Add("chat", GroupHistoryEntry{MessageID: 10 + i, From: "u", Text: "x", Time: now})
++	}
++
++	got, ok := h.LastBot("chat", 1000)
++	if !ok || got.Text != "second" {
++		t.Fatalf("LastBot = %+v, %v; want the second bot message", got, ok)
++	}
++	if got, ok := h.LastBot("chat", 2); !ok || got.Text != "first" {
++		t.Fatalf("LastBot before 2 = %+v, %v; want the first bot message", got, ok)
++	}
++	if _, ok := h.LastBot("chat", 1); ok {
++		t.Fatal("LastBot before the first bot message")
++	}
++	for _, e := range h.Recent("chat", 1000, now) {
++		if e.From == GroupHistoryBotName {
++			t.Fatalf("bot message left in recent history: %+v", e)
++		}
++	}
++}
++
++type fakeDecider struct {
++	p   float64
++	err error
++}
++
++func (f fakeDecider) ReplyProbability(context.Context, GroupReplyRequest) (float64, error) {
++	return f.p, f.err
++}
++
++func TestShouldRespondByDecision(t *testing.T) {
++	tests := []struct {
++		name      string
++		minConf   float64
++		decider   fakeDecider
++		wantReply bool
++	}{
++		{"above default threshold", 0, fakeDecider{p: 0.6}, true},
++		{"exactly the default threshold", 0, fakeDecider{p: 0.5}, true},
++		{"below default threshold", 0, fakeDecider{p: 0.49}, false},
++		{"configured threshold met", 0.8, fakeDecider{p: 0.8}, true},
++		{"configured threshold missed", 0.8, fakeDecider{p: 0.79}, false},
++		{"error is ignored", 0, fakeDecider{p: 1, err: errors.New("boom")}, false},
++	}
++	for _, tc := range tests {
++		t.Run(tc.name, func(t *testing.T) {
++			ch := NewBaseChannel("test", nil, bus.NewMessageBus(), []string{"*"},
++				WithGroupTrigger(config.GroupTriggerConfig{
++					Decision: config.GroupDecisionConfig{MinConfidence: tc.minConf},
++				}),
++			)
++			ch.SetGroupDecider(tc.decider)
++			if got := ch.ShouldRespondByDecision(context.Background(), "chat", GroupReplyRequest{}); got != tc.wantReply {
++				t.Fatalf("respond = %v, want %v", got, tc.wantReply)
++			}
++		})
++	}
++}
+diff --git a/pkg/channels/groupdecision/groupdecision.go b/pkg/channels/groupdecision/groupdecision.go
+new file mode 100644
+index 00000000..929dfdf2
+--- /dev/null
++++ b/pkg/channels/groupdecision/groupdecision.go
+@@ -0,0 +1,240 @@
++// Package groupdecision implements channels.GroupReplyDecider on the OpenRouter
++// Decisions API: a decision model that answers one yes/no question about a group
++// message ("is it addressed to the bot?") with a probability and generates no text.
++package groupdecision
++
++import (
++	"bytes"
++	"context"
++	"encoding/json"
++	"fmt"
++	"io"
++	"net/http"
++	"strings"
++	"time"
++
++	"github.com/sipeed/picoclaw/pkg/channels"
++	"github.com/sipeed/picoclaw/pkg/config"
++	"github.com/sipeed/picoclaw/pkg/utils"
++)
++
++const (
++	endpoint     = "https://openrouter.ai/api/alpha/decisions"
++	questionName = "addressed"
++
++	maxHistoryTextRunes   = 300
++	maxRepliedToTextRunes = 500
++	maxBotLastTextRunes   = 400
++	maxMessageTextRunes   = 1500
++	maxErrorBodyBytes     = 300
++)
++
++// Client asks a decision model whether a group message is addressed to the bot.
++type Client struct {
++	model           string
++	apiKey          string
++	botDescription  string
++	chatDescription string
++	endpoint        string
++	httpClient      *http.Client
++}
++
++var _ channels.GroupReplyDecider = (*Client)(nil)
++
++// New builds a Client from the group_trigger.decision config. Requests go
++// through cfg.Proxy when it is set (OpenRouter refuses some regions) and are
++// bounded by cfg.Timeout().
++func New(cfg config.GroupDecisionConfig) (*Client, error) {
++	httpClient, err := utils.CreateHTTPClient(cfg.Proxy, cfg.Timeout())
++	if err != nil {
++		return nil, fmt.Errorf("group decision http client: %w", err)
++	}
++	return &Client{
++		model:           cfg.Model,
++		apiKey:          cfg.APIKey.String(),
++		botDescription:  cfg.BotDescription,
++		chatDescription: cfg.ChatDescription,
++		endpoint:        endpoint,
++		httpClient:      httpClient,
++	}, nil
++}
++
++// ReplyProbability returns the model's probability that req.Message is addressed to the bot.
++func (c *Client) ReplyProbability(ctx context.Context, req channels.GroupReplyRequest) (float64, error) {
++	body, err := c.requestBody(req)
++	if err != nil {
++		return 0, err
++	}
++	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
++	if err != nil {
++		return 0, fmt.Errorf("group decision request: %w", err)
++	}
++	httpReq.Header.Set("Authorization", "Bearer "+c.apiKey)
++	httpReq.Header.Set("Content-Type", "application/json")
++
++	resp, err := c.httpClient.Do(httpReq)
++	if err != nil {
++		return 0, fmt.Errorf("group decision request: %w", err)
++	}
++	defer resp.Body.Close()
++
++	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
++		msg, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBodyBytes))
++		return 0, fmt.Errorf("group decision: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(msg)))
++	}
++
++	var out struct {
++		Answers map[string]struct {
++			Type string   `json:"type"`
++			Noul *float64 `json:"noul"`
++		} `json:"answers"`
++	}
++	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
++		return 0, fmt.Errorf("group decision response: %w", err)
++	}
++	answer, ok := out.Answers[questionName]
++	if !ok || answer.Type != "noul" || answer.Noul == nil {
++		return 0, fmt.Errorf("group decision response has no %q noul answer", questionName)
++	}
++	return *answer.Noul, nil
++}
++
++type decisionRequest struct {
++	Model     string              `json:"model"`
++	State     state               `json:"state"`
++	Questions map[string]question `json:"questions"`
++}
++
++type state struct {
++	Bot            bot             `json:"bot"`
++	Chat           string          `json:"chat"`
++	RecentMessages []recentMessage `json:"recent_messages"`
++	BotLastMessage any             `json:"bot_last_message"` // "none" or botLastMessage
++	Message        message         `json:"message"`
++}
++
++type bot struct {
++	Username string `json:"username"`
++	Does     string `json:"does"`
++}
++
++type recentMessage struct {
++	From    string  `json:"from"`
++	Text    string  `json:"text"`
++	When    string  `json:"when"`
++	ReplyTo *string `json:"reply_to"`
++}
++
++type botLastMessage struct {
++	Text string `json:"text"`
++	When string `json:"when"`
++}
++
++type message struct {
++	From            string     `json:"from"`
++	Text            string     `json:"text"`
++	RepliesTo       *repliesTo `json:"replies_to"`
++	RepliesToTheBot bool       `json:"replies_to_the_bot"`
++}
++
++type repliesTo struct {
++	From string  `json:"from"`
++	Text *string `json:"text"`
++}
++
++type question struct {
++	Type         string            `json:"type"`
++	Instructions string            `json:"instructions"`
++	Criteria     map[string]string `json:"criteria"`
++}
++
++func (c *Client) requestBody(req channels.GroupReplyRequest) ([]byte, error) {
++	username := "@" + strings.TrimPrefix(req.BotUsername, "@")
++
++	st := state{
++		Bot:            bot{Username: username, Does: c.botDescription},
++		Chat:           c.chatDescription,
++		RecentMessages: make([]recentMessage, 0, len(req.History)),
++		BotLastMessage: "none",
++		Message: message{
++			From:            req.Message.From,
++			Text:            capText(req.Message.Text, maxMessageTextRunes),
++			RepliesToTheBot: req.RepliesToBot,
++		},
++	}
++	for _, h := range req.History {
++		m := recentMessage{
++			From: h.From,
++			Text: capText(h.Text, maxHistoryTextRunes),
++			When: ageWords(req.Now.Sub(h.Time)),
++		}
++		if h.ReplyTo != "" {
++			replyTo := h.ReplyTo
++			m.ReplyTo = &replyTo
++		}
++		st.RecentMessages = append(st.RecentMessages, m)
++	}
++	if req.BotLast != nil {
++		st.BotLastMessage = botLastMessage{
++			Text: capText(req.BotLast.Text, maxBotLastTextRunes),
++			When: ageWords(req.Now.Sub(req.BotLast.Time)),
++		}
++	}
++	if req.RepliedTo != nil {
++		replied := &repliesTo{From: req.RepliedTo.From}
++		if text := capText(req.RepliedTo.Text, maxRepliedToTextRunes); text != "" {
++			replied.Text = &text
++		}
++		st.Message.RepliesTo = replied
++	}
++
++	var buf bytes.Buffer
++	enc := json.NewEncoder(&buf)
++	enc.SetEscapeHTML(false)
++	err := enc.Encode(decisionRequest{
++		Model:     c.model,
++		State:     st,
++		Questions: map[string]question{questionName: addressedQuestion(username)},
++	})
++	if err != nil {
++		return nil, fmt.Errorf("group decision request: %w", err)
++	}
++	return buf.Bytes(), nil
++}
++
++func addressedQuestion(botUsername string) question {
++	return question{
++		Type: "noul",
++		Instructions: "In this Telegram group chat, is `message` addressed to the bot " + botUsername +
++			" (a request, question or task for it, data for it to record, an answer to its question, " +
++			"or a confirmation or correction of what it just did), rather than people talking to each " +
++			"other, a remark about the bot, or a command for another bot?",
++		Criteria: map[string]string{"true": "", "false": ""},
++	}
++}
++
++// capText trims s and cuts it to max runes, marking the cut with an ellipsis.
++func capText(s string, limit int) string {
++	s = strings.TrimSpace(s)
++	runes := []rune(s)
++	if len(runes) <= limit {
++		return s
++	}
++	return string(runes[:limit]) + "…"
++}
++
++// ageWords describes how long ago a message was sent.
++func ageWords(age time.Duration) string {
++	switch {
++	case age < 2*time.Minute:
++		return "just now"
++	case age < 15*time.Minute:
++		return "a few minutes earlier"
++	case age < time.Hour:
++		return "within the last hour"
++	case age < 24*time.Hour:
++		return "hours earlier"
++	default:
++		return "days earlier"
++	}
++}
+diff --git a/pkg/channels/groupdecision/groupdecision_test.go b/pkg/channels/groupdecision/groupdecision_test.go
+new file mode 100644
+index 00000000..95ba7789
+--- /dev/null
++++ b/pkg/channels/groupdecision/groupdecision_test.go
+@@ -0,0 +1,243 @@
++package groupdecision
++
++import (
++	"context"
++	"encoding/json"
++	"io"
++	"net/http"
++	"net/http/httptest"
++	"os"
++	"reflect"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/sipeed/picoclaw/pkg/channels"
++	"github.com/sipeed/picoclaw/pkg/config"
++)
++
++func testConfig() config.GroupDecisionConfig {
++	return config.GroupDecisionConfig{
++		Model:           "typesafe/jev-1.14",
++		APIKey:          *config.NewSecureString("test-key"),
++		BotDescription:  "BOT DOES",
++		ChatDescription: "CHAT DESC",
++	}
++}
++
++func newTestClient(t *testing.T, cfg config.GroupDecisionConfig, handler http.HandlerFunc) *Client {
++	t.Helper()
++	srv := httptest.NewServer(handler)
++	t.Cleanup(srv.Close)
++	c, err := New(cfg)
++	if err != nil {
++		t.Fatalf("New: %v", err)
++	}
++	c.endpoint = srv.URL
++	return c
++}
++
++// goldenRequest is the input of testdata/request.golden.json. The golden has the
++// shape of the request that was validated against the real API; its data is synthetic.
++func goldenRequest() channels.GroupReplyRequest {
++	now := time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
++	return channels.GroupReplyRequest{
++		BotUsername:  "asakusaclawbot",
++		RepliesToBot: true,
++		Now:          now,
++		Message:      channels.GroupMessage{From: "alice", Text: "  /print please? <b>привет</b> & co  "},
++		RepliedTo:    &channels.GroupMessage{From: "bot", Text: "Done ✅"},
++		History: []channels.GroupHistoryEntry{
++			{From: "bob", Text: strings.Repeat("x", 350), Time: now.Add(-30 * time.Minute)},
++			{From: "bot", Text: "Done ✅", Time: now.Add(-5 * time.Minute), ReplyTo: "alice"},
++			{From: "alice", Text: "ок", Time: now.Add(-time.Minute), ReplyTo: "bot"},
++		},
++		BotLast: &channels.GroupHistoryEntry{From: "bot", Text: "Done ✅", Time: now.Add(-5 * time.Minute)},
++	}
++}
++
++func TestRequestBodyMatchesGolden(t *testing.T) {
++	var gotBody []byte
++	var gotAuth, gotPath string
++	c := newTestClient(t, testConfig(), func(w http.ResponseWriter, r *http.Request) {
++		gotBody, _ = io.ReadAll(r.Body)
++		gotAuth = r.Header.Get("Authorization")
++		gotPath = r.Method + " " + r.URL.Path
++		_, _ = io.WriteString(w, `{"answers":{"addressed":{"type":"noul","noul":0.87}}}`)
++	})
++
++	p, err := c.ReplyProbability(context.Background(), goldenRequest())
++	if err != nil {
++		t.Fatalf("ReplyProbability: %v", err)
++	}
++	if p != 0.87 {
++		t.Fatalf("probability = %v, want 0.87", p)
++	}
++	if gotAuth != "Bearer test-key" || gotPath != "POST /" {
++		t.Fatalf("auth=%q request=%q", gotAuth, gotPath)
++	}
++
++	golden, err := os.ReadFile("testdata/request.golden.json")
++	if err != nil {
++		t.Fatal(err)
++	}
++	var want, got any
++	if err := json.Unmarshal(golden, &want); err != nil {
++		t.Fatal(err)
++	}
++	if err := json.Unmarshal(gotBody, &got); err != nil {
++		t.Fatalf("request is not JSON: %v\n%s", err, gotBody)
++	}
++	if !reflect.DeepEqual(want, got) {
++		t.Fatalf("request differs from golden\n got: %s\nwant: %s", gotBody, golden)
++	}
++	if !strings.Contains(string(gotBody), "<b>привет</b> & co") {
++		t.Fatalf("request escapes HTML or non-ASCII characters: %s", gotBody)
++	}
++}
++
++func TestRequestBodyWithoutReplyHistoryOrBotMessage(t *testing.T) {
++	c, err := New(testConfig())
++	if err != nil {
++		t.Fatal(err)
++	}
++	body, err := c.requestBody(channels.GroupReplyRequest{
++		BotUsername: "@mybot",
++		Now:         time.Now(),
++		Message:     channels.GroupMessage{From: "alice", Text: "hi"},
++	})
++	if err != nil {
++		t.Fatal(err)
++	}
++	var got struct {
++		State struct {
++			Bot            struct{ Username string }
++			RecentMessages []any `json:"recent_messages"`
++			BotLastMessage any   `json:"bot_last_message"`
++			Message        map[string]any
++		}
++		Questions map[string]struct {
++			Instructions string
++			Criteria     map[string]string
++		}
++	}
++	if err := json.Unmarshal(body, &got); err != nil {
++		t.Fatal(err)
++	}
++	if got.State.Bot.Username != "@mybot" {
++		t.Errorf("username = %q, want @mybot", got.State.Bot.Username)
++	}
++	if got.State.RecentMessages == nil || len(got.State.RecentMessages) != 0 {
++		t.Errorf("recent_messages = %#v, want empty array", got.State.RecentMessages)
++	}
++	if got.State.BotLastMessage != "none" {
++		t.Errorf("bot_last_message = %#v, want \"none\"", got.State.BotLastMessage)
++	}
++	if v, ok := got.State.Message["replies_to"]; !ok || v != nil {
++		t.Errorf("replies_to = %#v (present=%v), want null", v, ok)
++	}
++	if got.State.Message["replies_to_the_bot"] != false {
++		t.Errorf("replies_to_the_bot = %#v, want false", got.State.Message["replies_to_the_bot"])
++	}
++	q := got.Questions["addressed"]
++	if !strings.Contains(q.Instructions, "the bot @mybot (") {
++		t.Errorf("instructions do not name the bot: %q", q.Instructions)
++	}
++	for _, k := range []string{"true", "false"} {
++		if _, ok := q.Criteria[k]; !ok {
++			t.Errorf("criteria lack key %q: %v", k, q.Criteria)
++		}
++	}
++}
++
++func TestAgeWords(t *testing.T) {
++	tests := []struct {
++		age  time.Duration
++		want string
++	}{
++		{0, "just now"},
++		{119 * time.Second, "just now"},
++		{2 * time.Minute, "a few minutes earlier"},
++		{14*time.Minute + 59*time.Second, "a few minutes earlier"},
++		{15 * time.Minute, "within the last hour"},
++		{59 * time.Minute, "within the last hour"},
++		{time.Hour, "hours earlier"},
++		{23 * time.Hour, "hours earlier"},
++		{24 * time.Hour, "days earlier"},
++	}
++	for _, tc := range tests {
++		if got := ageWords(tc.age); got != tc.want {
++			t.Errorf("ageWords(%v) = %q, want %q", tc.age, got, tc.want)
++		}
++	}
++}
++
++func TestCapText(t *testing.T) {
++	if got := capText("  привет  ", 6); got != "привет" {
++		t.Errorf("trimmed = %q", got)
++	}
++	if got := capText("привет!", 6); got != "привет…" {
++		t.Errorf("capped = %q", got)
++	}
++}
++
++func TestReplyProbabilityErrors(t *testing.T) {
++	tests := []struct {
++		name    string
++		handler http.HandlerFunc
++		timeout int
++	}{
++		{
++			name: "http error",
++			handler: func(w http.ResponseWriter, _ *http.Request) {
++				http.Error(w, "forbidden region", http.StatusForbidden)
++			},
++		},
++		{
++			name: "invalid json",
++			handler: func(w http.ResponseWriter, _ *http.Request) {
++				_, _ = io.WriteString(w, "not json")
++			},
++		},
++		{
++			name: "no addressed answer",
++			handler: func(w http.ResponseWriter, _ *http.Request) {
++				_, _ = io.WriteString(w, `{"answers":{}}`)
++			},
++		},
++		{
++			name: "answer is not a noul",
++			handler: func(w http.ResponseWriter, _ *http.Request) {
++				_, _ = io.WriteString(w, `{"answers":{"addressed":{"type":"choice","selected":"a"}}}`)
++			},
++		},
++		{
++			name: "timeout",
++			handler: func(w http.ResponseWriter, r *http.Request) {
++				select {
++				case <-time.After(2 * time.Second):
++				case <-r.Context().Done():
++				}
++			},
++			timeout: 50,
++		},
++	}
++	for _, tc := range tests {
++		t.Run(tc.name, func(t *testing.T) {
++			cfg := testConfig()
++			cfg.TimeoutMS = tc.timeout
++			c := newTestClient(t, cfg, tc.handler)
++			if p, err := c.ReplyProbability(context.Background(), goldenRequest()); err == nil {
++				t.Fatalf("want error, got probability %v", p)
++			}
++		})
++	}
++}
++
++func TestNewRejectsBadProxy(t *testing.T) {
++	cfg := testConfig()
++	cfg.Proxy = "ftp://proxy.example"
++	if _, err := New(cfg); err == nil {
++		t.Fatal("want error for unsupported proxy scheme")
++	}
++}
+diff --git a/pkg/channels/groupdecision/testdata/request.golden.json b/pkg/channels/groupdecision/testdata/request.golden.json
+new file mode 100644
+index 00000000..b5424e22
+--- /dev/null
++++ b/pkg/channels/groupdecision/testdata/request.golden.json
+@@ -0,0 +1,53 @@
++{
++  "model": "typesafe/jev-1.14",
++  "state": {
++    "bot": {
++      "username": "@asakusaclawbot",
++      "does": "BOT DOES"
++    },
++    "chat": "CHAT DESC",
++    "recent_messages": [
++      {
++        "from": "bob",
++        "text": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…",
++        "when": "within the last hour",
++        "reply_to": null
++      },
++      {
++        "from": "bot",
++        "text": "Done ✅",
++        "when": "a few minutes earlier",
++        "reply_to": "alice"
++      },
++      {
++        "from": "alice",
++        "text": "ок",
++        "when": "just now",
++        "reply_to": "bot"
++      }
++    ],
++    "bot_last_message": {
++      "text": "Done ✅",
++      "when": "a few minutes earlier"
++    },
++    "message": {
++      "from": "alice",
++      "text": "/print please? <b>привет</b> & co",
++      "replies_to": {
++        "from": "bot",
++        "text": "Done ✅"
++      },
++      "replies_to_the_bot": true
++    }
++  },
++  "questions": {
++    "addressed": {
++      "type": "noul",
++      "instructions": "In this Telegram group chat, is `message` addressed to the bot @asakusaclawbot (a request, question or task for it, data for it to record, an answer to its question, or a confirmation or correction of what it just did), rather than people talking to each other, a remark about the bot, or a command for another bot?",
++      "criteria": {
++        "true": "",
++        "false": ""
++      }
++    }
++  }
++}
+\ No newline at end of file
+diff --git a/pkg/channels/interfaces.go b/pkg/channels/interfaces.go
+index ad442195..fda1d2e5 100644
+--- a/pkg/channels/interfaces.go
++++ b/pkg/channels/interfaces.go
+@@ -52,6 +52,15 @@ type PlaceholderCapable interface {
+ 	SendPlaceholder(ctx context.Context, chatID string) (messageID string, err error)
+ }
+ 
++// SentMessageRecorder — channels that keep track of the messages the bot sent
++// (for instance as context for the group reply decider). The Manager calls it
++// after a message was delivered by any path — Send, editing a placeholder or
++// SendMedia — with the IDs of the delivered messages. Tool feedback and
++// deliveries that report no message ID are not passed on.
++type SentMessageRecorder interface {
++	RecordSentMessage(chatID string, outboundCtx *bus.InboundContext, content string, messageIDs []string)
++}
++
+ // StreamingCapable — channels that can show partial LLM output in real-time.
+ // The channel SHOULD gracefully degrade if the platform rejects streaming
+ // (e.g. Telegram bot without forum mode). In that case, Update becomes a no-op
+diff --git a/pkg/channels/manager.go b/pkg/channels/manager.go
+index bea8154f..76c8e135 100644
+--- a/pkg/channels/manager.go
++++ b/pkg/channels/manager.go
+@@ -1540,6 +1540,35 @@ func splitOutboundMessageContent(msg bus.OutboundMessage, maxLen int) []string {
+ 	return []string{msg.Content}
+ }
+ 
++// recordSentMessage tells a SentMessageRecorder channel about a delivered message.
++func recordSentMessage(ch Channel, msg bus.OutboundMessage, messageIDs []string) {
++	recorder, ok := ch.(SentMessageRecorder)
++	if !ok || len(messageIDs) == 0 || outboundMessageIsToolFeedback(msg) {
++		return
++	}
++	recorder.RecordSentMessage(msg.ChatID, &msg.Context, msg.Content, messageIDs)
++}
++
++// recordSentMediaMessage tells a SentMessageRecorder channel about delivered
++// media. The recorded text is the captions, or the kind of the first attachment.
++func recordSentMediaMessage(ch Channel, msg bus.OutboundMediaMessage, messageIDs []string) {
++	recorder, ok := ch.(SentMessageRecorder)
++	if !ok || len(messageIDs) == 0 || len(msg.Parts) == 0 {
++		return
++	}
++	var captions []string
++	for _, part := range msg.Parts {
++		if part.Caption != "" {
++			captions = append(captions, part.Caption)
++		}
++	}
++	content := strings.Join(captions, "\n")
++	if content == "" {
++		content = "[" + msg.Parts[0].Type + "]"
++	}
++	recorder.RecordSentMessage(msg.ChatID, &msg.Context, content, messageIDs)
++}
++
+ // sendWithRetry sends a message through the channel with rate limiting and
+ // retry logic. It classifies errors to determine the retry strategy:
+ //   - ErrNotRunning / ErrSendFailed: permanent, no retry
+@@ -1571,6 +1600,7 @@ func (m *Manager) sendWithRetry(
+ 	// Pre-send: stop typing and try to edit placeholder
+ 	if msgIDs, handled := m.preSend(ctx, name, msg, w.ch); handled {
+ 		m.publishOutboundSent(name, msg, msgIDs)
++		recordSentMessage(w.ch, msg, msgIDs)
+ 		return msgIDs, true
+ 	}
+ 
+@@ -1580,6 +1610,7 @@ func (m *Manager) sendWithRetry(
+ 		msgIDs, lastErr = w.ch.Send(ctx, msg)
+ 		if lastErr == nil {
+ 			m.publishOutboundSent(name, msg, msgIDs)
++			recordSentMessage(w.ch, msg, msgIDs)
+ 			return msgIDs, true
+ 		}
+ 
+@@ -1775,6 +1806,7 @@ func (m *Manager) sendMediaWithRetry(
+ 		msgIDs, lastErr = ms.SendMedia(ctx, msg)
+ 		if lastErr == nil {
+ 			m.publishOutboundMediaSent(name, msg, msgIDs)
++			recordSentMediaMessage(w.ch, msg, msgIDs)
+ 			return msgIDs, nil
+ 		}
+ 
+diff --git a/pkg/channels/manager_sent_recorder_test.go b/pkg/channels/manager_sent_recorder_test.go
+new file mode 100644
+index 00000000..74ae8653
+--- /dev/null
++++ b/pkg/channels/manager_sent_recorder_test.go
+@@ -0,0 +1,135 @@
++package channels
++
++import (
++	"context"
++	"testing"
++
++	"golang.org/x/time/rate"
++
++	"github.com/sipeed/picoclaw/pkg/bus"
++)
++
++type sentRecord struct {
++	chatID     string
++	content    string
++	messageIDs []string
++}
++
++// sentRecorderChannel delivers with fixed message IDs and records what the
++// Manager reports as delivered.
++type sentRecorderChannel struct {
++	mockMediaChannel
++	sendIDs  []string
++	mediaIDs []string
++	sent     int
++	recorded []sentRecord
++}
++
++func (c *sentRecorderChannel) Send(_ context.Context, _ bus.OutboundMessage) ([]string, error) {
++	c.sent++
++	return c.sendIDs, nil
++}
++
++func (c *sentRecorderChannel) SendMedia(_ context.Context, _ bus.OutboundMediaMessage) ([]string, error) {
++	return c.mediaIDs, nil
++}
++
++func (c *sentRecorderChannel) RecordSentMessage(
++	chatID string,
++	_ *bus.InboundContext,
++	content string,
++	messageIDs []string,
++) {
++	c.recorded = append(c.recorded, sentRecord{chatID, content, messageIDs})
++}
++
++func newSentRecorderManager(ch *sentRecorderChannel) (*Manager, *channelWorker) {
++	m := newTestManager()
++	w := &channelWorker{ch: ch, limiter: rate.NewLimiter(rate.Inf, 1)}
++	m.channels["test"] = ch
++	m.workers["test"] = w
++	return m, w
++}
++
++func assertRecorded(t *testing.T, ch *sentRecorderChannel, want ...sentRecord) {
++	t.Helper()
++	if len(ch.recorded) != len(want) {
++		t.Fatalf("recorded %+v, want %+v", ch.recorded, want)
++	}
++	for i, w := range want {
++		got := ch.recorded[i]
++		if got.chatID != w.chatID || got.content != w.content || len(got.messageIDs) != len(w.messageIDs) ||
++			(len(w.messageIDs) > 0 && got.messageIDs[0] != w.messageIDs[0]) {
++			t.Fatalf("recorded[%d] = %+v, want %+v", i, got, w)
++		}
++	}
++}
++
++func TestSendWithRetry_RecordsDeliveredMessage(t *testing.T) {
++	ch := &sentRecorderChannel{sendIDs: []string{"11"}}
++	m, w := newSentRecorderManager(ch)
++
++	m.sendWithRetry(context.Background(), "test", w,
++		testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "hello"}))
++
++	assertRecorded(t, ch, sentRecord{"123", "hello", []string{"11"}})
++}
++
++// With the default placeholder the answer is delivered by editing the
++// placeholder and Send is never called.
++func TestSendWithRetry_RecordsMessageDeliveredByEditingPlaceholder(t *testing.T) {
++	ch := &sentRecorderChannel{sendIDs: []string{"11"}}
++	m, w := newSentRecorderManager(ch)
++	m.RecordPlaceholder("test", "123", "456")
++
++	m.sendWithRetry(context.Background(), "test", w,
++		testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "the answer"}))
++
++	if ch.sent != 0 || ch.editedMessages != 1 {
++		t.Fatalf("Send called %d times, placeholder edited %d times; want the placeholder edited only",
++			ch.sent, ch.editedMessages)
++	}
++	assertRecorded(t, ch, sentRecord{"123", "the answer", []string{"456"}})
++}
++
++func TestSendWithRetry_DoesNotRecordToolFeedbackOrUnidentifiedDelivery(t *testing.T) {
++	ch := &sentRecorderChannel{sendIDs: []string{"11"}}
++	m, w := newSentRecorderManager(ch)
++
++	toolFeedback := testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "running tool"})
++	toolFeedback.Context.Raw = map[string]string{"message_kind": "tool_feedback"}
++	m.sendWithRetry(context.Background(), "test", w, toolFeedback)
++
++	ch.sendIDs = nil
++	m.sendWithRetry(context.Background(), "test", w,
++		testOutboundMessage(bus.OutboundMessage{Channel: "test", ChatID: "123", Content: "no id reported"}))
++
++	assertRecorded(t, ch)
++	if ch.sent != 2 {
++		t.Fatalf("Send called %d times, want 2", ch.sent)
++	}
++}
++
++func TestSendMedia_RecordsDeliveredMedia(t *testing.T) {
++	ch := &sentRecorderChannel{mediaIDs: []string{"21"}}
++	m, _ := newSentRecorderManager(ch)
++
++	for _, parts := range [][]bus.MediaPart{
++		{{Type: "image", Ref: "media://a", Caption: "the glaze"}, {Type: "image", Ref: "media://b", Caption: "and its recipe"}},
++		{{Type: "image", Ref: "media://c"}},
++	} {
++		err := m.SendMedia(context.Background(), testOutboundMediaMessage(bus.OutboundMediaMessage{
++			Channel: "test",
++			ChatID:  "123",
++			Parts:   parts,
++		}))
++		if err != nil {
++			t.Fatalf("SendMedia() error = %v", err)
++		}
++	}
++
++	assertRecorded(t, ch,
++		sentRecord{"123", "the glaze\nand its recipe", []string{"21"}},
++		sentRecord{"123", "[image]", []string{"21"}},
++	)
++}
+diff --git a/pkg/channels/telegram/telegram.go b/pkg/channels/telegram/telegram.go
+index dfbcf1fb..5dbfa344 100644
+--- a/pkg/channels/telegram/telegram.go
++++ b/pkg/channels/telegram/telegram.go
+@@ -16,6 +16,7 @@ import (
+ 	"strings"
+ 	"sync"
+ 	"time"
++	"unicode"
+ 
+ 	"github.com/mymmrac/telego"
+ 	th "github.com/mymmrac/telego/telegohandler"
+@@ -23,6 +24,7 @@ import (
+ 
+ 	"github.com/sipeed/picoclaw/pkg/bus"
+ 	"github.com/sipeed/picoclaw/pkg/channels"
++	"github.com/sipeed/picoclaw/pkg/channels/groupdecision"
+ 	"github.com/sipeed/picoclaw/pkg/commands"
+ 	"github.com/sipeed/picoclaw/pkg/config"
+ 	"github.com/sipeed/picoclaw/pkg/identity"
+@@ -134,6 +136,20 @@ func NewTelegramChannel(
+ 		channels.WithReasoningChannelID(bc.ReasoningChannelID),
+ 	)
+ 
++	if decision := bc.GroupTrigger.Decision; decision.Model != "" && !decision.Enabled() {
++		logger.WarnCF("telegram", "group_trigger.decision.model is set without an api_key; "+
++			"the decision model is disabled and group messages follow mention_only/prefixes", map[string]any{
++			"channel": channelName,
++		})
++	}
++	if decision := bc.GroupTrigger.Decision; decision.Enabled() {
++		decider, err := groupdecision.New(decision)
++		if err != nil {
++			return nil, fmt.Errorf("failed to create group reply decider: %w", err)
++		}
++		base.SetGroupDecider(decider)
++	}
++
+ 	ch := &TelegramChannel{
+ 		BaseChannel: base,
+ 		bot:         bot,
+@@ -1136,10 +1152,7 @@ func (c *TelegramChannel) handleMessages(ctx context.Context, messages []*telego
+ 	isMentioned := false
+ 	if message.Chat.Type != "private" {
+ 		isMentioned = c.isBotMentioned(message)
+-		if isMentioned {
+-			content = c.stripBotMention(content)
+-		}
+-		respond, cleaned := c.ShouldRespondInGroup(isMentioned, content)
++		respond, cleaned := c.respondInGroup(ctx, message, content, isMentioned)
+ 		if !respond {
+ 			return nil
+ 		}
+@@ -1167,11 +1180,8 @@ func (c *TelegramChannel) handleMessages(ctx context.Context, messages []*telego
+ 	// route to the correct topic and each topic gets its own session.
+ 	// Only forum groups (IsForum) are handled; regular group reply threads
+ 	// must share one session per group.
+-	compositeChatID := fmt.Sprintf("%d", chatID)
+ 	threadID := message.MessageThreadID
+-	if message.Chat.IsForum && threadID != 0 {
+-		compositeChatID = fmt.Sprintf("%d/%d", chatID, threadID)
+-	}
++	compositeChatID := telegramChatKey(chatID, forumThreadID(message))
+ 
+ 	logger.DebugCF("telegram", "Received message", map[string]any{
+ 		"sender_id": sender.CanonicalID,
+@@ -1220,6 +1230,168 @@ func (c *TelegramChannel) handleMessages(ctx context.Context, messages []*telego
+ 	return nil
+ }
+ 
++// respondInGroup decides whether a group message reaches the agent and returns
++// the content to forward. A message that mentions the bot (including /cmd@bot
++// and the bot's own bare commands) always does. A command for another bot or an
++// unknown one never does. Any other message goes to the configured decision
++// model, if any, and otherwise to the group_trigger rules.
++func (c *TelegramChannel) respondInGroup(
++	ctx context.Context,
++	message *telego.Message,
++	content string,
++	isMentioned bool,
++) (bool, string) {
++	decider := c.GroupDecider()
++	var req channels.GroupReplyRequest
++	if decider != nil {
++		req = c.recordGroupMessage(message, content)
++	}
++
++	if isMentioned {
++		return c.ShouldRespondInGroup(true, c.stripBotMention(content))
++	}
++	if startsWithBotCommand(message) {
++		return false, content
++	}
++	if decider != nil {
++		if !c.ShouldRespondByDecision(ctx, telegramChatKey(message.Chat.ID, forumThreadID(message)), req) {
++			return false, content
++		}
++		return true, strings.TrimSpace(content)
++	}
++	return c.ShouldRespondInGroup(false, content)
++}
++
++// recordGroupMessage appends the message to its chat's history and returns the
++// decider request for it, built from the history as it was before the message.
++func (c *TelegramChannel) recordGroupMessage(message *telego.Message, content string) channels.GroupReplyRequest {
++	chatKey := telegramChatKey(message.Chat.ID, forumThreadID(message))
++	history := c.GroupHistory()
++
++	sentAt := time.Now()
++	if message.Date > 0 {
++		sentAt = time.Unix(message.Date, 0)
++	}
++	from := c.groupSenderName(message)
++
++	req := channels.GroupReplyRequest{
++		BotUsername: c.bot.Username(),
++		Now:         sentAt,
++		Message:     channels.GroupMessage{From: from, Text: content},
++		History:     history.Recent(chatKey, message.MessageID, sentAt),
++	}
++	if last, ok := history.LastBot(chatKey, message.MessageID); ok {
++		req.BotLast = &last
++	}
++	entry := channels.GroupHistoryEntry{MessageID: message.MessageID, From: from, Text: content, Time: sentAt}
++
++	if reply := telegramGroupReplyTarget(message); reply != nil {
++		replyFrom := c.groupSenderName(reply)
++		req.RepliesToBot = c.isOwnBotUser(reply.From)
++		req.RepliedTo = &channels.GroupMessage{From: replyFrom, Text: telegramQuotedContent(reply)}
++		entry.ReplyTo = replyFrom
++	}
++
++	history.Add(chatKey, entry)
++	return req
++}
++
++var _ channels.SentMessageRecorder = (*TelegramChannel)(nil)
++
++// RecordSentMessage implements channels.SentMessageRecorder: a message the bot
++// delivered to a group becomes part of that group's history.
++func (c *TelegramChannel) RecordSentMessage(
++	chatID string,
++	outboundCtx *bus.InboundContext,
++	content string,
++	messageIDs []string,
++) {
++	if len(messageIDs) == 0 {
++		return
++	}
++	tgChatID, threadID, err := resolveTelegramOutboundTarget(chatID, outboundCtx)
++	if err != nil {
++		return
++	}
++	messageID, err := strconv.Atoi(messageIDs[len(messageIDs)-1])
++	if err != nil {
++		return
++	}
++	c.recordOwnGroupMessage(tgChatID, threadID, content, messageID)
++}
++
++// recordOwnGroupMessage appends a message the bot sent to a group (or to one of
++// its forum topics) to the history.
++func (c *TelegramChannel) recordOwnGroupMessage(chatID int64, threadID int, content string, messageID int) {
++	if c.GroupDecider() == nil || chatID >= 0 { // positive chat IDs are private chats
++		return
++	}
++	c.GroupHistory().Add(telegramChatKey(chatID, threadID), channels.GroupHistoryEntry{
++		MessageID: messageID,
++		From:      channels.GroupHistoryBotName,
++		Text:      content,
++		Time:      time.Now(),
++	})
++}
++
++// telegramChatKey identifies a chat, or a forum topic of it, in the history and
++// as the delivery chat ID.
++func telegramChatKey(chatID int64, threadID int) string {
++	if threadID != 0 {
++		return fmt.Sprintf("%d/%d", chatID, threadID)
++	}
++	return strconv.FormatInt(chatID, 10)
++}
++
++// forumThreadID is the forum topic of a message, 0 outside forum topics. Only
++// forum groups have topics; the reply threads of regular groups share one conversation.
++func forumThreadID(message *telego.Message) int {
++	if message.Chat.IsForum {
++		return message.MessageThreadID
++	}
++	return 0
++}
++
++// groupSenderName names the sender of a message for the decider: "bot" for this
++// bot itself, otherwise the user's username or first name.
++func (c *TelegramChannel) groupSenderName(message *telego.Message) string {
++	if message != nil && c.isOwnBotUser(message.From) {
++		return channels.GroupHistoryBotName
++	}
++	return telegramQuotedAuthor(message)
++}
++
++// telegramGroupReplyTarget returns the message that message replies to. In a
++// forum topic every message nominally replies to the topic's first message,
++// which is not a reply by the sender.
++func telegramGroupReplyTarget(message *telego.Message) *telego.Message {
++	reply := message.ReplyToMessage
++	if reply == nil || (message.Chat.IsForum && reply.MessageID == message.MessageThreadID) {
++		return nil
++	}
++	return reply
++}
++
++// startsWithBotCommand reports whether the message begins with a /command, the
++// way a command meant for a bot is written. A command in the middle of a
++// sentence does not make the message a command.
++func startsWithBotCommand(message *telego.Message) bool {
++	text, entities := telegramEntityTextAndList(message)
++	leading := 0
++	for _, r := range text {
++		if !unicode.IsSpace(r) {
++			break
++		}
++		leading++
++	}
++	for _, entity := range entities {
++		if entity.Type == telego.EntityTypeBotCommand && entity.Offset == leading {
++			return true
++		}
++	}
++	return false
++}
++
+ func (c *TelegramChannel) collectTelegramMessageParts(
+ 	ctx context.Context,
+ 	msg *telego.Message,
+@@ -1678,6 +1850,9 @@ func (c *TelegramChannel) BeginStream(ctx context.Context, chatID string) (chann
+ 		draftID:          cryptoRandInt(),
+ 		throttleInterval: time.Duration(streamCfg.ThrottleSeconds) * time.Second,
+ 		minGrowth:        streamCfg.MinGrowthChars,
++		onSent: func(content string, messageID int) {
++			c.recordOwnGroupMessage(cid, threadID, content, messageID)
++		},
+ 	}, nil
+ }
+ 
+@@ -1695,6 +1870,7 @@ type telegramStreamer struct {
+ 	lastAt           time.Time
+ 	failed           bool
+ 	draftTouched     bool
++	onSent           func(content string, messageID int) // called with the delivered final message
+ 	mu               sync.Mutex
+ }
+ 
+@@ -1742,10 +1918,11 @@ func (s *telegramStreamer) Finalize(ctx context.Context, content string) error {
+ 	tgMsg.MessageThreadID = s.threadID
+ 	tgMsg.ParseMode = telego.ModeHTML
+ 
+-	if _, err := s.bot.SendMessage(ctx, tgMsg); err != nil {
++	sent, err := s.bot.SendMessage(ctx, tgMsg)
++	if err != nil {
+ 		// Fallback to plain text
+ 		tgMsg.ParseMode = ""
+-		if _, err = s.bot.SendMessage(ctx, tgMsg); err != nil {
++		if sent, err = s.bot.SendMessage(ctx, tgMsg); err != nil {
+ 			logger.ErrorCF("telegram", "Finalize failed after HTML and plain-text attempts", map[string]any{
+ 				"chat_id": s.chatID,
+ 				"error":   err.Error(),
+@@ -1754,6 +1931,9 @@ func (s *telegramStreamer) Finalize(ctx context.Context, content string) error {
+ 			return fmt.Errorf("telegram finalize: %w", err)
+ 		}
+ 	}
++	if s.onSent != nil && sent != nil {
++		s.onSent(content, sent.MessageID)
++	}
+ 	s.Cancel(ctx)
+ 	return nil
+ }
+diff --git a/pkg/channels/telegram/telegram_group_decision_test.go b/pkg/channels/telegram/telegram_group_decision_test.go
+new file mode 100644
+index 00000000..83d5056a
+--- /dev/null
++++ b/pkg/channels/telegram/telegram_group_decision_test.go
+@@ -0,0 +1,397 @@
++package telegram
++
++import (
++	"context"
++	"errors"
++	"fmt"
++	"testing"
++	"time"
++
++	"github.com/mymmrac/telego"
++
++	"github.com/sipeed/picoclaw/pkg/bus"
++	"github.com/sipeed/picoclaw/pkg/channels"
++	"github.com/sipeed/picoclaw/pkg/commands"
++	"github.com/sipeed/picoclaw/pkg/config"
++)
++
++// Telegram group chat IDs are negative.
++const testGroupChatKey = "-123"
++
++type spyDecider struct {
++	p        float64
++	err      error
++	requests []channels.GroupReplyRequest
++}
++
++func (s *spyDecider) ReplyProbability(_ context.Context, req channels.GroupReplyRequest) (float64, error) {
++	s.requests = append(s.requests, req)
++	return s.p, s.err
++}
++
++func newGroupDecisionChannel(t *testing.T, decider channels.GroupReplyDecider) (*TelegramChannel, *bus.MessageBus) {
++	t.Helper()
++
++	messageBus := bus.NewMessageBus()
++	ch := &TelegramChannel{
++		BaseChannel: channels.NewBaseChannel("telegram", nil, messageBus, []string{"7", "8"},
++			channels.WithGroupTrigger(config.GroupTriggerConfig{MentionOnly: true}),
++		),
++		bot:     newTestTelegramBot(t, "testbot"),
++		chatIDs: make(map[string]int64),
++		ctx:     context.Background(),
++	}
++	ch.SetGroupDecider(decider)
++	ch.setOwnCommands([]commands.Definition{{Name: "new"}})
++	return ch, messageBus
++}
++
++func groupMessage(id int, from int64, text string, entities ...telego.MessageEntity) *telego.Message {
++	return &telego.Message{
++		Text:      text,
++		Entities:  entities,
++		MessageID: id,
++		Date:      time.Now().Unix(),
++		Chat:      telego.Chat{ID: -123, Type: "group"},
++		From:      &telego.User{ID: from, FirstName: "User", Username: map[int64]string{7: "alice", 8: "bob"}[from]},
++	}
++}
++
++func commandEntity(text string) telego.MessageEntity {
++	return telego.MessageEntity{Type: telego.EntityTypeBotCommand, Offset: 0, Length: len([]rune(text))}
++}
++
++func forwardedContent(t *testing.T, messageBus *bus.MessageBus) (string, bool) {
++	t.Helper()
++	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
++	defer cancel()
++	select {
++	case inbound := <-messageBus.InboundChan():
++		return inbound.Content, true
++	case <-ctx.Done():
++		return "", false
++	}
++}
++
++func TestGroupDecision_MentionBypassesDecider(t *testing.T) {
++	spy := &spyDecider{err: errors.New("must not be called")}
++	ch, messageBus := newGroupDecisionChannel(t, spy)
++
++	msg := groupMessage(1, 7, "@testbot hello", telego.MessageEntity{
++		Type: telego.EntityTypeMention, Offset: 0, Length: len("@testbot"),
++	})
++	if err := ch.handleMessage(context.Background(), msg); err != nil {
++		t.Fatal(err)
++	}
++
++	if content, ok := forwardedContent(t, messageBus); !ok || content != "hello" {
++		t.Fatalf("forwarded = %q, %v; want \"hello\", true", content, ok)
++	}
++	if len(spy.requests) != 0 {
++		t.Fatalf("decider called %d times for a mention", len(spy.requests))
++	}
++	if got := ch.GroupHistory().Recent(testGroupChatKey, 1000, time.Now()); len(got) != 1 || got[0].From != "alice" {
++		t.Fatalf("history = %+v, want the mention recorded", got)
++	}
++}
++
++func TestGroupDecision_Commands(t *testing.T) {
++	tests := []struct {
++		name          string
++		text          string
++		wantForwarded bool
++	}{
++		{"known bare command", "/new", true},
++		{"command with this bot", "/print@testbot", true},
++		{"unknown bare command", "/print", false},
++		{"command for another bot", "/new@otherbot", false},
++	}
++	for _, tc := range tests {
++		t.Run(tc.name, func(t *testing.T) {
++			spy := &spyDecider{p: 1}
++			ch, messageBus := newGroupDecisionChannel(t, spy)
++
++			if err := ch.handleMessage(context.Background(), groupMessage(1, 7, tc.text, commandEntity(tc.text))); err != nil {
++				t.Fatal(err)
++			}
++
++			if _, ok := forwardedContent(t, messageBus); ok != tc.wantForwarded {
++				t.Fatalf("forwarded = %v, want %v", ok, tc.wantForwarded)
++			}
++			if len(spy.requests) != 0 {
++				t.Fatalf("decider called %d times for a command", len(spy.requests))
++			}
++		})
++	}
++}
++
++func TestGroupDecision_DeciderVerdict(t *testing.T) {
++	tests := []struct {
++		name          string
++		decider       *spyDecider
++		wantForwarded bool
++	}{
++		{"yes", &spyDecider{p: 0.9}, true},
++		{"at the threshold", &spyDecider{p: 0.5}, true},
++		{"no", &spyDecider{p: 0.1}, false},
++		{"error", &spyDecider{p: 1, err: errors.New("decision model unavailable")}, false},
++	}
++	for _, tc := range tests {
++		t.Run(tc.name, func(t *testing.T) {
++			ch, messageBus := newGroupDecisionChannel(t, tc.decider)
++
++			if err := ch.handleMessage(context.Background(), groupMessage(1, 7, "  how many glazes?  ")); err != nil {
++				t.Fatal(err)
++			}
++
++			content, ok := forwardedContent(t, messageBus)
++			if ok != tc.wantForwarded {
++				t.Fatalf("forwarded = %v, want %v", ok, tc.wantForwarded)
++			}
++			if ok && content != "how many glazes?" {
++				t.Fatalf("content = %q", content)
++			}
++			if len(tc.decider.requests) != 1 {
++				t.Fatalf("decider called %d times, want 1", len(tc.decider.requests))
++			}
++		})
++	}
++}
++
++func TestGroupDecision_RequestCarriesHistoryAndReply(t *testing.T) {
++	spy := &spyDecider{p: 0}
++	ch, _ := newGroupDecisionChannel(t, spy)
++	botUser := &telego.User{ID: ch.bot.ID(), IsBot: true, Username: "testbot"}
++
++	ch.RecordSentMessage(testGroupChatKey, nil, "Recorded the expense", []string{"1"})
++	if err := ch.handleMessage(context.Background(), groupMessage(2, 7, "thanks")); err != nil {
++		t.Fatal(err)
++	}
++	reply := groupMessage(3, 8, "and the second one?")
++	reply.ReplyToMessage = &telego.Message{MessageID: 1, From: botUser, Text: "Recorded the expense"}
++	if err := ch.handleMessage(context.Background(), reply); err != nil {
++		t.Fatal(err)
++	}
++
++	if len(spy.requests) != 2 {
++		t.Fatalf("decider called %d times, want 2", len(spy.requests))
++	}
++	first, second := spy.requests[0], spy.requests[1]
++	if first.BotUsername != "testbot" || first.Message.From != "alice" || first.Message.Text != "thanks" {
++		t.Errorf("first request = %+v", first)
++	}
++	if first.RepliedTo != nil || first.RepliesToBot {
++		t.Errorf("first request is not a reply: %+v", first)
++	}
++	if len(first.History) != 1 || first.History[0].From != "bot" {
++		t.Errorf("first history = %+v, want the bot's own message", first.History)
++	}
++	if first.BotLast == nil || first.BotLast.Text != "Recorded the expense" {
++		t.Errorf("first BotLast = %+v", first.BotLast)
++	}
++
++	if !second.RepliesToBot || second.RepliedTo == nil || second.RepliedTo.From != "bot" ||
++		second.RepliedTo.Text != "Recorded the expense" {
++		t.Errorf("second request does not carry the reply to the bot: %+v", second)
++	}
++	if len(second.History) != 2 || second.History[1].From != "alice" || second.History[1].Text != "thanks" {
++		t.Errorf("second history = %+v, want the bot message then alice's", second.History)
++	}
++	hist := ch.GroupHistory().Recent(testGroupChatKey, 1000, time.Now())
++	if len(hist) != 3 || hist[2].ReplyTo != "bot" {
++		t.Errorf("history = %+v, want 3 messages, the last replying to bot", hist)
++	}
++}
++
++func TestGroupDecision_RejectedSenderIsNotRecorded(t *testing.T) {
++	spy := &spyDecider{p: 1}
++	ch, messageBus := newGroupDecisionChannel(t, spy)
++
++	if err := ch.handleMessage(context.Background(), groupMessage(1, 99, "hello")); err != nil {
++		t.Fatal(err)
++	}
++
++	if _, ok := forwardedContent(t, messageBus); ok {
++		t.Fatal("message of a sender outside allow_from was forwarded")
++	}
++	if len(spy.requests) != 0 || len(ch.GroupHistory().Recent(testGroupChatKey, 1000, time.Now())) != 0 {
++		t.Fatal("message of a sender outside allow_from reached the decider or the history")
++	}
++}
++
++func TestRecordSentMessage(t *testing.T) {
++	tests := []struct {
++		name       string
++		chatID     string
++		messageIDs []string
++		wantKey    string // history key the message must land in, empty when it must not be recorded
++	}{
++		{"group", testGroupChatKey, []string{"5"}, testGroupChatKey},
++		{"forum topic", testGroupChatKey + "/77", []string{"5"}, testGroupChatKey + "/77"},
++		{"last of several chunks", testGroupChatKey, []string{"5", "6"}, testGroupChatKey},
++		{"private chat", "55", []string{"5"}, ""},
++		{"no message id", testGroupChatKey, nil, ""},
++	}
++	for _, tc := range tests {
++		t.Run(tc.name, func(t *testing.T) {
++			ch, _ := newGroupDecisionChannel(t, &spyDecider{})
++
++			ch.RecordSentMessage(tc.chatID, nil, "hi", tc.messageIDs)
++
++			recorded := 0
++			for _, key := range []string{testGroupChatKey, testGroupChatKey + "/77", "55"} {
++				got := ch.GroupHistory().Recent(key, 1000, time.Now())
++				recorded += len(got)
++				if key == tc.wantKey {
++					if len(got) != 1 || got[0].From != "bot" || got[0].Text != "hi" ||
++						got[0].MessageID != 5+len(tc.messageIDs)-1 {
++						t.Fatalf("history of %s = %+v", key, got)
++					}
++				}
++			}
++			if wantRecorded := map[bool]int{true: 1, false: 0}[tc.wantKey != ""]; recorded != wantRecorded {
++				t.Fatalf("%d messages recorded, want %d", recorded, wantRecorded)
++			}
++		})
++	}
++}
++
++func TestRecordSentMessage_TopicFromOutboundContext(t *testing.T) {
++	ch, _ := newGroupDecisionChannel(t, &spyDecider{})
++
++	ch.RecordSentMessage(testGroupChatKey, &bus.InboundContext{TopicID: "77"}, "hi", []string{"5"})
++
++	if got := ch.GroupHistory().Recent(testGroupChatKey+"/77", 1000, time.Now()); len(got) != 1 {
++		t.Fatalf("topic history = %+v, want the bot message", got)
++	}
++}
++
++func TestGroupDecision_CommandInTheMiddleGoesToDecider(t *testing.T) {
++	spy := &spyDecider{p: 0.9}
++	ch, messageBus := newGroupDecisionChannel(t, spy)
++
++	text := "bot, why did /printglaze not print 10201?"
++	offset := len([]rune("bot, why did "))
++	msg := groupMessage(1, 7, text, telego.MessageEntity{
++		Type: telego.EntityTypeBotCommand, Offset: offset, Length: len("/printglaze"),
++	})
++	if err := ch.handleMessage(context.Background(), msg); err != nil {
++		t.Fatal(err)
++	}
++
++	if content, ok := forwardedContent(t, messageBus); !ok || content != text {
++		t.Fatalf("forwarded = %q, %v; want the message", content, ok)
++	}
++	if len(spy.requests) != 1 {
++		t.Fatalf("decider called %d times, want 1", len(spy.requests))
++	}
++}
++
++func TestGroupDecision_CommandAfterLeadingSpaceIsStillACommand(t *testing.T) {
++	spy := &spyDecider{p: 1}
++	ch, messageBus := newGroupDecisionChannel(t, spy)
++
++	msg := groupMessage(1, 7, "  /print x", telego.MessageEntity{
++		Type: telego.EntityTypeBotCommand, Offset: 2, Length: len("/print"),
++	})
++	if err := ch.handleMessage(context.Background(), msg); err != nil {
++		t.Fatal(err)
++	}
++
++	if _, ok := forwardedContent(t, messageBus); ok || len(spy.requests) != 0 {
++		t.Fatalf("a message that starts with a foreign command was forwarded (%v) or judged (%d)",
++			ok, len(spy.requests))
++	}
++}
++
++func TestGroupDecision_HistoryFollowsMessageIDsNotArrival(t *testing.T) {
++	spy := &spyDecider{p: 0}
++	ch, _ := newGroupDecisionChannel(t, spy)
++
++	// Telegram handles updates concurrently: message 12 is recorded before 11 and 10.
++	for _, id := range []int{12, 10, 11} {
++		if err := ch.handleMessage(context.Background(), groupMessage(id, 7, fmt.Sprintf("message %d", id))); err != nil {
++			t.Fatal(err)
++		}
++	}
++
++	var histories [][]string
++	for _, req := range spy.requests {
++		var texts []string
++		for _, e := range req.History {
++			texts = append(texts, e.Text)
++		}
++		histories = append(histories, texts)
++	}
++	want := [][]string{
++		nil,            // 12: nothing known yet
++		nil,            // 10: 12 is later and must not leak in
++		{"message 10"}, // 11: 12 is later and must not leak in
++	}
++	if fmt.Sprint(histories) != fmt.Sprint(want) {
++		t.Fatalf("histories = %q, want %q", histories, want)
++	}
++	if got := ch.GroupHistory().Recent(testGroupChatKey, 100, time.Now()); len(got) != 3 ||
++		got[0].MessageID != 10 || got[1].MessageID != 11 || got[2].MessageID != 12 {
++		t.Fatalf("stored history = %+v, want ids 10 11 12", got)
++	}
++}
++
++func newForumMessage(id, threadID int, from int64, text string) *telego.Message {
++	msg := groupMessage(id, from, text)
++	msg.Chat.IsForum = true
++	msg.MessageThreadID = threadID
++	return msg
++}
++
++func TestGroupDecision_ForumTopicsHaveSeparateHistories(t *testing.T) {
++	spy := &spyDecider{p: 0}
++	ch, _ := newGroupDecisionChannel(t, spy)
++
++	ch.RecordSentMessage(testGroupChatKey, &bus.InboundContext{TopicID: "100"}, "answer in topic A", []string{"101"})
++	if err := ch.handleMessage(context.Background(), newForumMessage(102, 100, 7, "in topic A")); err != nil {
++		t.Fatal(err)
++	}
++	if err := ch.handleMessage(context.Background(), newForumMessage(202, 200, 8, "in topic B")); err != nil {
++		t.Fatal(err)
++	}
++
++	if len(spy.requests) != 2 {
++		t.Fatalf("decider called %d times, want 2", len(spy.requests))
++	}
++	inA, inB := spy.requests[0], spy.requests[1]
++	if inA.BotLast == nil || inA.BotLast.Text != "answer in topic A" || len(inA.History) != 1 {
++		t.Errorf("topic A request = %+v, want the bot's message in its history", inA)
++	}
++	if inB.BotLast != nil || len(inB.History) != 0 {
++		t.Errorf("topic B request = %+v, want an empty history and no bot message", inB)
++	}
++}
++
++func TestGroupDecision_ReplyToForumTopicRootIsNotAReply(t *testing.T) {
++	spy := &spyDecider{p: 0}
++	ch, _ := newGroupDecisionChannel(t, spy)
++	botUser := &telego.User{ID: ch.bot.ID(), IsBot: true, Username: "testbot"}
++
++	// In a forum every message of topic 100 nominally replies to message 100, which opened the topic.
++	root := newForumMessage(105, 100, 7, "plain message in the topic")
++	root.ReplyToMessage = &telego.Message{MessageID: 100, From: botUser}
++	// A real reply to a message of the bot in the same topic.
++	real := newForumMessage(106, 100, 7, "a real reply")
++	real.ReplyToMessage = &telego.Message{MessageID: 101, From: botUser, Text: "bot answer"}
++	for _, msg := range []*telego.Message{root, real} {
++		if err := ch.handleMessage(context.Background(), msg); err != nil {
++			t.Fatal(err)
++		}
++	}
++
++	if len(spy.requests) != 2 {
++		t.Fatalf("decider called %d times, want 2", len(spy.requests))
++	}
++	if first := spy.requests[0]; first.RepliedTo != nil || first.RepliesToBot {
++		t.Errorf("reply to the topic root counted as a reply: %+v", first)
++	}
++	if second := spy.requests[1]; second.RepliedTo == nil || !second.RepliesToBot {
++		t.Errorf("real reply to the bot not seen: %+v", second)
++	}
++}
+diff --git a/pkg/channels/telegram/telegram_test.go b/pkg/channels/telegram/telegram_test.go
+index 19b181cf..71f420c8 100644
+--- a/pkg/channels/telegram/telegram_test.go
++++ b/pkg/channels/telegram/telegram_test.go
+@@ -1212,6 +1212,29 @@ func TestBeginStream_FinalizeUsesForumThreadID(t *testing.T) {
+ 	assert.Equal(t, "final", params.Text)
+ }
+ 
++// A message delivered by the streamer reaches the group history under the topic's key.
++func TestBeginStream_FinalizeRecordsMessageInGroupHistory(t *testing.T) {
++	caller := &stubCaller{
++		callFn: func(ctx context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
++			return successResponseWithMessageID(t, 77), nil
++		},
++	}
++	ch := newTestChannel(t, caller)
++	ch.tgCfg.Streaming.Enabled = true
++	ch.SetGroupDecider(&spyDecider{})
++
++	streamer, err := ch.BeginStream(context.Background(), "-1001234567890/42")
++	require.NoError(t, err)
++	require.NoError(t, streamer.Finalize(context.Background(), "final"))
++
++	recent := ch.GroupHistory().Recent("-1001234567890/42", 78, time.Now())
++	require.Len(t, recent, 1)
++	assert.Equal(t, "bot", recent[0].From)
++	assert.Equal(t, "final", recent[0].Text)
++	assert.Equal(t, 77, recent[0].MessageID)
++	assert.Empty(t, ch.GroupHistory().Recent("-1001234567890", 78, time.Now()), "other topics must not see it")
++}
++
+ func TestHandleMessage_ForumTopic_SetsMetadata(t *testing.T) {
+ 	messageBus := bus.NewMessageBus()
+ 	ch := &TelegramChannel{
+diff --git a/pkg/config/config.go b/pkg/config/config.go
+index df232f77..e1eaea82 100644
+--- a/pkg/config/config.go
++++ b/pkg/config/config.go
+@@ -486,8 +486,51 @@ func (d *AgentDefaults) GetModelName() string {
+ 
+ // GroupTriggerConfig controls when the bot responds in group chats.
+ type GroupTriggerConfig struct {
+-	MentionOnly bool     `json:"mention_only,omitempty"`
+-	Prefixes    []string `json:"prefixes,omitempty"`
++	MentionOnly bool                `json:"mention_only,omitempty" yaml:"-"`
++	Prefixes    []string            `json:"prefixes,omitempty"     yaml:"-"`
++	Decision    GroupDecisionConfig `json:"decision,omitzero"      yaml:"decision,omitempty"`
++}
++
++const (
++	// DefaultGroupDecisionMinConfidence is the probability at or above which a
++	// group message is answered when min_confidence is not set.
++	DefaultGroupDecisionMinConfidence = 0.5
++	// DefaultGroupDecisionTimeoutMS bounds one decision request when timeout_ms is not set.
++	DefaultGroupDecisionTimeoutMS = 3000
++)
++
++// GroupDecisionConfig configures a decision model that judges whether a group
++// message is addressed to the bot. When Model and APIKey are set, it replaces
++// the mention_only/prefixes rules for messages that do not mention the bot.
++type GroupDecisionConfig struct {
++	Model           string       `json:"model,omitempty"            yaml:"-"`
++	APIKey          SecureString `json:"api_key,omitzero"           yaml:"api_key,omitempty"`
++	MinConfidence   float64      `json:"min_confidence,omitempty"   yaml:"-"`
++	TimeoutMS       int          `json:"timeout_ms,omitempty"       yaml:"-"`
++	Proxy           string       `json:"proxy,omitempty"            yaml:"-"` // HTTP proxy URL
++	BotDescription  string       `json:"bot_description,omitempty"  yaml:"-"` // what the bot does, for the model
++	ChatDescription string       `json:"chat_description,omitempty" yaml:"-"` // what the chat is, for the model
++}
++
++// Enabled reports whether the decision model is configured.
++func (d GroupDecisionConfig) Enabled() bool {
++	return d.Model != "" && d.APIKey.String() != ""
++}
++
++// Threshold returns the minimum probability for answering a message.
++func (d GroupDecisionConfig) Threshold() float64 {
++	if d.MinConfidence > 0 {
++		return d.MinConfidence
++	}
++	return DefaultGroupDecisionMinConfidence
++}
++
++// Timeout returns the time limit of one decision request.
++func (d GroupDecisionConfig) Timeout() time.Duration {
++	if d.TimeoutMS > 0 {
++		return time.Duration(d.TimeoutMS) * time.Millisecond
++	}
++	return DefaultGroupDecisionTimeoutMS * time.Millisecond
+ }
+ 
+ // TypingConfig controls typing indicator behavior (Phase 10).
+diff --git a/pkg/config/config_channel.go b/pkg/config/config_channel.go
+index 232c37cd..ebc4a10c 100644
+--- a/pkg/config/config_channel.go
++++ b/pkg/config/config_channel.go
+@@ -226,7 +226,7 @@ type Channel struct {
+ 	Type               string              `json:"type"                    yaml:"-"`
+ 	AllowFrom          FlexibleStringSlice `json:"allow_from,omitempty"    yaml:"-"`
+ 	ReasoningChannelID string              `json:"reasoning_channel_id"    yaml:"-"`
+-	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty" yaml:"-"`
++	GroupTrigger       GroupTriggerConfig  `json:"group_trigger,omitempty" yaml:"group_trigger,omitempty"`
+ 	Typing             TypingConfig        `json:"typing,omitempty"        yaml:"-"`
+ 	Placeholder        PlaceholderConfig   `json:"placeholder,omitempty"   yaml:"-"`
+ 	Settings           RawNode             `json:"settings,omitzero"       yaml:"settings,omitempty"`
+@@ -294,11 +294,17 @@ func preserveExplicitDisabledStreaming(settings, original RawNode) RawNode {
+ // to extract secure fields.
+ func (b Channel) MarshalYAML() (any, error) {
+ 	decoded, _ := b.GetDecoded()
+-	return struct {
+-		Settings any `json:"settings,omitzero" yaml:"settings,omitempty"`
++	out := struct {
++		GroupTrigger *GroupTriggerConfig `json:"group_trigger,omitzero" yaml:"group_trigger,omitempty"`
++		Settings     any                 `json:"settings,omitzero"      yaml:"settings,omitempty"`
+ 	}{
+ 		Settings: decoded,
+-	}, nil
++	}
++	if b.GroupTrigger.Decision.APIKey.String() != "" {
++		// Only the decision API key is secure; the other group_trigger fields live in config.json.
++		out.GroupTrigger = &b.GroupTrigger
++	}
++	return out, nil
+ }
+ 
+ // Name returns the channel name.
+@@ -390,11 +396,13 @@ func (b *Channel) SettingsIsEmpty() bool {
+ // CollectSensitiveValues returns all sensitive string values from this Channel's
+ // decoded settings (extend). Used by the security filter system.
+ func (b Channel) CollectSensitiveValues() []string {
+-	if b.extend == nil {
+-		return nil
+-	}
+ 	var values []string
+-	collectSensitive(reflect.ValueOf(b.extend), &values)
++	if key := b.GroupTrigger.Decision.APIKey.String(); key != "" {
++		values = append(values, key)
++	}
++	if b.extend != nil {
++		collectSensitive(reflect.ValueOf(b.extend), &values)
++	}
+ 	return values
+ }
+ 
+diff --git a/pkg/config/group_decision_config_test.go b/pkg/config/group_decision_config_test.go
+new file mode 100644
+index 00000000..c49a60f5
+--- /dev/null
++++ b/pkg/config/group_decision_config_test.go
+@@ -0,0 +1,86 @@
++package config
++
++import (
++	"os"
++	"path/filepath"
++	"testing"
++	"time"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++func TestGroupDecisionConfig_Defaults(t *testing.T) {
++	var d GroupDecisionConfig
++	assert.False(t, d.Enabled())
++	assert.InDelta(t, 0.5, d.Threshold(), 1e-9)
++	assert.Equal(t, 3*time.Second, d.Timeout())
++
++	d = GroupDecisionConfig{Model: "m", MinConfidence: 0.7, TimeoutMS: 1500}
++	assert.False(t, d.Enabled(), "model without api_key is not enough")
++	assert.InDelta(t, 0.7, d.Threshold(), 1e-9)
++	assert.Equal(t, 1500*time.Millisecond, d.Timeout())
++
++	d.APIKey = *NewSecureString("key")
++	assert.True(t, d.Enabled())
++	d.Model = ""
++	assert.False(t, d.Enabled(), "api_key without model is not enough")
++}
++
++func TestGroupDecisionConfig_APIKeyLivesInSecurityFile(t *testing.T) {
++	dir := t.TempDir()
++	configPath := filepath.Join(dir, "config.json")
++	require.NoError(t, os.WriteFile(configPath, []byte(`{
++  "version": 2,
++  "channels": {
++    "telegram": {
++      "enabled": true,
++      "type": "telegram",
++      "group_trigger": {
++        "mention_only": true,
++        "prefixes": ["!bot"],
++        "decision": {
++          "model": "typesafe/jev-1.14",
++          "min_confidence": 0.6,
++          "timeout_ms": 2000,
++          "proxy": "http://127.0.0.1:3128",
++          "bot_description": "does things",
++          "chat_description": "a group"
++        }
++      }
++    }
++  }
++}`), 0o644))
++	require.NoError(t, os.WriteFile(filepath.Join(dir, SecurityConfigFile), []byte(`channels:
++  telegram:
++    group_trigger:
++      decision:
++        api_key: "decision-key"
++`), 0o600))
++
++	cfg, err := LoadConfig(configPath)
++	require.NoError(t, err)
++	gt := cfg.Channels.Get("telegram").GroupTrigger
++	assert.True(t, gt.MentionOnly)
++	assert.Equal(t, []string{"!bot"}, gt.Prefixes)
++	assert.Equal(t, "typesafe/jev-1.14", gt.Decision.Model)
++	assert.Equal(t, "decision-key", gt.Decision.APIKey.String())
++	assert.Equal(t, "http://127.0.0.1:3128", gt.Decision.Proxy)
++	assert.True(t, gt.Decision.Enabled())
++	assert.Contains(t, cfg.Channels.Get("telegram").CollectSensitiveValues(), "decision-key")
++
++	savedPath := filepath.Join(t.TempDir(), "config.json")
++	require.NoError(t, SaveConfig(savedPath, cfg))
++
++	savedJSON, err := os.ReadFile(savedPath)
++	require.NoError(t, err)
++	assert.NotContains(t, string(savedJSON), "decision-key")
++	assert.Contains(t, string(savedJSON), "typesafe/jev-1.14")
++	savedSecurity, err := os.ReadFile(filepath.Join(filepath.Dir(savedPath), SecurityConfigFile))
++	require.NoError(t, err)
++	assert.Contains(t, string(savedSecurity), "decision-key")
++
++	reloaded, err := LoadConfig(savedPath)
++	require.NoError(t, err)
++	assert.Equal(t, cfg.Channels.Get("telegram").GroupTrigger, reloaded.Channels.Get("telegram").GroupTrigger)
++}

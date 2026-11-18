@@ -204,7 +204,7 @@
 ## Как устроено
 
 PicoClaw собирается из main апстрима на закреплённом коммите (`PICOCLAW_COMMIT` в
-[picoclaw/Dockerfile](picoclaw/Dockerfile)) с восемью патчами:
+[picoclaw/Dockerfile](picoclaw/Dockerfile)) с одиннадцатью патчами:
 
 - [picoclaw/tool-status.patch](picoclaw/tool-status.patch) — у каждого инструмента появляется
   обязательный аргумент `status`: фраза о текущем этапе, которую бот показывает в Telegram вместо
@@ -234,6 +234,18 @@ PicoClaw собирается из main апстрима на закреплён
 - [picoclaw/pico-audio.patch](picoclaw/pico-audio.patch) — канал pico принимает голосовое: запись с
   кнопки микрофона пульта шлюз сохраняет, помечает `[voice]` и распознаёт тем же Groq, что и голосовые
   из Telegram.
+- [picoclaw/webhook-channel.patch](picoclaw/webhook-channel.patch) — общий канал `webhook`. Сообщение
+  приходит POST-запросом на HTTP-сервер шлюза с подписью HMAC-SHA256 (`X-Webhook-Signature`), ответ агента
+  уходит POST-запросом на `send_url`; рядом могут работать несколько именованных экземпляров. Протокол —
+  в `docs/channels/webhook/README.md` пропатченного дерева.
+- [picoclaw/group-foreign-commands.patch](picoclaw/group-foreign-commands.patch) — в группе Telegram
+  голая `/cmd` считается обращением к боту, только если это его собственная команда; сообщение, которое
+  начинается с команды другого бота (`/print` для принтера этикеток), до агента больше не доходит.
+- [picoclaw/group-decision.patch](picoclaw/group-decision.patch) — в группе Telegram решающая модель
+  (`group_trigger.decision`: OpenRouter Decisions API, например `typesafe/jev-1.14`) решает, обращаются
+  ли к боту, по самому сообщению, тому, на которое оно отвечает, последнему сообщению бота и недавней
+  переписке; упоминание или собственная команда бота её обходят, ошибка или таймаут — молчание.
+  Настройка — в `docs/channels/telegram/README.md` пропатченного дерева.
 
 Сборок для приставки две, обе — статические бинарники: linux/armv7 и linux/arm64, в APK едут обе.
 32-битная проверена на GT-King и GT-King Pro (Android 9, пространство пользователя 32-битное), 64-битная

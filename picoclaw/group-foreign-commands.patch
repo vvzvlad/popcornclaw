@@ -1,0 +1,201 @@
+diff --git a/pkg/channels/telegram/command_registration.go b/pkg/channels/telegram/command_registration.go
+index c6b36260..e3521156 100644
+--- a/pkg/channels/telegram/command_registration.go
++++ b/pkg/channels/telegram/command_registration.go
+@@ -4,6 +4,7 @@ import (
+ 	"context"
+ 	"math/rand"
+ 	"slices"
++	"strings"
+ 	"time"
+ 
+ 	"github.com/mymmrac/telego"
+@@ -57,6 +58,32 @@ func (c *TelegramChannel) RegisterCommands(ctx context.Context, defs []commands.
+ 	})
+ }
+ 
++// setOwnCommands records the names and aliases of this bot's commands.
++func (c *TelegramChannel) setOwnCommands(defs []commands.Definition) {
++	names := make(map[string]struct{}, len(defs))
++	for _, def := range defs {
++		if def.Name != "" {
++			names[strings.ToLower(def.Name)] = struct{}{}
++		}
++		for _, alias := range def.Aliases {
++			if alias != "" {
++				names[strings.ToLower(alias)] = struct{}{}
++			}
++		}
++	}
++	c.ownCommandsMu.Lock()
++	c.ownCommands = names
++	c.ownCommandsMu.Unlock()
++}
++
++// isOwnCommand reports whether name is one of this bot's registered commands.
++func (c *TelegramChannel) isOwnCommand(name string) bool {
++	c.ownCommandsMu.RLock()
++	defer c.ownCommandsMu.RUnlock()
++	_, ok := c.ownCommands[strings.ToLower(name)]
++	return ok
++}
++
+ func (c *TelegramChannel) startCommandRegistration(ctx context.Context, defs []commands.Definition) {
+ 	if len(defs) == 0 {
+ 		return
+diff --git a/pkg/channels/telegram/telegram.go b/pkg/channels/telegram/telegram.go
+index d7265fb3..dfbcf1fb 100644
+--- a/pkg/channels/telegram/telegram.go
++++ b/pkg/channels/telegram/telegram.go
+@@ -65,6 +65,12 @@ type TelegramChannel struct {
+ 	commandRegDelayFn func(int) time.Duration
+ 	commandRegCancel  context.CancelFunc
+ 
++	// ownCommands holds the names (and aliases) of this bot's commands, as
++	// passed to RegisterCommands. A bare /cmd in a group is addressed to this
++	// bot only when cmd is in the set.
++	ownCommandsMu sync.RWMutex
++	ownCommands   map[string]struct{}
++
+ 	mediaGroupMu    sync.Mutex
+ 	mediaGroups     map[string]*telegramMediaGroup
+ 	mediaGroupDelay time.Duration
+@@ -178,7 +184,11 @@ func (c *TelegramChannel) Start(ctx context.Context) error {
+ 		"username": c.bot.Username(),
+ 	})
+ 
+-	c.startCommandRegistration(c.ctx, commands.BuiltinDefinitions())
++	// The own-command set must be complete before the first update is handled,
++	// so it is filled here and not by the retrying background registration.
++	defs := commands.BuiltinDefinitions()
++	c.setOwnCommands(defs)
++	c.startCommandRegistration(c.ctx, defs)
+ 
+ 	go func() {
+ 		if err = bh.Start(); err != nil {
+@@ -1586,7 +1596,7 @@ func (c *TelegramChannel) isBotMentioned(message *telego.Message) bool {
+ 				return true
+ 			}
+ 		case telego.EntityTypeBotCommand:
+-			if isBotCommandEntityForThisBot(entityText, botUsername) {
++			if isBotCommandEntityForThisBot(entityText, botUsername, c.isOwnCommand) {
+ 				return true
+ 			}
+ 		}
+@@ -1612,7 +1622,11 @@ func telegramEntityText(runes []rune, entity telego.MessageEntity) (string, bool
+ 	return string(runes[entity.Offset:end]), true
+ }
+ 
+-func isBotCommandEntityForThisBot(entityText, botUsername string) bool {
++// isBotCommandEntityForThisBot reports whether a bot_command entity is addressed
++// to this bot: /cmd@thisbot always is, /cmd@otherbot never is, and a bare /cmd
++// is only when isOwnCommand accepts it (other bots in the group share the bare
++// form).
++func isBotCommandEntityForThisBot(entityText, botUsername string, isOwnCommand func(string) bool) bool {
+ 	if !strings.HasPrefix(entityText, "/") {
+ 		return false
+ 	}
+@@ -1623,8 +1637,7 @@ func isBotCommandEntityForThisBot(entityText, botUsername string) bool {
+ 
+ 	at := strings.IndexRune(command, '@')
+ 	if at == -1 {
+-		// A bare /command delivered to this bot is intended for this bot.
+-		return true
++		return isOwnCommand(command)
+ 	}
+ 
+ 	mentionUsername := command[at+1:]
+diff --git a/pkg/channels/telegram/telegram_group_command_filter_test.go b/pkg/channels/telegram/telegram_group_command_filter_test.go
+index 20b2004a..0ae2a46a 100644
+--- a/pkg/channels/telegram/telegram_group_command_filter_test.go
++++ b/pkg/channels/telegram/telegram_group_command_filter_test.go
+@@ -2,6 +2,7 @@ package telegram
+ 
+ import (
+ 	"context"
++	"errors"
+ 	"fmt"
+ 	"strings"
+ 	"testing"
+@@ -12,6 +13,7 @@ import (
+ 
+ 	"github.com/sipeed/picoclaw/pkg/bus"
+ 	"github.com/sipeed/picoclaw/pkg/channels"
++	"github.com/sipeed/picoclaw/pkg/commands"
+ 	"github.com/sipeed/picoclaw/pkg/config"
+ )
+ 
+@@ -70,11 +72,34 @@ func TestHandleMessage_GroupMentionOnly_BotCommandEntity(t *testing.T) {
+ 			wantContent:   "/new",
+ 		},
+ 		{
+-			name:          "bare command",
++			name:          "bare command of this bot",
+ 			text:          "/new",
+ 			wantForwarded: true,
+ 			wantContent:   "/new",
+ 		},
++		{
++			name:          "bare command alias of this bot",
++			text:          "/reset",
++			wantForwarded: true,
++			wantContent:   "/reset",
++		},
++		{
++			name:          "bare command of this bot in other case",
++			text:          "/NEW",
++			wantForwarded: true,
++			wantContent:   "/NEW",
++		},
++		{
++			name:          "bare command unknown to this bot",
++			text:          "/print",
++			wantForwarded: false,
++		},
++		{
++			name:          "unknown command with bot username",
++			text:          "/print@testbot",
++			wantForwarded: true,
++			wantContent:   "/print",
++		},
+ 		{
+ 			name:          "command for another bot",
+ 			text:          "/new@otherbot",
+@@ -85,6 +110,7 @@ func TestHandleMessage_GroupMentionOnly_BotCommandEntity(t *testing.T) {
+ 	for _, tc := range tests {
+ 		t.Run(tc.name, func(t *testing.T) {
+ 			ch, messageBus := newGroupMentionOnlyChannel(t, "testbot")
++			ch.setOwnCommands([]commands.Definition{{Name: "new", Aliases: []string{"reset"}}})
+ 
+ 			msg := &telego.Message{
+ 				Text: tc.text,
+@@ -147,3 +173,29 @@ func TestIsBotMentioned_MentionEntityUnaffected(t *testing.T) {
+ 		t.Fatal("expected mention entity to be treated as bot mention")
+ 	}
+ }
++
++// The own-command set has to be complete when Start returns, even while the
++// background command registration is still failing and retrying.
++func TestStart_FillsOwnCommandsBeforeRegistration(t *testing.T) {
++	ch, _ := newGroupMentionOnlyChannel(t, "testbot")
++	ch.tgCfg = &config.TelegramSettings{}
++	ch.registerFunc = func(context.Context, []commands.Definition) error {
++		return errors.New("registration keeps failing")
++	}
++	ch.commandRegDelayFn = func(int) time.Duration { return time.Hour }
++
++	ctx, cancel := context.WithCancel(context.Background())
++	defer cancel()
++	if err := ch.Start(ctx); err != nil {
++		t.Fatalf("Start error: %v", err)
++	}
++
++	for _, def := range commands.BuiltinDefinitions() {
++		if !ch.isOwnCommand(def.Name) {
++			t.Errorf("builtin command %q is not known as own command after Start", def.Name)
++		}
++	}
++	if ch.isOwnCommand("print") {
++		t.Error("unknown command is known as own command")
++	}
++}
