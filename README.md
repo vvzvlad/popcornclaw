@@ -206,7 +206,7 @@ panel and MCP give the same to anyone who knows the PIN and is on the same local
 ## How it works
 
 PicoClaw is built from upstream main at a pinned commit (`PICOCLAW_COMMIT` in
-[picoclaw/Dockerfile](picoclaw/Dockerfile)) with eleven patches:
+[picoclaw/Dockerfile](picoclaw/Dockerfile)) with twelve patches:
 
 - [picoclaw/tool-status.patch](picoclaw/tool-status.patch): every tool gets a required `status` argument,
   a phrase about the current stage that the bot shows in Telegram instead of the command; the argument is
@@ -248,6 +248,10 @@ PicoClaw is built from upstream main at a pinned commit (`PICOCLAW_COMMIT` in
   whether a message is addressed to the bot, from the message, the one it replies to, the bot's last
   message and the recent chat; a mention or the bot's own command skips it, and an error or a timeout
   means silence. Its configuration is in `docs/channels/telegram/README.md` of the patched tree.
+- [picoclaw/exec-bare-slashes.patch](picoclaw/exec-bare-slashes.patch): with `restrict_to_workspace`
+  the `exec` guard no longer takes a token made only of slashes for a path outside the workspace. Such a
+  token resolves to the root, which a bare `/` already reaches unchecked, and blocking it blocked any
+  `jq` filter where the alternative operator stands apart, as in `.name // "none"`.
 
 There are two builds for the box, both static binaries, linux/armv7 and linux/arm64, and the APK carries
 both. The 32-bit one is tested on GT-King and GT-King Pro (Android 9, 32-bit userspace); the 64-bit one has
