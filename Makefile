@@ -51,9 +51,9 @@ connect:
 app termux restart logs ask: connect
 
 # Patched PicoClaw (picoclaw/Dockerfile) built on the docker daemon, once per ABI: the build/ directory's name
-# is the GOARCH (arm or arm64). Only the binary comes back.
-build/arm/picoclaw build/arm64/picoclaw: build/%/picoclaw: picoclaw/Dockerfile picoclaw/tool-status.patch picoclaw/asr-proxy.patch \
-	picoclaw/image-shrink.patch picoclaw/tool-feedback.patch picoclaw/keep-logs.patch \
+# is the GOARCH (arm or arm64 for the boxes, amd64 for a server). Only the binary comes back.
+build/arm/picoclaw build/arm64/picoclaw build/amd64/picoclaw: build/%/picoclaw: picoclaw/Dockerfile picoclaw/tool-status.patch \
+	picoclaw/asr-proxy.patch picoclaw/image-shrink.patch picoclaw/tool-feedback.patch picoclaw/keep-logs.patch \
 	picoclaw/shared-session.patch picoclaw/pico-audio.patch picoclaw/start-to-agent.patch
 	docker build --build-arg GOARCH=$* -t popcornclaw-picoclaw-$* picoclaw
 	mkdir -p $(@D)

@@ -203,7 +203,8 @@
 
 ## Как устроено
 
-PicoClaw собирается из исходников v0.3.1 с восемью патчами:
+PicoClaw собирается из main апстрима на закреплённом коммите (`PICOCLAW_COMMIT` в
+[picoclaw/Dockerfile](picoclaw/Dockerfile)) с восемью патчами:
 
 - [picoclaw/tool-status.patch](picoclaw/tool-status.patch) — у каждого инструмента появляется
   обязательный аргумент `status`: фраза о текущем этапе, которую бот показывает в Telegram вместо
@@ -234,9 +235,10 @@ PicoClaw собирается из исходников v0.3.1 с восемью
   кнопки микрофона пульта шлюз сохраняет, помечает `[voice]` и распознаёт тем же Groq, что и голосовые
   из Telegram.
 
-Сборок две, обе — статические бинарники: linux/armv7 и linux/arm64, в APK едут обе. 32-битная
-проверена на GT-King и GT-King Pro (Android 9, пространство пользователя 32-битное), 64-битная на
-приставке не проверена.
+Сборок для приставки две, обе — статические бинарники: linux/armv7 и linux/arm64, в APK едут обе.
+32-битная проверена на GT-King и GT-King Pro (Android 9, пространство пользователя 32-битное), 64-битная
+на приставке не проверена. Третья, linux/amd64 (`make build/amd64/picoclaw`), запускает того же агента на
+сервере и в APK не входит.
 
 Недостающие программы агент ставит себе сам из Termux (сборка с GitHub для той же архитектуры, на
 которой работает приложение: armeabi-v7a или arm64-v8a): пакеты — от пользователя Termux через
@@ -298,7 +300,7 @@ step at 23:01».
 
 ## Сборка
 
-Всё тяжёлое собирается в Docker: PicoClaw v0.3.1 с патчами из [picoclaw/](picoclaw/) — целью
+Всё тяжёлое собирается в Docker: PicoClaw с патчами из [picoclaw/](picoclaw/) — целью
 `make build/arm/picoclaw` и `make build/arm64/picoclaw`, APK — Gradle внутри
 [launcher/Dockerfile](launcher/Dockerfile), вместе с бинарниками PicoClaw, TorrServer, ffprobe и ffmpeg в
 `lib/armeabi-v7a/` и `lib/arm64-v8a/`. Docker CLI может смотреть на удалённый

@@ -205,7 +205,8 @@ panel and MCP give the same to anyone who knows the PIN and is on the same local
 
 ## How it works
 
-PicoClaw is built from v0.3.1 sources with eight patches:
+PicoClaw is built from upstream main at a pinned commit (`PICOCLAW_COMMIT` in
+[picoclaw/Dockerfile](picoclaw/Dockerfile)) with eight patches:
 
 - [picoclaw/tool-status.patch](picoclaw/tool-status.patch): every tool gets a required `status` argument,
   a phrase about the current stage that the bot shows in Telegram instead of the command; the argument is
@@ -235,9 +236,10 @@ PicoClaw is built from v0.3.1 sources with eight patches:
   saves the recording from the remote's microphone button, marks it `[voice]` and transcribes it with the
   same Groq as Telegram voice notes.
 
-There are two builds, both static binaries, linux/armv7 and linux/arm64, and the APK carries both. The
-32-bit one is tested on GT-King and GT-King Pro (Android 9, 32-bit userspace); the 64-bit one has not been
-tested on a box.
+There are two builds for the box, both static binaries, linux/armv7 and linux/arm64, and the APK carries
+both. The 32-bit one is tested on GT-King and GT-King Pro (Android 9, 32-bit userspace); the 64-bit one has
+not been tested on a box. A third, linux/amd64 (`make build/amd64/picoclaw`), runs the same agent on a
+server and is not in the APK.
 
 The agent installs missing programs for itself from Termux (the GitHub build for the same architecture
 the app runs on: armeabi-v7a or arm64-v8a): packages as the Termux user through `run-as com.termux`,
@@ -302,7 +304,7 @@ with them Android 9 connects to the remote from a random address, and the remote
 
 ## Building
 
-Everything heavy builds in Docker: PicoClaw v0.3.1 with the patches from [picoclaw/](picoclaw/) through
+Everything heavy builds in Docker: PicoClaw with the patches from [picoclaw/](picoclaw/) through
 the `make build/arm/picoclaw` and `make build/arm64/picoclaw` targets, the APK with Gradle inside
 [launcher/Dockerfile](launcher/Dockerfile), together with the PicoClaw, TorrServer, ffprobe and ffmpeg binaries in
 `lib/armeabi-v7a/` and `lib/arm64-v8a/`. The Docker CLI may point at a remote daemon: no bind mounts are

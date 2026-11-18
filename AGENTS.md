@@ -13,7 +13,8 @@ where his notes are; read it first when it is there.
 
 ## Structure
 
-- `picoclaw/` — Dockerfile that builds PicoClaw v0.3.1 for linux/armv7 and linux/arm64 with our patches:
+- `picoclaw/` — Dockerfile that builds PicoClaw upstream main at a pinned commit for linux/armv7 and linux/arm64
+  (linux/amd64 for a server) with our patches:
   `tool-status.patch` (each step's status in Telegram), `asr-proxy.patch` (voice through the
   model's proxy), `image-shrink.patch` (images go to the model as JPEG of at most 1280 px),
   `tool-feedback.patch` (steps as «status (`tool`)», sent silently, no animation), `keep-logs.patch`
