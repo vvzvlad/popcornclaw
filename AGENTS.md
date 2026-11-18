@@ -26,7 +26,9 @@ where his notes are; read it first when it is there.
   pico channel takes a voice note from the TV remote, marks it `[voice]` and transcribes it like a Telegram one),
   `webhook-channel.patch` (generic HMAC-signed `webhook` channel), `group-foreign-commands.patch` (in a group a bare
   `/cmd` is addressed to the bot only when it is the bot's own command), `group-decision.patch` (in a group a
-  decision model, `group_trigger.decision`, decides whether a message is addressed to the bot)
+  decision model, `group_trigger.decision`, decides whether a message is addressed to the bot),
+  `mcp-reconnect.patch` (an MCP server that was down when the gateway started is retried with a growing
+  delay, and its tools appear for the agent without a restart)
 - `launcher/app/src/main/assets/defaults/` — the `config.json` (PicoClaw config) and `AGENT.md` (facts
   about the box for the agent itself) a fresh box gets; keys go to `.security.yml` on the box, mode 600
 - `launcher/app/src/main/assets/termux/bootstrap.sh` — unpacks Termux's bootstrap without opening the app;
